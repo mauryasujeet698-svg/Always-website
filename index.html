@@ -1,101 +1,87 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="ALLways - simple booking, travel and local delivery services in one place.">
-  <title>ALLways | Booking & Travel</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Inter,Arial,sans-serif;background:#f5f7fb;color:#172033}
-    header{background:#101828;color:white;padding:18px 6%;display:flex;align-items:center;justify-content:space-between}
-    .logo{font-size:28px;font-weight:800;letter-spacing:-1px}.logo span{color:#65d6a2}
-    nav a{color:#fff;text-decoration:none;margin-left:24px;font-size:14px}
-    .hero{padding:52px 6% 28px;text-align:center}
-    .hero h1{font-size:clamp(34px,6vw,62px);line-height:1.02;margin-bottom:14px}
-    .hero p{color:#667085;font-size:18px;max-width:700px;margin:auto}
-    .grid{max-width:1200px;margin:28px auto 70px;padding:0 20px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
-    .card{background:white;border-radius:24px;padding:28px;box-shadow:0 12px 35px rgba(16,24,40,.08);border:1px solid #eaecf0}
-    .card h2{font-size:28px;margin-bottom:7px}.card>p{color:#667085;margin-bottom:22px}
-    .booking{border-top:5px solid #65d6a2}.travel{border-top:5px solid #4d8dff}
-    label{display:block;font-size:13px;font-weight:700;margin:14px 0 7px}
-    input,select{width:100%;padding:14px;border:1px solid #d0d5dd;border-radius:12px;font-size:15px;background:white}
-    button{width:100%;border:0;border-radius:12px;padding:14px;margin-top:18px;font-size:16px;font-weight:800;cursor:pointer}
-    .green{background:#65d6a2;color:#092c20}.blue{background:#4d8dff;color:white}
-    .result{display:none;margin-top:18px;padding:15px;border-radius:12px;background:#f2f4f7;font-size:14px;line-height:1.5}
-    .features{max-width:1200px;margin:0 auto 70px;padding:0 20px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-    .feature{background:#fff;padding:22px;border-radius:18px;border:1px solid #eaecf0}.feature h3{margin-bottom:8px}.feature p{color:#667085;font-size:14px}
-    footer{background:#101828;color:#cbd5e1;text-align:center;padding:30px 20px}
-    @media(max-width:760px){nav{display:none}.grid,.features{grid-template-columns:1fr}.hero{padding-top:38px}.card{padding:22px}}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALLways — Local People. Closer Living.</title>
+<meta name="description" content="ALLways local shopping and travel platform">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header>
-  <div class="logo">ALL<span>ways</span></div>
-  <nav><a href="#services">Services</a><a href="#about">About</a><a href="#contact">Contact</a></nav>
+<header class="topbar">
+  <div class="brand"><span class="pin">●</span> ALLways</div>
+  <button id="loginBtn" class="ghost">Sign in</button>
 </header>
 
-<section class="hero">
-  <h1>Everything you need,<br>ALLways in one place.</h1>
-  <p>Book local services, discover travel options and connect with local partners through one simple platform.</p>
-</section>
+<main>
+  <section class="location">
+    <div><small>Deliver to</small><strong>📍 Your location</strong></div>
+    <div class="search"><input id="search" placeholder="Search items, travel & services..." /></div>
+  </section>
 
-<section id="services" class="grid">
-  <div class="card booking">
-    <h2>🛒 Booking</h2>
-    <p>Order local products and services.</p>
-    <form id="bookingForm">
-      <label for="service">What do you need?</label>
-      <select id="service">
-        <option>Groceries</option><option>Food & Bakery</option><option>Electronics</option><option>Other local service</option>
-      </select>
-      <label for="location">Delivery location</label>
-      <input id="location" placeholder="Enter village / town" required>
-      <label for="items">What would you like to order?</label>
-      <input id="items" placeholder="Example: rice, milk, eggs" required>
-      <button class="green" type="submit">Request Booking</button>
-    </form>
-    <div id="bookingResult" class="result"></div>
+  <section class="hero">
+    <div>
+      <span class="pill">ALLways local</span>
+      <h1>Everything you need, closer to home.</h1>
+      <p>Shop local essentials or arrange your next journey.</p>
+      <button onclick="showSection('shop')">Shop now →</button>
+    </div>
+    <div class="hero-art">🛒 🚗</div>
+  </section>
+
+  <nav class="tabs">
+    <button class="tab active" data-section="shop">🛒 Shop</button>
+    <button class="tab" data-section="travel">🚗 Travel</button>
+    <button class="tab" data-section="orders">📦 Orders</button>
+  </nav>
+
+  <section id="shop" class="section">
+    <div class="section-head"><h2>Categories</h2><span>50+ items</span></div>
+    <div id="categories" class="categories"></div>
+    <div class="free-banner">🚚 <b>FREE DELIVERY</b> on orders above ₹499</div>
+    <div class="section-head"><h2 id="categoryTitle">All items</h2><span id="count"></span></div>
+    <div id="products" class="products"></div>
+  </section>
+
+  <section id="travel" class="section hidden">
+    <div class="section-head"><h2>Travel</h2><span>Local & intercity</span></div>
+    <div class="travel-grid">
+      <button class="travel-card" onclick="travelAction('ride')">🏍️<b>Book a Ride</b><small>Bike, Auto, Car</small></button>
+      <button class="travel-card" onclick="travelAction('bus')">🚌<b>Bus Tickets</b><small>Intercity & state</small></button>
+      <button class="travel-card" onclick="travelAction('train')">🚆<b>Train Tickets</b><small>Search journeys</small></button>
+      <button class="travel-card" onclick="travelAction('rental')">🚗<b>Rent a Vehicle</b><small>Bike, Car, SUV</small></button>
+    </div>
+    <div id="travelPanel" class="travel-panel">
+      <h3>Book a local ride</h3>
+      <label>From<input id="from" placeholder="Your pickup location"></label>
+      <label>To<input id="to" placeholder="Destination"></label>
+      <label>Vehicle
+        <select id="vehicle"><option>Bike</option><option>Auto</option><option>Car</option><option>Bolero / SUV</option></select>
+      </label>
+      <button onclick="requestRide()">Find available drivers</button>
+      <p id="travelMsg" class="muted"></p>
+    </div>
+  </section>
+
+  <section id="orders" class="section hidden">
+    <div class="section-head"><h2>My Orders</h2></div>
+    <div id="ordersList" class="empty">No orders yet.</div>
+  </section>
+</main>
+
+<div id="cartBar" class="cartbar hidden">
+  <div><b id="cartItems">0 items</b><small id="cartTotal">₹0</small></div>
+  <button onclick="openCheckout()">View cart →</button>
+</div>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <button class="close" onclick="closeModal()">×</button>
+    <div id="modalContent"></div>
   </div>
+</div>
 
-  <div class="card travel">
-    <h2>🚗 Travel</h2>
-    <p>Find a local ride for your journey.</p>
-    <form id="travelForm">
-      <label for="from">From</label>
-      <input id="from" placeholder="Starting location" required>
-      <label for="to">To</label>
-      <input id="to" placeholder="Destination" required>
-      <label for="vehicle">Vehicle</label>
-      <select id="vehicle"><option>Bike</option><option>Auto</option><option>Car</option><option>Bolero / SUV</option></select>
-      <button class="blue" type="submit">Request Travel</button>
-    </form>
-    <div id="travelResult" class="result"></div>
-  </div>
-</section>
-
-<section class="features" id="about">
-  <div class="feature"><h3>📍 Local first</h3><p>Designed to connect customers, vendors and drivers in villages and towns.</p></div>
-  <div class="feature"><h3>🤝 Local partners</h3><p>Drivers and vendors can eventually register and manage their own listings.</p></div>
-  <div class="feature"><h3>⚡ Simple</h3><p>A single place for booking, travel and local delivery services.</p></div>
-</section>
-
-<footer id="contact">
-  <strong>ALLways</strong><br>
-  <span>Booking • Travel • Local Services</span><br><br>
-  <small>© 2026 ALLways. All rights reserved.</small>
-</footer>
-
-<script>
-  function show(id, text){const el=document.getElementById(id);el.style.display='block';el.textContent=text}
-  document.getElementById('bookingForm').addEventListener('submit',e=>{
-    e.preventDefault();
-    show('bookingResult','Booking request created for '+document.getElementById('items').value+' in '+document.getElementById('location').value+'. This demo is ready to connect to a real backend.');
-  });
-  document.getElementById('travelForm').addEventListener('submit',e=>{
-    e.preventDefault();
-    show('travelResult','Travel request created from '+document.getElementById('from').value+' to '+document.getElementById('to').value+'. This demo is ready to connect to real drivers.');
-  });
-</script>
+<footer>ALLways · Local People. Closer Living.</footer>
+<script src="app.js"></script>
 </body>
 </html>

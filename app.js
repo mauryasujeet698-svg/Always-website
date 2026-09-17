@@ -32,7 +32,9 @@ const FIREBASE_CONFIG={
 const CONFIG={
   freeDeliveryThreshold:499,
   standardDeliveryFee:30,
-  orderEndpoint:""
+
+  /* GOOGLE APPS SCRIPT WEB APP */
+  orderEndpoint:"https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec"
 };
 
 
@@ -703,6 +705,8 @@ function placeOrder(
 
     total:total,
 
+    paymentMethod:"COD",
+
     status:"New Order",
 
     time:
@@ -729,6 +733,7 @@ function placeOrder(
 
   }
 
+  /* SEND ORDER TO GOOGLE APPS SCRIPT */
   if(CONFIG.orderEndpoint){
 
     sendOrderToBackend(order);
@@ -750,7 +755,7 @@ function placeOrder(
 
 
 /* =========================================================
-   BACKEND
+   GOOGLE APPS SCRIPT BACKEND
    ========================================================= */
 
 async function sendOrderToBackend(order){
@@ -770,10 +775,14 @@ async function sendOrderToBackend(order){
       }
     );
 
+    console.log(
+      "ALLways: order sent to Google Apps Script."
+    );
+
   }catch(error){
 
-    console.log(
-      "Backend submission failed",
+    console.error(
+      "ALLways: Google Apps Script submission failed:",
       error
     );
 

@@ -4,6 +4,7 @@
 
 let products = [];
 let cats = ["All"];
+let inventoryLoaded = false;
 
 
 /* =========================================================
@@ -54,22 +55,28 @@ try {
    FETCH INVENTORY FROM GOOGLE SHEETS
    ========================================================= */
 
-async function loadInventory() {
+async function loadInventory(){
   try {
-    const response = await fetch(CONFIG.orderEndpoint);
+    // cache: "no-store" + a cache-busting query param prevents the browser
+    // (and some intermediate caches) from serving a stale response after
+    // you edit the Google Sheet.
+    const response = await fetch(
+      CONFIG.orderEndpoint + (CONFIG.orderEndpoint.includes("?") ? "&" : "?") + "_=" + Date.now(),
+      { cache: "no-store" }
+    );
     const data = await response.json();
-    
+
     // Extract products from your JSON format
     let fetchedProducts = data.products || data;
-    
+
     // Ensure the app reads 'category' as 'cat'
-    products = fetchedProducts.map(p => ({
-      ...p,
-      cat: p.category || p.cat
-    }));
-    
-    cats = ["All", ...new Set(products.map(p => p.cat))];
-    
+    products = fetchedProducts.map(function(p){
+      return Object.assign({}, p, { cat: p.category || p.cat });
+    });
+
+    cats = ["All"].concat(Array.from(new Set(products.map(function(p){ return p.cat; }))));
+    inventoryLoaded = true;
+
     renderCats();
     renderProducts();
   } catch (error) {
@@ -96,9 +103,18 @@ function escapeHtml(value){
 function renderCats(){
   const el = document.getElementById("categories");
   if(!el) return;
+
   el.innerHTML = cats.map(function(c){
-    return `<button class="cat ${c === selectedCat ? "active" : ""}" onclick="setCat('${escapeHtml(c)}')">${escapeHtml(c)}</button>`;
+    return `<button class="cat ${c === selectedCat ? "active" : ""}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`;
   }).join("");
+
+  // Event delegation instead of inline onclick strings — avoids any
+  // HTML-entity-decoding edge cases with special characters in category names.
+  el.querySelectorAll(".cat").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      setCat(btn.dataset.cat);
+    });
+  });
 }
 
 function renderProducts(){
@@ -120,24 +136,30 @@ function renderProducts(){
   }
 
   if(!list.length){
-    productsEl.innerHTML = `<div class="empty">No matching items.</div>`;
+    productsEl.innerHTML = `<div class="empty">${inventoryLoaded ? "No matching items." : "Loading inventory…"}</div>`;
     return;
   }
 
   productsEl.innerHTML = list.map(function(p){
     return `
       <article class="product">
-        <div class="pic">${p.icon}</div>
+        <div class="pic">${escapeHtml(p.icon)}</div>
         <h3>${escapeHtml(p.name)}</h3>
         <small>${escapeHtml(p.cat)}</small>
         <div class="price">₹${p.price}</div>
         <div class="stock">${p.stock > 0 ? "● In stock" : "● Unavailable"}</div>
-        <button class="add" ${p.stock < 1 ? "disabled" : ""} onclick="add(${p.id})">
+        <button class="add" data-id="${escapeHtml(String(p.id))}" ${p.stock < 1 ? "disabled" : ""}>
           ${p.stock < 1 ? "Unavailable" : "Add"}
         </button>
       </article>
     `;
   }).join("");
+
+  productsEl.querySelectorAll(".add").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      add(btn.dataset.id);
+    });
+  });
 }
 
 function setCat(category){
@@ -156,6 +178,10 @@ function setCat(category){
    ========================================================= */
 
 function add(id){
+  if(!inventoryLoaded){
+    alert("Inventory is still loading — please try again in a moment.");
+    return;
+  }
   if(!currentUser){
     openAuth("Please sign in or create an account before adding items to your cart.");
     return;
@@ -243,9 +269,16 @@ function openCheckout(){
     <button class="locationBtn" onclick="useCurrentLocation()">📍 Use my current location</button>
     <p id="locationMsg" class="muted"></p>
     <label>📝 Delivery note (optional)<textarea id="note" class="field" rows="2" placeholder="Any landmark or special instruction"></textarea></label>
-    <button class="primary" onclick="placeOrder(${subtotal},${delivery},${total})">Place Order</button>
+    <button class="primary" id="placeOrderBtn">Place Order</button>
     <p class="policy">Open-box delivery: if an item is damaged, incorrect, expired, or otherwise not acceptable on inspection, you may reject the affected order at the doorstep without being charged.</p>
   `;
+
+  const placeOrderBtn = document.getElementById("placeOrderBtn");
+  if(placeOrderBtn){
+    placeOrderBtn.addEventListener("click", function(){
+      placeOrder(subtotal, delivery, total);
+    });
+  }
 
   modal.classList.remove("hidden");
 }
@@ -405,9 +438,15 @@ function showThankYou(order){
         <b>Order total: ₹${order.total}</b><br>
         <span>Keep your phone available for our delivery confirmation.</span>
       </div>
-      <button class="primary" onclick="closeModal()">Continue shopping</button>
+      <button class="primary" id="continueShoppingBtn">Continue shopping</button>
     </div>
   `;
+
+  const continueBtn = document.getElementById("continueShoppingBtn");
+  if(continueBtn){
+    continueBtn.addEventListener("click", closeModal);
+  }
+
   modal.classList.remove("hidden");
 }
 
@@ -579,12 +618,20 @@ function openAuth(message=""){
     ${message ? `<div class="auth-note">${escapeHtml(message)}</div>` : ""}
     <label>📧 Email<input id="authEmail" class="field" type="email" autocomplete="email" placeholder="you@example.com"></label>
     <label>🔒 Password<input id="authPassword" class="field" type="password" autocomplete="current-password" placeholder="At least 6 characters"></label>
-    <button class="primary" onclick="loginCustomer()">Sign in</button>
-    <button class="secondary" onclick="signupCustomer()">Create new account</button>
-    <button class="textBtn" onclick="resetPassword()">Forgot password?</button>
+    <button class="primary" id="loginSubmitBtn">Sign in</button>
+    <button class="secondary" id="signupSubmitBtn">Create new account</button>
+    <button class="textBtn" id="resetPasswordBtn">Forgot password?</button>
     <p id="authMsg" class="muted auth-msg"></p>
     <p class="policy">Your account is handled by Firebase Authentication. ALLways does not store your password in the Google Sheet.</p>
   `;
+
+  const loginBtn = document.getElementById("loginSubmitBtn");
+  const signupBtn = document.getElementById("signupSubmitBtn");
+  const resetBtn = document.getElementById("resetPasswordBtn");
+  if(loginBtn) loginBtn.addEventListener("click", loginCustomer);
+  if(signupBtn) signupBtn.addEventListener("click", signupCustomer);
+  if(resetBtn) resetBtn.addEventListener("click", resetPassword);
+
   modal.classList.remove("hidden");
 }
 
@@ -714,9 +761,22 @@ function openAccount(){
       <h2>Your ALLways Account</h2>
       <p class="muted">${escapeHtml(currentUser.email)}</p>
     </div>
-    <button class="primary" onclick="showSection('orders');closeAuth()">📦 My Orders</button>
-    <button class="secondary" onclick="signOutCustomer()">Sign out</button>
+    <button class="primary" id="myOrdersBtn">📦 My Orders</button>
+    <button class="secondary" id="signOutBtn">Sign out</button>
   `;
+
+  const myOrdersBtn = document.getElementById("myOrdersBtn");
+  const signOutBtn = document.getElementById("signOutBtn");
+  if(myOrdersBtn){
+    myOrdersBtn.addEventListener("click", function(){
+      showSection("orders");
+      closeAuth();
+    });
+  }
+  if(signOutBtn){
+    signOutBtn.addEventListener("click", signOutCustomer);
+  }
+
   modal.classList.remove("hidden");
 }
 
@@ -786,12 +846,17 @@ function startALLways(){
     search.addEventListener("input", renderProducts);
   }
 
+  const checkoutBtn = document.getElementById("checkoutBtn");
+  if(checkoutBtn){
+    checkoutBtn.addEventListener("click", openCheckout);
+  }
+
   updateCart();
   renderOrders();
-  
+
   // FETCH LIVE DATA FROM GOOGLE SHEETS
-  loadInventory(); 
-  
+  loadInventory();
+
   initAuth();
 }
 

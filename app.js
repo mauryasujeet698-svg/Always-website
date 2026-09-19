@@ -44,6 +44,7 @@ let currentUser = null;
 let firebaseReady = false;
 let db = null;
 let customerOrdersUnsubscribe = null;
+const ADMIN_EMAIL = "PUT_YOUR_ADMIN_EMAIL_HERE";
 let orders = [];
 
 try {
@@ -581,6 +582,8 @@ function closeModal(){
    FIREBASE AUTHENTICATION
    ========================================================= */
 
+function isAdmin(){ return !!currentUser && String(currentUser.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase(); }
+
 function firebaseConfigured(){
   return !!(window.firebase && FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
 }
@@ -831,16 +834,21 @@ function openAccount(){
       <p class="muted">${escapeHtml(currentUser.email)}</p>
     </div>
     <button class="primary" id="myOrdersBtn">📦 My Orders</button>
+    ${isAdmin() ? '<button class="secondary" id="adminDashboardBtn">🛠 Admin Dashboard</button>' : ''}
     <button class="secondary" id="signOutBtn">Sign out</button>
   `;
 
   const myOrdersBtn = document.getElementById("myOrdersBtn");
+  const adminDashboardBtn = document.getElementById("adminDashboardBtn");
   const signOutBtn = document.getElementById("signOutBtn");
   if(myOrdersBtn){
     myOrdersBtn.addEventListener("click", function(){
       showSection("orders");
       closeAuth();
     });
+  }
+  if(adminDashboardBtn){
+    adminDashboardBtn.addEventListener("click", function(){ window.location.href = "admin.html"; });
   }
   if(signOutBtn){
     signOutBtn.addEventListener("click", signOutCustomer);

@@ -44,7 +44,7 @@ let currentUser = null;
 let firebaseReady = false;
 let db = null;
 let customerOrdersUnsubscribe = null;
-const ADMIN_EMAIL = "PUT_YOUR_ADMIN_EMAIL_HERE";
+const ADMIN_EMAIL = "mauryasujeet698@gmail.com";
 let orders = [];
 
 try {

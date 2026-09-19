@@ -731,6 +731,7 @@ function initAuth(){
 
     auth.onAuthStateChanged(function(user){
       currentUser = user || null;
+      if(currentUser) loadCustomerPreferences(); else {savedAddresses=[];favouriteIds=new Set();}
       console.log("ALLways auth state:", currentUser ? currentUser.email : "signed out");
       updateAuthButton();
       renderOrders();
@@ -955,11 +956,15 @@ function openAccount(){
       <p class="muted">${escapeHtml(currentUser.email)}</p>
     </div>
     <button class="primary" id="myOrdersBtn">📦 My Orders</button>
+    <button class="secondary" id="favouritesBtn">❤️ Saved favourites (${favouriteIds.size})</button>
+    <button class="secondary" id="addressesBtn">🏠 Saved addresses (${savedAddresses.length})</button>
     ${isAdmin() ? '<button class="secondary" id="adminDashboardBtn">🛠 Admin Dashboard</button>' : ''}
     <button class="secondary" id="signOutBtn">Sign out</button>
   `;
 
   const myOrdersBtn = document.getElementById("myOrdersBtn");
+  const favouritesBtn = document.getElementById("favouritesBtn");
+  const addressesBtn = document.getElementById("addressesBtn");
   const adminDashboardBtn = document.getElementById("adminDashboardBtn");
   const signOutBtn = document.getElementById("signOutBtn");
   if(myOrdersBtn){
@@ -968,6 +973,8 @@ function openAccount(){
       closeAuth();
     });
   }
+  if(favouritesBtn){favouritesBtn.addEventListener("click",function(){closeAuth();showSection("shop");alert("Your saved products are marked with ♥.");renderProducts();});}
+  if(addressesBtn){addressesBtn.addEventListener("click",function(){alert(savedAddresses.length?savedAddresses.map(function(a,i){return (i+1)+". "+a.name+" — "+a.address;}).join("\n"):"No saved addresses yet. Save one during checkout.");});}
   if(adminDashboardBtn){
     adminDashboardBtn.addEventListener("click", function(){ window.location.href = "admin.html"; });
   }

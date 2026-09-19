@@ -159,16 +159,36 @@ async function updateStatus(id,status){
 async function updateEta(id){
   const el=document.getElementById("eta_"+id);
   if(!el)return;
+  const value=el.value.trim();
+  if(!value){alert("Enter an estimated delivery time first.");el.focus();return;}
   try{
-    await db.collection("orders").doc(id).update({estimatedDelivery:el.value.trim(),updatedAt:Date.now()});
-  }catch(e){alert("ETA update failed: "+(e.code||e.message));}
+    await db.collection("orders").doc(id).update({
+      estimatedDelivery:value,
+      updatedAt:Date.now()
+    });
+    el.blur();
+    alert("Estimated delivery updated for the customer.");
+  }catch(e){
+    console.error("ALLways ETA update:",e);
+    alert("ETA update failed: "+(e.code||e.message));
+  }
 }
 async function updateOrderNote(id){
   const el=document.getElementById("note_"+id);
   if(!el)return;
+  const value=el.value.trim();
+  if(!value){alert("Enter a customer message first.");el.focus();return;}
   try{
-    await db.collection("orders").doc(id).update({statusNote:el.value.trim(),updatedAt:Date.now()});
-  }catch(e){alert("Message update failed: "+(e.code||e.message));}
+    await db.collection("orders").doc(id).update({
+      statusNote:value,
+      updatedAt:Date.now()
+    });
+    el.blur();
+    alert("Customer message updated.");
+  }catch(e){
+    console.error("ALLways customer message update:",e);
+    alert("Message update failed: "+(e.code||e.message));
+  }
 }
 async function enableNotifications(){
   if(!("Notification" in window)){alert("Notifications are not supported.");return;}

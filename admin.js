@@ -15,20 +15,86 @@ function esc(v){
   });
 }
 function isAdmin(u){return u&&String(u.email||"").toLowerCase()===ADMIN_EMAIL.toLowerCase();}
+
 function init(){
   firebase.initializeApp(FIREBASE_CONFIG);
   db=firebase.firestore();
   firebase.auth().onAuthStateChanged(function(user){
-    if(!user){showAuth("Sign in with the ALLways admin account.");return;}
-    if(!isAdmin(user)){showAuth("This account is not authorized as an ALLways admin.");return;}
+    if(!user){showAuth("Sign in to the ALLways admin account.");return;}
+    if(!isAdmin(user)){
+      showAuth("This Google/email account is not authorized as ALLways admin.");
+      return;
+    }
     document.getElementById("adminAuth").classList.add("hidden");
     document.getElementById("dashboard").classList.remove("hidden");
     listen();
   });
 }
+
 function showAuth(msg){
-  document.getElementById("adminAuth").innerHTML="<b>"+esc(msg)+"</b><p>Use the Store page to sign in, then return here.</p><a class=\"primary adminLink\" href=\"index.html\">Open ALLways sign in</a>";
+  var el=document.getElementById("adminAuth");
+  el.innerHTML=
+    "<div class=\"auth-head\"><span class=\"auth-icon\">🛠</span><h2>ALLways Admin Login</h2><p class=\"muted\">Use "+esc(ADMIN_EMAIL)+"</p></div>"+
+    "<div class=\"auth-note\">"+esc(msg)+"</div>"+
+    "<button class=\"googleBtn\" id=\"adminGoogleBtn\">G&nbsp; Continue with Google</button>"+
+    "<div class=\"orLine\"><span>or use admin password</span></div>"+
+    "<label>📧 Email<input id=\"adminEmail\" class=\"field\" type=\"email\" value=\""+esc(ADMIN_EMAIL)+"\" autocomplete=\"email\"></label>"+
+    "<label>🔒 Firebase password<input id=\"adminPassword\" class=\"field\" type=\"password\" autocomplete=\"current-password\"></label>"+
+    "<button class=\"primary\" id=\"adminLoginBtn\">Sign in to Admin</button>"+
+    "<p id=\"adminLoginMsg\" class=\"muted auth-msg\"></p>"+
+    "<p class=\"muted\">The Firebase password is separate from your Gmail password.</p>";
+  document.getElementById("adminGoogleBtn").onclick=adminGoogleLogin;
+  document.getElementById("adminLoginBtn").onclick=adminPasswordLogin;
 }
+
+function adminMessage(msg){
+  var el=document.getElementById("adminLoginMsg");
+  if(el)el.textContent=msg;
+}
+
+async function adminPasswordLogin(){
+  var email=(document.getElementById("adminEmail").value||"").trim();
+  var password=document.getElementById("adminPassword").value||"";
+  if(email.toLowerCase()!==ADMIN_EMAIL.toLowerCase()){
+    adminMessage("Use the configured admin email: "+ADMIN_EMAIL);
+    return;
+  }
+  if(!password){adminMessage("Enter your Firebase password.");return;}
+  adminMessage("Signing in…");
+  try{
+    await firebase.auth().signInWithEmailAndPassword(email,password);
+  }catch(e){
+    console.error(e);
+    adminMessage(authError(e));
+  }
+}
+
+async function adminGoogleLogin(){
+  adminMessage("Opening Google sign-in…");
+  try{
+    var provider=new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({prompt:"select_account"});
+    await firebase.auth().signInWithPopup(provider);
+  }catch(e){
+    console.error(e);
+    adminMessage(authError(e));
+  }
+}
+
+function authError(error){
+  var code=error&&error.code||"";
+  var map={
+    "auth/invalid-credential":"Wrong email/password, or this Firebase account does not have a password sign-in credential.",
+    "auth/wrong-password":"Wrong Firebase password.",
+    "auth/user-not-found":"No Firebase user exists with this email.",
+    "auth/invalid-email":"Please enter a valid email address.",
+    "auth/popup-blocked":"Google sign-in popup was blocked. Allow popups for this site.",
+    "auth/popup-closed-by-user":"Google sign-in was cancelled.",
+    "auth/operation-not-allowed":"Enable the required sign-in provider in Firebase Authentication → Sign-in method."
+  };
+  return map[code]||("Sign-in failed: "+code+(error&&error.message?" — "+error.message:""));
+}
+
 function listen(){
   if(unsubscribe)unsubscribe();
   initial=true;

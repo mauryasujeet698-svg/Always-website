@@ -11,3 +11,15 @@
 .admin-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}.admin-summary>div{background:#fff;border:1px solid #e5ece7;border-radius:14px;padding:12px}.admin-summary b{display:block;font-size:20px}.admin-summary small{color:#77817b}
 .adminOrder{background:#fff;border:1px solid #e1e9e4;border-radius:17px;padding:14px;margin-bottom:10px}.adminOrderHead{display:flex;justify-content:space-between;gap:10px}.adminGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}.adminGrid div{display:flex;flex-direction:column;gap:3px}.adminGrid small{color:#77817b}.adminGrid span{font-size:13px}.adminItems{font-size:13px;line-height:1.55;background:#f6faf7;padding:10px;border-radius:10px}.adminActions{display:flex;gap:10px;align-items:center;margin:10px 0}.adminActions select{flex:1;padding:10px;border:1px solid #dbe6df;border-radius:10px;background:#fff}.adminActions a{background:#e7f8ed;color:#087b3e;text-decoration:none;padding:10px;border-radius:10px;font-weight:800}.adminLink{display:block;text-align:center;text-decoration:none;margin-top:12px}
 @media(max-width:600px){.admin-summary{grid-template-columns:repeat(2,1fr)}.adminGrid{grid-template-columns:1fr}.admin-toolbar{justify-content:stretch}.admin-toolbar button{flex:1}}
+
+.productQty{display:flex;align-items:center;gap:7px;margin-top:7px}
+.productQty button{border:1px solid #b8d8c3;background:#e7f8ed;color:#087b3e;border-radius:9px;width:34px;height:34px;font-size:19px;font-weight:900}
+.productQty b{min-width:24px;text-align:center}
+.productQty .removeMini{margin-left:auto;background:#fff1f1;color:#b42318;border-color:#f0c2c2;font-size:15px}
+.removeItemBtn{border:1px solid #f0c2c2;background:#fff1f1;color:#b42318;border-radius:8px;width:30px;height:30px;font-size:14px}
+.orderTop{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.orderTracker{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin:15px 0 12px}
+.trackStep{text-align:center;color:#9aa39d}.trackStep span{display:flex;width:25px;height:25px;border-radius:50%;align-items:center;justify-content:center;margin:auto;border:1px solid #d8e1dc;font-size:11px}.trackStep small{display:block;font-size:9px;margin-top:4px}.trackStep.done{color:#087b3e}.trackStep.done span{background:#e7f8ed;border-color:#9dd6b5;font-weight:900}
+.etaBox{background:#eef8f1;color:#245f3e;border-radius:11px;padding:10px;margin:10px 0;font-size:13px}.etaBox small{display:block;margin-top:3px;color:#66736b}.orderActions{display:flex;justify-content:flex-end;margin-top:9px}.cancelOrderBtn{border:1px solid #efb7b7;background:#fff5f5;color:#b42318;border-radius:10px;padding:9px 12px;font-weight:800}.cancelled{opacity:.9}.cancelledStatus{background:#fff1f1;color:#b42318}
+.adminEta{display:grid;grid-template-columns:1fr auto;gap:8px;margin:9px 0}.adminEta input{width:100%;padding:10px;border:1px solid #dbe6df;border-radius:10px}.adminEta button{border:0;background:#087b3e;color:#fff;border-radius:10px;padding:10px 12px;font-weight:800}
+.adminNote{width:100%;padding:10px;border:1px solid #dbe6df;border-radius:10px;margin:5px 0 8px}

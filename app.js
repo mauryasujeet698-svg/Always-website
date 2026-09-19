@@ -238,6 +238,7 @@ function renderProducts(){
 }
 
 function setCat(category){
+  favouritesOnly=false;
   selectedCat = category;
   const title = document.getElementById("categoryTitle");
   if(title){
@@ -1056,7 +1057,7 @@ function startALLways(){
 
   const search = document.getElementById("search");
   if(search){
-    search.addEventListener("input", renderProducts);
+    search.addEventListener("input", function(){favouritesOnly=false;renderProducts();});
   }
 
   const checkoutBtn = document.getElementById("checkoutBtn");

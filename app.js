@@ -151,9 +151,18 @@ function renderProducts(){
         <small>${escapeHtml(p.cat)}</small>
         <div class="price">₹${p.price}</div>
         <div class="stock">${p.stock > 0 ? "● In stock" : "● Unavailable"}</div>
+        ${cart[p.id] ? `
+        <div class="productQty">
+          <button type="button" data-qty-id="${escapeHtml(String(p.id))}" data-qty-delta="-1">−</button>
+          <b>${cart[p.id]}</b>
+          <button type="button" data-qty-id="${escapeHtml(String(p.id))}" data-qty-delta="1">+</button>
+          <button type="button" class="removeMini" data-remove-id="${escapeHtml(String(p.id))}" title="Remove item">🗑</button>
+        </div>
+      ` : `
         <button class="add" data-id="${escapeHtml(String(p.id))}" ${p.stock < 1 ? "disabled" : ""}>
           ${p.stock < 1 ? "Unavailable" : "Add"}
         </button>
+      `}
       </article>
     `;
   }).join("");
@@ -161,6 +170,16 @@ function renderProducts(){
   productsEl.querySelectorAll(".add").forEach(function(btn){
     btn.addEventListener("click", function(){
       add(btn.dataset.id);
+    });
+  });
+  productsEl.querySelectorAll("[data-qty-id]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      changeQty(btn.dataset.qtyId, Number(btn.dataset.qtyDelta));
+    });
+  });
+  productsEl.querySelectorAll("[data-remove-id]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      removeFromCart(btn.dataset.removeId);
     });
   });
 }
@@ -200,6 +219,7 @@ function add(id){
 
   cart[id] = next;
   updateCart();
+  renderProducts();
 }
 
 function changeQty(id, delta){
@@ -210,6 +230,13 @@ function changeQty(id, delta){
   else if(next <= product.stock) cart[id] = next;
   else alert("Only " + product.stock + " " + product.name + " available.");
   updateCart();
+  renderProducts();
+}
+
+function removeFromCart(id){
+  delete cart[id];
+  updateCart();
+  renderProducts();
 }
 
 function updateCart(){
@@ -259,6 +286,7 @@ function openCheckout(){
           <button type="button" onclick="changeQty('${escapeHtml(String(id))}', -1)">−</button>
           <b>${quantity}</b>
           <button type="button" onclick="changeQty('${escapeHtml(String(id))}', 1)">+</button>
+          <button type="button" class="removeItemBtn" onclick="removeFromCart('${escapeHtml(String(id))}')" title="Remove item">🗑</button>
         </div>
         <b>₹${itemTotal}</b>
       </div>
@@ -393,6 +421,10 @@ async function placeOrder(subtotal, delivery, total){
     total: total,
     paymentMethod: "COD",
     status: "New Order",
+    estimatedDelivery: "",
+    statusNote: "Order received",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
     time: new Date().toLocaleString("en-IN")
   };
 
@@ -497,40 +529,65 @@ function listenToCustomerOrders(){
    ORDERS
    ========================================================= */
 
+function statusSteps(status){
+  const steps=["New Order","Confirmed","Preparing","Out for delivery","Delivered"];
+  const current=status==="Cancelled" ? -1 : steps.indexOf(status);
+  return steps.map(function(step,i){
+    const done=current>=i;
+    return '<div class="trackStep '+(done?"done ":"")+(status==="Cancelled"?"cancelAware":"")+'"><span>'+ (done ? "✓" : (i+1)) +'</span><small>'+escapeHtml(step==="New Order"?"Received":step)+'</small></div>';
+  }).join("");
+}
+
+function canCancelOrder(order){
+  return ["New Order","Confirmed"].includes(order.status);
+}
+
+async function cancelOrder(orderId){
+  const order=orders.find(function(o){return o.id===orderId;});
+  if(!order || !canCancelOrder(order)) return;
+  if(!confirm("Cancel order #"+order.id+"?")) return;
+  try{
+    await db.collection("orders").doc(orderId).update({
+      status:"Cancelled",
+      statusNote:"Cancelled by customer",
+      updatedAt:Date.now()
+    });
+  }catch(error){
+    alert("Could not cancel the order. Please try again.");
+    console.error("ALLways cancel order:",error);
+  }
+}
+
 function renderOrders(){
   const ordersList = document.getElementById("ordersList");
   if(!ordersList) return;
-
   if(!currentUser){
-    ordersList.innerHTML = `<div class="empty">Please sign in to view your orders.</div>`;
+    ordersList.innerHTML = '<div class="empty">Please sign in to view your orders.</div>';
     return;
   }
-
-  const myOrders = orders.filter(function(order){
-    return order.customerId === currentUser.uid;
-  });
-
+  const myOrders = orders.filter(function(order){ return order.customerId === currentUser.uid; });
   if(!myOrders.length){
-    ordersList.innerHTML = `<div class="empty">No orders yet.</div>`;
+    ordersList.innerHTML = '<div class="empty">No orders yet.</div>';
     return;
   }
-
   ordersList.innerHTML = myOrders.map(function(order){
     const itemText = (order.items || []).map(function(item){
-      return `${escapeHtml(item.name)} × ${item.qty}`;
+      return escapeHtml(item.name) + " × " + item.qty;
     }).join(", ");
-
-    return `
-      <div class="orderCard">
-        <div>
-          <b>#${escapeHtml(order.id)}</b>
-          <span class="status">${escapeHtml(order.status)}</span>
-        </div>
-        <p>${itemText}</p>
-        <b>₹${order.total}</b>
-        <small>${escapeHtml(order.time)}</small>
-      </div>
-    `;
+    const cancelled=order.status==="Cancelled";
+    const cancelButton=canCancelOrder(order)
+      ? '<button class="cancelOrderBtn" onclick="cancelOrder(\''+escapeHtml(order.id)+'\')">Cancel order</button>' : '';
+    const eta=order.estimatedDelivery
+      ? '<div class="etaBox">🚚 <b>Estimated delivery: '+escapeHtml(order.estimatedDelivery)+'</b>'+(order.statusNote?'<small>'+escapeHtml(order.statusNote)+'</small>':'')+'</div>'
+      : (order.statusNote ? '<div class="etaBox">ℹ️ '+escapeHtml(order.statusNote)+'</div>' : '');
+    return '<div class="orderCard '+(cancelled?"cancelled":"")+'">'+
+      '<div class="orderTop"><div><b>#'+escapeHtml(order.id)+'</b><span class="status '+(cancelled?"cancelledStatus":"")+'">'+escapeHtml(order.status)+'</span></div><b>₹'+escapeHtml(order.total)+'</b></div>'+
+      '<p>'+itemText+'</p>'+
+      (!cancelled ? '<div class="orderTracker">'+statusSteps(order.status)+'</div>' : '')+
+      eta+
+      '<small>Placed: '+escapeHtml(order.time)+'</small>'+
+      '<div class="orderActions">'+cancelButton+'</div>'+
+      '</div>';
   }).join("");
 }
 

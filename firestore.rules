@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function isAdmin() {
-      return signedIn() && request.auth.token.email == "PUT_YOUR_ADMIN_EMAIL_HERE";
+      return signedIn() && request.auth.token.email == "mauryasujeet698@gmail.com";
     }
     match /orders/{orderId} {
       allow create: if signedIn() && request.resource.data.customerId == request.auth.uid;

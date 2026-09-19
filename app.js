@@ -44,6 +44,8 @@ let currentUser = null;
 let firebaseReady = false;
 let db = null;
 let customerOrdersUnsubscribe = null;
+let savedAddresses = [];
+let favouriteIds = new Set();
 const ADMIN_EMAIL = "mauryasujeet698@gmail.com";
 let orders = [];
 
@@ -120,6 +122,51 @@ function renderCats(){
   });
 }
 
+function loadCustomerPreferences(){
+  if(!currentUser) return;
+  try {
+    savedAddresses=JSON.parse(localStorage.getItem("allwaysAddresses_"+currentUser.uid)||"[]");
+    favouriteIds=new Set(JSON.parse(localStorage.getItem("allwaysFavourites_"+currentUser.uid)||"[]"));
+  } catch(e){savedAddresses=[];favouriteIds=new Set();}
+}
+function saveCustomerPreferences(){
+  if(!currentUser) return;
+  try{
+    localStorage.setItem("allwaysAddresses_"+currentUser.uid,JSON.stringify(savedAddresses));
+    localStorage.setItem("allwaysFavourites_"+currentUser.uid,JSON.stringify(Array.from(favouriteIds)));
+  }catch(e){}
+}
+function toggleFavourite(id){
+  if(!currentUser){openAuth("Please sign in to save favourite products.");return;}
+  const key=String(id); if(favouriteIds.has(key)) favouriteIds.delete(key); else favouriteIds.add(key);
+  saveCustomerPreferences(); renderProducts();
+}
+function reorderOrder(orderId){
+  const order=orders.find(function(o){return o.id===orderId;}); if(!order||!order.items)return;
+  let skipped=[];
+  order.items.forEach(function(item){
+    const p=products.find(function(x){return String(x.id)===String(item.id);});
+    if(!p||p.stock<1){skipped.push(item.name);return;}
+    cart[p.id]=Math.min(p.stock,(cart[p.id]||0)+Number(item.qty||1));
+  });
+  updateCart();renderProducts();showSection("shop");
+  if(skipped.length)alert("Some items are unavailable: "+skipped.join(", "));
+}
+function saveAddressFromCheckout(){
+  if(!currentUser)return;
+  const n=document.getElementById("customerName"),ph=document.getElementById("phone"),a=document.getElementById("address");
+  const name=n?.value.trim(),phone=ph?.value.trim().replace(/\D/g,""),address=a?.value.trim();
+  if(!name||!/^\d{10}$/.test(phone||"")||!address)return;
+  if(!savedAddresses.some(function(x){return x.address.toLowerCase()===address.toLowerCase();})){
+    savedAddresses.unshift({id:"ADDR"+Date.now(),name:name,phone:phone,address:address});
+    savedAddresses=savedAddresses.slice(0,5);saveCustomerPreferences();
+  }
+}
+function chooseSavedAddress(id){
+  const a=savedAddresses.find(function(x){return x.id===id;});if(!a)return;
+  const n=document.getElementById("customerName"),p=document.getElementById("phone"),ad=document.getElementById("address");
+  if(n)n.value=a.name||"";if(p)p.value=a.phone||"";if(ad)ad.value=a.address||"";
+}
 function renderProducts(){
   const search = document.getElementById("search");
   const productsEl = document.getElementById("products");
@@ -127,11 +174,13 @@ function renderProducts(){
 
   if(!productsEl) return;
 
-  const q = search ? search.value.toLowerCase().trim() : "";
-  const list = products.filter(function(p){
-    const categoryMatch = selectedCat === "All" || p.cat === selectedCat;
-    const searchMatch = p.name.toLowerCase().includes(q);
-    return categoryMatch && searchMatch;
+  const q=search?search.value.toLowerCase().trim():"";
+  const terms=q.split(/\s+/).filter(Boolean);
+  const list=products.filter(function(p){
+    const haystack=[p.name,p.cat,p.description,p.brand].filter(Boolean).join(" ").toLowerCase();
+    const categoryMatch=selectedCat==="All"||p.cat===selectedCat;
+    const searchMatch=!terms.length||terms.every(function(t){return haystack.includes(t);});
+    return categoryMatch&&searchMatch;
   });
 
   if(count){
@@ -149,6 +198,7 @@ function renderProducts(){
         <div class="pic">${escapeHtml(p.icon)}</div>
         <h3>${escapeHtml(p.name)}</h3>
         <small>${escapeHtml(p.cat)}</small>
+        <button type="button" class="favBtn ${favouriteIds.has(String(p.id)) ? "saved" : ""}" data-fav-id="${escapeHtml(String(p.id))}">${favouriteIds.has(String(p.id)) ? "♥" : "♡"}</button>
         <div class="price">₹${p.price}</div>
         <div class="stock">${p.stock > 0 ? "● In stock" : "● Unavailable"}</div>
         ${cart[p.id] ? `
@@ -167,6 +217,7 @@ function renderProducts(){
     `;
   }).join("");
 
+  productsEl.querySelectorAll("[data-fav-id]").forEach(function(btn){btn.addEventListener("click",function(){toggleFavourite(btn.dataset.favId);});});
   productsEl.querySelectorAll(".add").forEach(function(btn){
     btn.addEventListener("click", function(){
       add(btn.dataset.id);

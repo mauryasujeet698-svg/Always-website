@@ -617,6 +617,8 @@ async function cancelOrder(orderId){
   }
 }
 
+async function rateOrder(orderId,rating){ const value=Number(rating); if(value<1||value>5)return; try{await db.collection("orders").doc(orderId).update({rating:value,ratedAt:Date.now()});}catch(error){console.error(error);alert("Could not save your rating. Please try again.");} }
+
 function renderOrders(){
   const ordersList = document.getElementById("ordersList");
   if(!ordersList) return;
@@ -634,6 +636,8 @@ function renderOrders(){
       return escapeHtml(item.name) + " × " + item.qty;
     }).join(", ");
     const cancelled=order.status==="Cancelled";
+    const ratingBlock=order.status==="Delivered" ? (order.rating ? '<div class="ratingDone">⭐ Rated: '+escapeHtml(order.rating)+'/5</div>' : '<div class="rateBox"><b>Rate your order</b><div class="stars"><button class="rateBtn" data-rate-id="'+escapeHtml(order.id)+'" data-rate="1">★</button><button class="rateBtn" data-rate-id="'+escapeHtml(order.id)+'" data-rate="2">★</button><button class="rateBtn" data-rate-id="'+escapeHtml(order.id)+'" data-rate="3">★</button><button class="rateBtn" data-rate-id="'+escapeHtml(order.id)+'" data-rate="4">★</button><button class="rateBtn" data-rate-id="'+escapeHtml(order.id)+'" data-rate="5">★</button></div></div>') : "";
+    const reorderButton=order.items&&order.items.length ? '<button class="secondary smallAction reorderBtn" data-reorder-id="'+escapeHtml(order.id)+'">↻ Reorder</button>' : "";
     const cancelButton=canCancelOrder(order)
       ? '<button class="cancelOrderBtn" onclick="cancelOrder(\''+escapeHtml(order.id)+'\')">Cancel order</button>' : '';
     const eta=order.estimatedDelivery
@@ -641,13 +645,14 @@ function renderOrders(){
       : (order.statusNote ? '<div class="etaBox">ℹ️ '+escapeHtml(order.statusNote)+'</div>' : '');
     return '<div class="orderCard '+(cancelled?"cancelled":"")+'">'+
       '<div class="orderTop"><div><b>#'+escapeHtml(order.id)+'</b><span class="status '+(cancelled?"cancelledStatus":"")+'">'+escapeHtml(order.status)+'</span></div><b>₹'+escapeHtml(order.total)+'</b></div>'+
-      '<p>'+itemText+'</p>'+
+      '<p>'+itemText+'</p>'+(order.cancellationReason ? '<div class="cancelReason">❌ Cancellation reason: '+escapeHtml(order.cancellationReason)+'</div>' : '')+
       (!cancelled ? '<div class="orderTracker">'+statusSteps(order.status)+'</div>' : '')+
       eta+
-      '<small>Placed: '+escapeHtml(order.time)+'</small>'+
-      '<div class="orderActions">'+cancelButton+'</div>'+
+      '<small>Placed: '+escapeHtml(order.time)+'</small>'+ratingBlock+'<div class="orderActions">'+reorderButton+cancelButton+'</div>'+
       '</div>';
   }).join("");
+  ordersList.querySelectorAll(".rateBtn").forEach(function(btn){btn.addEventListener("click",function(){rateOrder(btn.dataset.rateId,btn.dataset.rate);});});
+  ordersList.querySelectorAll(".reorderBtn").forEach(function(btn){btn.addEventListener("click",function(){reorderOrder(btn.dataset.reorderId);});});
 }
 
 

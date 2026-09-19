@@ -6,7 +6,7 @@ storageBucket:"allways-web.firebasestorage.app",
 messagingSenderId:"869987297351",
 appId:"1:869987297351:web:fde91fb46194a141976962",
 measurementId:"G-1N2DFFC7BT"};
-const ADMIN_EMAIL="PUT_YOUR_ADMIN_EMAIL_HERE";
+const ADMIN_EMAIL="mauryasujeet698@gmail.com";
 let db=null,allOrders=[],unsubscribe=null,initial=true;
 
 function esc(v){

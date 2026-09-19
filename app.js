@@ -603,11 +603,12 @@ function canCancelOrder(order){
 async function cancelOrder(orderId){
   const order=orders.find(function(o){return o.id===orderId;});
   if(!order || !canCancelOrder(order)) return;
-  if(!confirm("Cancel order #"+order.id+"?")) return;
+  const reason=prompt("Why are you cancelling this order?"); if(reason===null)return; const cleanReason=reason.trim(); if(!cleanReason){alert("Please enter a cancellation reason.");return;}
   try{
     await db.collection("orders").doc(orderId).update({
       status:"Cancelled",
       statusNote:"Cancelled by customer",
+      cancellationReason:cleanReason,
       updatedAt:Date.now()
     });
   }catch(error){

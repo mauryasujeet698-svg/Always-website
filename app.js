@@ -354,6 +354,7 @@ function openCheckout(){
   modalContent.innerHTML = `
     <h2>Complete your order</h2>
     <p class="muted">Signed in as <b>${escapeHtml(currentUser.email)}</b></p>
+    ${savedAddresses.length ? '<label>🏠 Saved address<select id="savedAddress" class="field"><option value="">Choose a saved address</option>${savedAddresses.map(function(a){return "<option value=\""+escapeHtml(a.id)+"\">"+escapeHtml(a.name+" — "+a.address.slice(0,55))+"</option>";}).join("")}</select></label>' : ""}
     <p class="muted">Open-box delivery: please check your items before accepting.</p>
     ${rows}
     <div class="checkout-row"><span>Subtotal</span><b>₹${subtotal}</b></div>
@@ -369,6 +370,9 @@ function openCheckout(){
     <button class="primary" id="placeOrderBtn">Place Order</button>
     <p class="policy">Open-box delivery: if an item is damaged, incorrect, expired, or otherwise not acceptable on inspection, you may reject the affected order at the doorstep without being charged.</p>
   `;
+
+  const savedAddressSelect=document.getElementById("savedAddress");
+  if(savedAddressSelect)savedAddressSelect.addEventListener("change",function(){chooseSavedAddress(savedAddressSelect.value);});
 
   const placeOrderBtn = document.getElementById("placeOrderBtn");
   if(placeOrderBtn){
@@ -474,6 +478,8 @@ async function placeOrder(subtotal, delivery, total){
     status: "New Order",
     estimatedDelivery: "",
     statusNote: "Order received",
+    cancellationReason: "",
+    rating: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     time: new Date().toLocaleString("en-IN")
@@ -489,6 +495,7 @@ async function placeOrder(subtotal, delivery, total){
   }
 
   orders.unshift(order);
+  saveAddressFromCheckout();
 
   try {
     localStorage.setItem("allwaysOrders", JSON.stringify(orders));

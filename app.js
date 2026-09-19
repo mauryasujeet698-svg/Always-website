@@ -46,6 +46,7 @@ let db = null;
 let customerOrdersUnsubscribe = null;
 let savedAddresses = [];
 let favouriteIds = new Set();
+let favouritesOnly = false;
 const ADMIN_EMAIL = "mauryasujeet698@gmail.com";
 let orders = [];
 
@@ -180,7 +181,8 @@ function renderProducts(){
     const haystack=[p.name,p.cat,p.description,p.brand].filter(Boolean).join(" ").toLowerCase();
     const categoryMatch=selectedCat==="All"||p.cat===selectedCat;
     const searchMatch=!terms.length||terms.every(function(t){return haystack.includes(t);});
-    return categoryMatch&&searchMatch;
+    const favouriteMatch=!favouritesOnly||favouriteIds.has(String(p.id));
+    return categoryMatch&&searchMatch&&favouriteMatch;
   });
 
   if(count){
@@ -551,10 +553,14 @@ function showThankYou(order){
       <h2>Thank you, ${escapeHtml(order.name)}!</h2>
       <p>Your ALLways order <b>#${escapeHtml(order.id)}</b> has been received.</p>
       <p>We’ll contact you on <b>${escapeHtml(order.phone)}</b> to confirm delivery.</p>
-      <div class="thankBox">
-        <b>Order total: ₹${order.total}</b><br>
-        <span>Keep your phone available for our delivery confirmation.</span>
+      <div class="thankBox" style="text-align:left">
+        <b>Order summary</b><br>
+        <span>${(order.items||[]).map(function(i){return escapeHtml(i.name)+" × "+i.qty+" — ₹"+(i.price*i.qty);}).join("<br>")}</span><hr>
+        <span>Subtotal: ₹${order.subtotal}</span><br>
+        <span>Delivery: ${order.delivery ? "₹"+order.delivery : "FREE"}</span><br>
+        <b>Total: ₹${order.total}</b>
       </div>
+      <p class="muted">You can track this order anytime from <b>My Orders</b>.</p>
       <button class="primary" id="continueShoppingBtn">Continue shopping</button>
     </div>
   `;
@@ -672,8 +678,10 @@ function showSection(id){
     tab.classList.toggle("active", tab.dataset.section === id);
   });
   if(id === "orders"){
+    favouritesOnly=false;
     renderOrders();
   }
+  if(id === "shop" && !document.getElementById("search")?.value){renderProducts();}
 }
 
 
@@ -973,7 +981,7 @@ function openAccount(){
       closeAuth();
     });
   }
-  if(favouritesBtn){favouritesBtn.addEventListener("click",function(){closeAuth();showSection("shop");alert("Your saved products are marked with ♥.");renderProducts();});}
+  if(favouritesBtn){favouritesBtn.addEventListener("click",function(){closeAuth();favouritesOnly=true;showSection("shop");renderProducts();});}
   if(addressesBtn){addressesBtn.addEventListener("click",function(){alert(savedAddresses.length?savedAddresses.map(function(a,i){return (i+1)+". "+a.name+" — "+a.address;}).join("\n"):"No saved addresses yet. Save one during checkout.");});}
   if(adminDashboardBtn){
     adminDashboardBtn.addEventListener("click", function(){ window.location.href = "admin.html"; });

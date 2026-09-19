@@ -140,12 +140,35 @@ function render(){
       "<div><small>Address</small><span>"+esc(o.address)+"</span>"+(o.note?"<span>📝 "+esc(o.note)+"</span>":"")+"</div></div>"+
       "<p class=\"adminItems\">"+items+"</p>"+
       "<div class=\"adminActions\"><select onchange=\"updateStatus('"+esc(o.id)+"',this.value)\">"+opts+"</select><a href=\"tel:"+esc(o.phone)+"\">📞 Call</a></div>"+
+      "<div class=\"adminEta\"><input id=\"eta_"+esc(o.id)+"\" value=\""+esc(o.estimatedDelivery||"")+"\" placeholder=\"Estimated delivery e.g. 35–45 min\"><button onclick=\"updateEta('"+esc(o.id)+"')\">Set ETA</button></div>"+
+      "<input class=\"adminNote\" id=\"note_"+esc(o.id)+"\" value=\""+esc(o.statusNote||"")+"\" placeholder=\"Customer update / note\">"+
+      "<button class=\"secondary\" onclick=\"updateOrderNote('"+esc(o.id)+"')\">Update customer message</button>"+
       "<small>"+esc(o.time||"")+"</small></article>";
   }).join("");
 }
 async function updateStatus(id,status){
-  try{await db.collection("orders").doc(id).update({status:status,updatedAt:Date.now()});}
-  catch(e){alert("Update failed: "+(e.code||e.message));}
+  try{
+    const note = status==="Confirmed" ? "Order confirmed" :
+      status==="Preparing" ? "Your order is being prepared" :
+      status==="Out for delivery" ? "Your order is on the way" :
+      status==="Delivered" ? "Order delivered" :
+      status==="Cancelled" ? "Order cancelled" : "Order received";
+    await db.collection("orders").doc(id).update({status:status,statusNote:note,updatedAt:Date.now()});
+  }catch(e){alert("Update failed: "+(e.code||e.message));}
+}
+async function updateEta(id){
+  const el=document.getElementById("eta_"+id);
+  if(!el)return;
+  try{
+    await db.collection("orders").doc(id).update({estimatedDelivery:el.value.trim(),updatedAt:Date.now()});
+  }catch(e){alert("ETA update failed: "+(e.code||e.message));}
+}
+async function updateOrderNote(id){
+  const el=document.getElementById("note_"+id);
+  if(!el)return;
+  try{
+    await db.collection("orders").doc(id).update({statusNote:el.value.trim(),updatedAt:Date.now()});
+  }catch(e){alert("Message update failed: "+(e.code||e.message));}
 }
 async function enableNotifications(){
   if(!("Notification" in window)){alert("Notifications are not supported.");return;}

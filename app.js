@@ -12,13 +12,13 @@ let inventoryLoaded = false;
    ========================================================= */
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBLnjczQY43c8cKzBSteoxPTFBzBFkBgCs",
-  authDomain: "allways-a2ac2.firebaseapp.com",
-  projectId: "allways-a2ac2",
-  storageBucket: "allways-a2ac2.firebasestorage.app",
-  messagingSenderId: "696197561195",
-  appId: "1:696197561195:web:47e6fb9c52b552d846ea2e",
-  measurementId: "G-RXVGPYP96C"
+  apiKey: "AIzaSyCopzTF-jwLnzcbCnW5Y9nIHYMkiinaZ28",
+  authDomain: "allways-web.firebaseapp.com",
+  projectId: "allways-web",
+  storageBucket: "allways-web.firebasestorage.app",
+  messagingSenderId: "869987297351",
+  appId: "1:869987297351:web:fde91fb46194a141976962",
+  measurementId: "G-1N2DFFC7BT"
 };
 
 
@@ -42,6 +42,8 @@ let cart = {};
 let selectedCat = "All";
 let currentUser = null;
 let firebaseReady = false;
+let db = null;
+let customerOrdersUnsubscribe = null;
 let orders = [];
 
 try {
@@ -199,6 +201,16 @@ function add(id){
   updateCart();
 }
 
+function changeQty(id, delta){
+  const product = products.find(function(p){ return p.id == id; });
+  if(!product) return;
+  const next = (cart[id] || 0) + delta;
+  if(next <= 0) delete cart[id];
+  else if(next <= product.stock) cart[id] = next;
+  else alert("Only " + product.stock + " " + product.name + " available.");
+  updateCart();
+}
+
 function updateCart(){
   let count = 0;
   let total = 0;
@@ -241,7 +253,12 @@ function openCheckout(){
     subtotal += itemTotal;
     rows += `
       <div class="checkout-row">
-        <span>${escapeHtml(product.name)} × ${quantity}</span>
+        <span>${escapeHtml(product.name)}</span>
+        <div class="qtyControl">
+          <button type="button" onclick="changeQty('${escapeHtml(String(id))}', -1)">−</button>
+          <b>${quantity}</b>
+          <button type="button" onclick="changeQty('${escapeHtml(String(id))}', 1)">+</button>
+        </div>
         <b>₹${itemTotal}</b>
       </div>
     `;
@@ -327,7 +344,7 @@ function useCurrentLocation(){
    PLACE ORDER
    ========================================================= */
 
-function placeOrder(subtotal, delivery, total){
+async function placeOrder(subtotal, delivery, total){
   if(!currentUser){
     openAuth("Please sign in before placing your order.");
     return;
@@ -377,6 +394,15 @@ function placeOrder(subtotal, delivery, total){
     status: "New Order",
     time: new Date().toLocaleString("en-IN")
   };
+
+  try {
+    if(!db) throw new Error("Firestore is not connected.");
+    await db.collection("orders").doc(order.id).set(order);
+  } catch(error) {
+    console.error("ALLways Firestore order save failed:", error);
+    alert("Order could not be saved. Please try again. " + (error.code || ""));
+    return;
+  }
 
   orders.unshift(order);
 
@@ -448,6 +474,21 @@ function showThankYou(order){
   }
 
   modal.classList.remove("hidden");
+}
+
+
+function listenToCustomerOrders(){
+  if(!db || !currentUser) return;
+  customerOrdersUnsubscribe = db.collection("orders")
+    .where("customerId", "==", currentUser.uid)
+    .onSnapshot(function(snapshot){
+      orders = snapshot.docs.map(function(doc){ return doc.data(); });
+      orders.sort(function(a,b){ return (b.createdAt || 0) - (a.createdAt || 0); });
+      try { localStorage.setItem("allwaysOrders", JSON.stringify(orders)); } catch(e) {}
+      renderOrders();
+    }, function(error){
+      console.error("ALLways customer orders listener:", error);
+    });
 }
 
 
@@ -559,6 +600,7 @@ function initAuth(){
     }
     const auth = firebase.auth();
     if(!auth) throw new Error("Firebase Auth is unavailable.");
+    db = firebase.firestore();
 
     firebaseReady = true;
     console.log("ALLways Firebase authentication connected.");
@@ -568,6 +610,11 @@ function initAuth(){
       console.log("ALLways auth state:", currentUser ? currentUser.email : "signed out");
       updateAuthButton();
       renderOrders();
+      if(customerOrdersUnsubscribe){
+        customerOrdersUnsubscribe();
+        customerOrdersUnsubscribe = null;
+      }
+      if(currentUser && db) listenToCustomerOrders();
     });
   } catch(error) {
     firebaseReady = false;
@@ -616,6 +663,8 @@ function openAuth(message=""){
       <p class="muted">Sign in or create your customer account with email.</p>
     </div>
     ${message ? `<div class="auth-note">${escapeHtml(message)}</div>` : ""}
+    <button class="googleBtn" id="googleSignInBtn">G&nbsp; Continue with Google</button>
+    <div class="orLine"><span>or use email</span></div>
     <label>📧 Email<input id="authEmail" class="field" type="email" autocomplete="email" placeholder="you@example.com"></label>
     <label>🔒 Password<input id="authPassword" class="field" type="password" autocomplete="current-password" placeholder="At least 6 characters"></label>
     <button class="primary" id="loginSubmitBtn">Sign in</button>
@@ -628,6 +677,8 @@ function openAuth(message=""){
   const loginBtn = document.getElementById("loginSubmitBtn");
   const signupBtn = document.getElementById("signupSubmitBtn");
   const resetBtn = document.getElementById("resetPasswordBtn");
+  const googleBtn = document.getElementById("googleSignInBtn");
+  if(googleBtn) googleBtn.addEventListener("click", googleSignIn);
   if(loginBtn) loginBtn.addEventListener("click", loginCustomer);
   if(signupBtn) signupBtn.addEventListener("click", signupCustomer);
   if(resetBtn) resetBtn.addEventListener("click", resetPassword);
@@ -643,6 +694,24 @@ function closeAuth(){
 function authMessage(message){
   const element = document.getElementById("authMsg");
   if(element) element.textContent = message;
+}
+
+
+async function googleSignIn(){
+  if(!firebaseReady){
+    authMessage("Firebase is not connected. Please refresh the page and try again.");
+    return;
+  }
+  authMessage("Opening Google sign-in…");
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({prompt:"select_account"});
+    await firebase.auth().signInWithPopup(provider);
+    closeAuth();
+  } catch(error) {
+    console.error("ALLways Google sign-in error:", error);
+    authMessage(authError(error));
+  }
 }
 
 

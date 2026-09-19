@@ -8,17 +8,17 @@ let inventoryLoaded = false;
 
 
 /* =========================================================
-   FIREBASE CONFIGURATION
+   FIREBASE CONFIGURATION — ALLways web
    ========================================================= */
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBLnjczQY43c8cKzBSteoxPTFBzBFkBgCs",
-  authDomain: "allways-a2ac2.firebaseapp.com",
-  projectId: "allways-a2ac2",
-  storageBucket: "allways-a2ac2.firebasestorage.app",
-  messagingSenderId: "696197561195",
-  appId: "1:696197561195:web:47e6fb9c52b552d846ea2e",
-  measurementId: "G-RXVGPYP96C"
+  apiKey: "AIzaSyCopzTF-jwLnzcbCnW5Y9nIHYMkiinaZ28",
+  authDomain: "allways-web.firebaseapp.com",
+  projectId: "allways-web",
+  storageBucket: "allways-web.firebasestorage.app",
+  messagingSenderId: "869987297351",
+  appId: "1:869987297351:web:fde91fb46194a141976962",
+  measurementId: "G-1N2DFFC7BT"
 };
 
 
@@ -29,7 +29,6 @@ const FIREBASE_CONFIG = {
 const CONFIG = {
   freeDeliveryThreshold: 499,
   standardDeliveryFee: 30,
-  /* GOOGLE APPS SCRIPT WEB APP */
   orderEndpoint: "https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec"
 };
 
@@ -42,6 +41,7 @@ let cart = {};
 let selectedCat = "All";
 let currentUser = null;
 let firebaseReady = false;
+let firestoreReady = false;
 let orders = [];
 
 try {
@@ -57,28 +57,27 @@ try {
 
 async function loadInventory(){
   try {
-    // cache: "no-store" + a cache-busting query param prevents the browser
-    // (and some intermediate caches) from serving a stale response after
-    // you edit the Google Sheet.
     const response = await fetch(
       CONFIG.orderEndpoint + (CONFIG.orderEndpoint.includes("?") ? "&" : "?") + "_=" + Date.now(),
       { cache: "no-store" }
     );
     const data = await response.json();
-
-    // Extract products from your JSON format
     let fetchedProducts = data.products || data;
 
-    // Ensure the app reads 'category' as 'cat'
     products = fetchedProducts.map(function(p){
-      return Object.assign({}, p, { cat: p.category || p.cat });
+      return Object.assign({}, p, {
+        cat: p.category || p.cat,
+        price: Number(p.price) || 0,
+        stock: Math.max(0, Number(p.stock) || 0)
+      });
     });
 
-    cats = ["All"].concat(Array.from(new Set(products.map(function(p){ return p.cat; }))));
+    cats = ["All"].concat(Array.from(new Set(products.map(function(p){ return p.cat; }).filter(Boolean))));
     inventoryLoaded = true;
 
     renderCats();
     renderProducts();
+    updateCart();
   } catch (error) {
     console.error("Error loading inventory from Google Sheets:", error);
   }
@@ -91,7 +90,7 @@ async function loadInventory(){
 
 function escapeHtml(value){
   return String(value ?? "").replace(/[&<>'"]/g, function(c){
-    return {"&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;"}[c];
+    return {"&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&#quot;" === "&#quot;" ? "&#34;" : "&#34;"}[c];
   });
 }
 
@@ -105,15 +104,11 @@ function renderCats(){
   if(!el) return;
 
   el.innerHTML = cats.map(function(c){
-    return `<button class="cat ${c === selectedCat ? "active" : ""}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`;
+    return '<button class="cat ' + (c === selectedCat ? "active" : "") + '" data-cat="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>';
   }).join("");
 
-  // Event delegation instead of inline onclick strings — avoids any
-  // HTML-entity-decoding edge cases with special characters in category names.
   el.querySelectorAll(".cat").forEach(function(btn){
-    btn.addEventListener("click", function(){
-      setCat(btn.dataset.cat);
-    });
+    btn.addEventListener("click", function(){ setCat(btn.dataset.cat); });
   });
 }
 
@@ -121,53 +116,59 @@ function renderProducts(){
   const search = document.getElementById("search");
   const productsEl = document.getElementById("products");
   const count = document.getElementById("count");
-
   if(!productsEl) return;
 
   const q = search ? search.value.toLowerCase().trim() : "";
   const list = products.filter(function(p){
     const categoryMatch = selectedCat === "All" || p.cat === selectedCat;
-    const searchMatch = p.name.toLowerCase().includes(q);
+    const searchMatch = String(p.name || "").toLowerCase().includes(q);
     return categoryMatch && searchMatch;
   });
 
-  if(count){
-    count.textContent = list.length + " shown";
-  }
+  if(count) count.textContent = list.length + " shown";
 
   if(!list.length){
-    productsEl.innerHTML = `<div class="empty">${inventoryLoaded ? "No matching items." : "Loading inventory…"}</div>`;
+    productsEl.innerHTML = '<div class="empty">' + (inventoryLoaded ? "No matching items." : "Loading inventory…") + '</div>';
     return;
   }
 
   productsEl.innerHTML = list.map(function(p){
+    const inCart = Number(cart[p.id] || 0);
+    const maxStock = Number(p.stock) || 0;
     return `
       <article class="product">
         <div class="pic">${escapeHtml(p.icon)}</div>
         <h3>${escapeHtml(p.name)}</h3>
         <small>${escapeHtml(p.cat)}</small>
         <div class="price">₹${p.price}</div>
-        <div class="stock">${p.stock > 0 ? "● In stock" : "● Unavailable"}</div>
-        <button class="add" data-id="${escapeHtml(String(p.id))}" ${p.stock < 1 ? "disabled" : ""}>
-          ${p.stock < 1 ? "Unavailable" : "Add"}
+        <div class="stock">${maxStock > 0 ? "● " + maxStock + " available" : "● Unavailable"}</div>
+        <div class="qty-control">
+          <button class="qty-btn" data-action="minus" data-id="${escapeHtml(String(p.id))}" ${inCart < 1 ? "disabled" : ""}>−</button>
+          <span class="qty-value">${inCart}</span>
+          <button class="qty-btn" data-action="plus" data-id="${escapeHtml(String(p.id))}" ${inCart >= maxStock ? "disabled" : ""}>+</button>
+        </div>
+        <button class="add" data-id="${escapeHtml(String(p.id))}" ${maxStock < 1 || inCart >= maxStock ? "disabled" : ""}>
+          ${maxStock < 1 ? "Unavailable" : inCart ? "Add another" : "Add to cart"}
         </button>
       </article>
     `;
   }).join("");
 
-  productsEl.querySelectorAll(".add").forEach(function(btn){
+  productsEl.querySelectorAll(".qty-btn").forEach(function(btn){
     btn.addEventListener("click", function(){
-      add(btn.dataset.id);
+      changeQuantity(btn.dataset.id, btn.dataset.action === "plus" ? 1 : -1);
     });
+  });
+
+  productsEl.querySelectorAll(".add").forEach(function(btn){
+    btn.addEventListener("click", function(){ add(btn.dataset.id); });
   });
 }
 
 function setCat(category){
   selectedCat = category;
   const title = document.getElementById("categoryTitle");
-  if(title){
-    title.textContent = category === "All" ? "All items" : category;
-  }
+  if(title) title.textContent = category === "All" ? "All items" : category;
   renderCats();
   renderProducts();
 }
@@ -178,45 +179,69 @@ function setCat(category){
    ========================================================= */
 
 function add(id){
+  changeQuantity(id, 1);
+}
+
+function changeQuantity(id, delta){
   if(!inventoryLoaded){
     alert("Inventory is still loading — please try again in a moment.");
     return;
   }
+
   if(!currentUser){
     openAuth("Please sign in or create an account before adding items to your cart.");
     return;
   }
-  const product = products.find(function(p){ return p.id == id; });
-  if(!product || product.stock < 1){ return; }
 
-  const next = (cart[id] || 0) + 1;
-  if(next > product.stock){
-    alert(`Only ${product.stock} ${product.name} available.`);
+  const product = products.find(function(p){ return p.id == id; });
+  if(!product || Number(product.stock) < 1) return;
+
+  const current = Number(cart[id] || 0);
+  const next = current + delta;
+
+  if(next < 0) return;
+
+  if(next > Number(product.stock)){
+    alert("Only " + product.stock + " " + product.name + " available.");
     return;
   }
 
-  cart[id] = next;
+  if(next === 0) delete cart[id];
+  else cart[id] = next;
+
   updateCart();
+  renderProducts();
 }
 
-function updateCart(){
+function removeFromCart(id){
+  delete cart[id];
+  updateCart();
+  renderProducts();
+}
+
+function getCartSummary(){
   let count = 0;
   let total = 0;
 
   Object.entries(cart).forEach(function([id, quantity]){
     const product = products.find(function(p){ return p.id == id; });
     if(!product) return;
-    count += quantity;
-    total += product.price * quantity;
+    count += Number(quantity);
+    total += Number(product.price) * Number(quantity);
   });
 
+  return {count: count, total: total};
+}
+
+function updateCart(){
+  const summary = getCartSummary();
   const cartItems = document.getElementById("cartItems");
   const cartTotal = document.getElementById("cartTotal");
   const cartBar = document.getElementById("cartBar");
 
-  if(cartItems) cartItems.textContent = count + " item" + (count === 1 ? "" : "s");
-  if(cartTotal) cartTotal.textContent = "₹" + total;
-  if(cartBar) cartBar.classList.toggle("hidden", count === 0);
+  if(cartItems) cartItems.textContent = summary.count + " item" + (summary.count === 1 ? "" : "s");
+  if(cartTotal) cartTotal.textContent = "₹" + summary.total;
+  if(cartBar) cartBar.classList.toggle("hidden", summary.count === 0);
 }
 
 
@@ -229,7 +254,9 @@ function openCheckout(){
     openAuth("Please sign in to continue to checkout.");
     return;
   }
-  if(!Object.keys(cart).length) return;
+
+  const summary = getCartSummary();
+  if(!summary.count) return;
 
   let rows = "";
   let subtotal = 0;
@@ -237,11 +264,21 @@ function openCheckout(){
   Object.entries(cart).forEach(function([id, quantity]){
     const product = products.find(function(p){ return p.id == id; });
     if(!product) return;
-    const itemTotal = product.price * quantity;
+
+    const itemTotal = Number(product.price) * Number(quantity);
     subtotal += itemTotal;
+
     rows += `
-      <div class="checkout-row">
-        <span>${escapeHtml(product.name)} × ${quantity}</span>
+      <div class="checkout-row cart-checkout-row">
+        <div>
+          <b>${escapeHtml(product.name)}</b>
+          <div class="checkout-qty">
+            <button class="qty-btn checkout-minus" data-id="${escapeHtml(String(id))}">−</button>
+            <span>${quantity}</span>
+            <button class="qty-btn checkout-plus" data-id="${escapeHtml(String(id))}">+</button>
+            <button class="remove-btn" data-id="${escapeHtml(String(id))}">Remove</button>
+          </div>
+        </div>
         <b>₹${itemTotal}</b>
       </div>
     `;
@@ -255,29 +292,37 @@ function openCheckout(){
   if(!modalContent || !modal) return;
 
   modalContent.innerHTML = `
-    <h2>Complete your order</h2>
-    <p class="muted">Signed in as <b>${escapeHtml(currentUser.email)}</b></p>
-    <p class="muted">Open-box delivery: please check your items before accepting.</p>
+    <h2>Your cart</h2>
+    <p class="muted">Signed in as <b>${escapeHtml(currentUser.email || "")}</b></p>
     ${rows}
     <div class="checkout-row"><span>Subtotal</span><b>₹${subtotal}</b></div>
     <div class="checkout-row"><span>Delivery</span><b>${delivery ? "₹" + delivery : "FREE 🎉"}</b></div>
     <div class="checkout-total">Total ₹${total}</div>
     <hr>
+    <h3>Delivery details</h3>
     <label>👤 Your name<input id="customerName" class="field" placeholder="Full name"></label>
     <label>📞 Phone number<input id="phone" class="field" type="tel" inputmode="tel" placeholder="10-digit mobile number"></label>
     <label>📍 Delivery address<textarea id="address" class="field" rows="3" placeholder="House no., village/area, landmark"></textarea></label>
     <button class="locationBtn" onclick="useCurrentLocation()">📍 Use my current location</button>
     <p id="locationMsg" class="muted"></p>
     <label>📝 Delivery note (optional)<textarea id="note" class="field" rows="2" placeholder="Any landmark or special instruction"></textarea></label>
-    <button class="primary" id="placeOrderBtn">Place Order</button>
+    <button class="primary" id="placeOrderBtn">Place Order · ₹${total}</button>
     <p class="policy">Open-box delivery: if an item is damaged, incorrect, expired, or otherwise not acceptable on inspection, you may reject the affected order at the doorstep without being charged.</p>
   `;
 
+  modalContent.querySelectorAll(".checkout-minus").forEach(function(btn){
+    btn.addEventListener("click", function(){ changeQuantity(btn.dataset.id, -1); openCheckout(); });
+  });
+  modalContent.querySelectorAll(".checkout-plus").forEach(function(btn){
+    btn.addEventListener("click", function(){ changeQuantity(btn.dataset.id, 1); openCheckout(); });
+  });
+  modalContent.querySelectorAll(".remove-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){ removeFromCart(btn.dataset.id); openCheckout(); });
+  });
+
   const placeOrderBtn = document.getElementById("placeOrderBtn");
   if(placeOrderBtn){
-    placeOrderBtn.addEventListener("click", function(){
-      placeOrder(subtotal, delivery, total);
-    });
+    placeOrderBtn.addEventListener("click", function(){ placeOrder(subtotal, delivery, total); });
   }
 
   modal.classList.remove("hidden");
@@ -296,6 +341,7 @@ function useCurrentLocation(){
     message.textContent = "Location is not supported on this device. Please enter your address manually.";
     return;
   }
+
   message.textContent = "Getting your location…";
 
   navigator.geolocation.getCurrentPosition(
@@ -305,13 +351,13 @@ function useCurrentLocation(){
       const address = document.getElementById("address");
 
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`, {headers:{"Accept":"application/json"}});
+        const response = await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + latitude + "&lon=" + longitude + "&zoom=18&addressdetails=1", {headers:{"Accept":"application/json"}});
         const data = await response.json();
         const locationAddress = data.address || {};
-        if(address) address.value = data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-        message.textContent = `Location found. ${locationAddress.village || locationAddress.town || locationAddress.city || "Area"}`;
+        if(address) address.value = data.display_name || (latitude.toFixed(6) + ", " + longitude.toFixed(6));
+        message.textContent = "Location found. " + (locationAddress.village || locationAddress.town || locationAddress.city || "Area");
       } catch(error) {
-        if(address) address.value = `Current location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        if(address) address.value = "Current location: " + latitude.toFixed(6) + ", " + longitude.toFixed(6);
         message.textContent = "Coordinates added. Please add your house number or landmark.";
       }
     },
@@ -327,7 +373,7 @@ function useCurrentLocation(){
    PLACE ORDER
    ========================================================= */
 
-function placeOrder(subtotal, delivery, total){
+async function placeOrder(subtotal, delivery, total){
   if(!currentUser){
     openAuth("Please sign in before placing your order.");
     return;
@@ -358,13 +404,18 @@ function placeOrder(subtotal, delivery, total){
 
   const items = Object.entries(cart).map(function([id, quantity]){
     const product = products.find(function(p){ return p.id == id; });
-    return { id: product.id, name: product.name, qty: quantity, price: product.price };
+    return {
+      id: product.id,
+      name: product.name,
+      qty: Number(quantity),
+      price: Number(product.price)
+    };
   });
 
   const order = {
     id: "AW" + Date.now().toString().slice(-7),
     customerId: currentUser.uid,
-    email: currentUser.email,
+    email: currentUser.email || "",
     name: name,
     phone: cleanPhone,
     address: address,
@@ -375,28 +426,54 @@ function placeOrder(subtotal, delivery, total){
     total: total,
     paymentMethod: "COD",
     status: "New Order",
-    time: new Date().toLocaleString("en-IN")
+    time: new Date().toLocaleString("en-IN"),
+    createdAt: new Date().toISOString()
   };
 
+  // Save locally as an offline fallback.
   orders.unshift(order);
-
   try {
     localStorage.setItem("allwaysOrders", JSON.stringify(orders));
   } catch(error) {
     console.log("Could not save order locally.", error);
   }
 
-  /* SEND ORDER TO GOOGLE APPS SCRIPT */
-  if(CONFIG.orderEndpoint){
-    sendOrderToBackend(order);
+  // Primary persistent order record.
+  const savedToFirebase = await saveOrderToFirestore(order);
+  if(!savedToFirebase){
+    console.warn("Order could not be saved to Firestore; keeping local/Sheet fallback.");
   }
+
+  // Keep the existing Google Sheets/Apps Script integration.
+  sendOrderToBackend(order);
 
   cart = {};
   updateCart();
+  renderProducts();
   closeModal();
   showSection("orders");
   renderOrders();
   showThankYou(order);
+}
+
+
+/* =========================================================
+   FIRESTORE ORDERS
+   ========================================================= */
+
+async function saveOrderToFirestore(order){
+  if(!firestoreReady || !window.firebase || !firebase.firestore) return false;
+
+  try {
+    await firebase.firestore().collection("orders").doc(order.id).set({
+      ...order,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return true;
+  } catch(error) {
+    console.error("ALLways Firestore order save failed:", error);
+    return false;
+  }
 }
 
 
@@ -443,10 +520,7 @@ function showThankYou(order){
   `;
 
   const continueBtn = document.getElementById("continueShoppingBtn");
-  if(continueBtn){
-    continueBtn.addEventListener("click", closeModal);
-  }
-
+  if(continueBtn) continueBtn.addEventListener("click", closeModal);
   modal.classList.remove("hidden");
 }
 
@@ -460,7 +534,7 @@ function renderOrders(){
   if(!ordersList) return;
 
   if(!currentUser){
-    ordersList.innerHTML = `<div class="empty">Please sign in to view your orders.</div>`;
+    ordersList.innerHTML = '<div class="empty">Please sign in to view your orders.</div>';
     return;
   }
 
@@ -469,21 +543,18 @@ function renderOrders(){
   });
 
   if(!myOrders.length){
-    ordersList.innerHTML = `<div class="empty">No orders yet.</div>`;
+    ordersList.innerHTML = '<div class="empty">No orders yet.</div>';
     return;
   }
 
   ordersList.innerHTML = myOrders.map(function(order){
     const itemText = (order.items || []).map(function(item){
-      return `${escapeHtml(item.name)} × ${item.qty}`;
+      return escapeHtml(item.name) + " × " + item.qty;
     }).join(", ");
 
     return `
       <div class="orderCard">
-        <div>
-          <b>#${escapeHtml(order.id)}</b>
-          <span class="status">${escapeHtml(order.status)}</span>
-        </div>
+        <div><b>#${escapeHtml(order.id)}</b><span class="status">${escapeHtml(order.status)}</span></div>
         <p>${itemText}</p>
         <b>₹${order.total}</b>
         <small>${escapeHtml(order.time)}</small>
@@ -498,19 +569,13 @@ function renderOrders(){
    ========================================================= */
 
 function showSection(id){
-  document.querySelectorAll(".section").forEach(function(section){
-    section.classList.add("hidden");
-  });
+  document.querySelectorAll(".section").forEach(function(section){ section.classList.add("hidden"); });
   const target = document.getElementById(id);
-  if(target){
-    target.classList.remove("hidden");
-  }
+  if(target) target.classList.remove("hidden");
   document.querySelectorAll(".tab").forEach(function(tab){
     tab.classList.toggle("active", tab.dataset.section === id);
   });
-  if(id === "orders"){
-    renderOrders();
-  }
+  if(id === "orders") renderOrders();
 }
 
 
@@ -522,7 +587,7 @@ function travelAction(type){
   const names = { ride: "Local rides", bus: "Bus tickets", train: "Train journeys", rental: "Vehicle rentals" };
   const message = document.getElementById("travelMsg");
   if(!message) return;
-  message.innerHTML = `<b>${escapeHtml(names[type] || "Travel")}</b> will be available soon in your area. We’re preparing the ALLways Travel experience.`;
+  message.innerHTML = "<b>" + escapeHtml(names[type] || "Travel") + "</b> will be available soon in your area. We’re preparing the ALLways Travel experience.";
 }
 
 
@@ -546,6 +611,7 @@ function firebaseConfigured(){
 
 function initAuth(){
   console.log("ALLways: starting Firebase authentication...");
+
   if(!firebaseConfigured()){
     firebaseReady = false;
     updateAuthButton();
@@ -557,20 +623,25 @@ function initAuth(){
     if(!firebase.apps || firebase.apps.length === 0){
       firebase.initializeApp(FIREBASE_CONFIG);
     }
+
     const auth = firebase.auth();
     if(!auth) throw new Error("Firebase Auth is unavailable.");
 
     firebaseReady = true;
-    console.log("ALLways Firebase authentication connected.");
+    firestoreReady = !!firebase.firestore;
+
+    console.log("ALLways Firebase connected to project:", FIREBASE_CONFIG.projectId);
 
     auth.onAuthStateChanged(function(user){
       currentUser = user || null;
       console.log("ALLways auth state:", currentUser ? currentUser.email : "signed out");
       updateAuthButton();
       renderOrders();
+      closeAuth();
     });
   } catch(error) {
     firebaseReady = false;
+    firestoreReady = false;
     console.error("ALLways Firebase initialization failed:", error);
     updateAuthButton();
   }
@@ -613,36 +684,63 @@ function openAuth(message=""){
     <div class="auth-head">
       <span class="auth-icon">👤</span>
       <h2>ALLways Account</h2>
-      <p class="muted">Sign in or create your customer account with email.</p>
+      <p class="muted">Sign in or create your customer account.</p>
     </div>
-    ${message ? `<div class="auth-note">${escapeHtml(message)}</div>` : ""}
+    ${message ? '<div class="auth-note">' + escapeHtml(message) + '</div>' : ""}
     <label>📧 Email<input id="authEmail" class="field" type="email" autocomplete="email" placeholder="you@example.com"></label>
     <label>🔒 Password<input id="authPassword" class="field" type="password" autocomplete="current-password" placeholder="At least 6 characters"></label>
     <button class="primary" id="loginSubmitBtn">Sign in</button>
+    <button class="googleBtn" id="googleSignInBtn">🔵 Continue with Google</button>
     <button class="secondary" id="signupSubmitBtn">Create new account</button>
     <button class="textBtn" id="resetPasswordBtn">Forgot password?</button>
     <p id="authMsg" class="muted auth-msg"></p>
-    <p class="policy">Your account is handled by Firebase Authentication. ALLways does not store your password in the Google Sheet.</p>
+    <p class="policy">Your account is handled by Firebase Authentication. ALLways does not store your password in Google Sheets.</p>
   `;
 
   const loginBtn = document.getElementById("loginSubmitBtn");
   const signupBtn = document.getElementById("signupSubmitBtn");
+  const googleBtn = document.getElementById("googleSignInBtn");
   const resetBtn = document.getElementById("resetPasswordBtn");
+
   if(loginBtn) loginBtn.addEventListener("click", loginCustomer);
   if(signupBtn) signupBtn.addEventListener("click", signupCustomer);
+  if(googleBtn) googleBtn.addEventListener("click", signInWithGoogle);
   if(resetBtn) resetBtn.addEventListener("click", resetPassword);
 
   modal.classList.remove("hidden");
 }
 
-function closeAuth(){
-  const modal = document.getElementById("authModal");
-  if(modal) modal.classList.add("hidden");
-}
 
-function authMessage(message){
-  const element = document.getElementById("authMsg");
-  if(element) element.textContent = message;
+/* =========================================================
+   GOOGLE SIGN-IN
+   ========================================================= */
+
+async function signInWithGoogle(){
+  if(!firebaseReady){
+    authMessage("Firebase is not connected. Please refresh the page and try again.");
+    return;
+  }
+
+  authMessage("Opening Google sign-in…");
+
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    await firebase.auth().signInWithPopup(provider);
+    closeAuth();
+  } catch(error) {
+    console.error("ALLways Google sign-in error:", error);
+
+    if(error && error.code === "auth/popup-blocked"){
+      authMessage("Your browser blocked the Google sign-in popup. Please allow popups for this site and try again.");
+    } else if(error && error.code === "auth/popup-closed-by-user"){
+      authMessage("Google sign-in was cancelled.");
+    } else if(error && error.code === "auth/unauthorized-domain"){
+      authMessage("This website domain is not authorized in Firebase yet.");
+    } else {
+      authMessage(authError(error));
+    }
+  }
 }
 
 
@@ -655,6 +753,7 @@ async function loginCustomer(){
     authMessage("Firebase is not connected. Please refresh the page and try again.");
     return;
   }
+
   const emailElement = document.getElementById("authEmail");
   const passwordElement = document.getElementById("authPassword");
   if(!emailElement || !passwordElement) return;
@@ -668,6 +767,7 @@ async function loginCustomer(){
   }
 
   authMessage("Signing in…");
+
   try {
     await firebase.auth().signInWithEmailAndPassword(email, password);
     closeAuth();
@@ -687,6 +787,7 @@ async function signupCustomer(){
     authMessage("Firebase is not connected. Please refresh the page and try again.");
     return;
   }
+
   const emailElement = document.getElementById("authEmail");
   const passwordElement = document.getElementById("authPassword");
   if(!emailElement || !passwordElement) return;
@@ -698,12 +799,14 @@ async function signupCustomer(){
     authMessage("Enter an email and password.");
     return;
   }
+
   if(password.length < 6){
     authMessage("Password must be at least 6 characters.");
     return;
   }
 
   authMessage("Creating your account…");
+
   try {
     await firebase.auth().createUserWithEmailAndPassword(email, password);
     closeAuth();
@@ -723,6 +826,7 @@ async function resetPassword(){
     authMessage("Firebase is not connected. Please refresh the page and try again.");
     return;
   }
+
   const emailElement = document.getElementById("authEmail");
   if(!emailElement) return;
 
@@ -751,6 +855,7 @@ function openAccount(){
     openAuth();
     return;
   }
+
   const content = document.getElementById("authContent");
   const modal = document.getElementById("authModal");
   if(!content || !modal) return;
@@ -759,7 +864,7 @@ function openAccount(){
     <div class="auth-head">
       <span class="auth-icon">✓</span>
       <h2>Your ALLways Account</h2>
-      <p class="muted">${escapeHtml(currentUser.email)}</p>
+      <p class="muted">${escapeHtml(currentUser.email || "")}</p>
     </div>
     <button class="primary" id="myOrdersBtn">📦 My Orders</button>
     <button class="secondary" id="signOutBtn">Sign out</button>
@@ -767,16 +872,15 @@ function openAccount(){
 
   const myOrdersBtn = document.getElementById("myOrdersBtn");
   const signOutBtn = document.getElementById("signOutBtn");
+
   if(myOrdersBtn){
     myOrdersBtn.addEventListener("click", function(){
       showSection("orders");
       closeAuth();
     });
   }
-  if(signOutBtn){
-    signOutBtn.addEventListener("click", signOutCustomer);
-  }
 
+  if(signOutBtn) signOutBtn.addEventListener("click", signOutCustomer);
   modal.classList.remove("hidden");
 }
 
@@ -787,14 +891,14 @@ function openAccount(){
 
 async function signOutCustomer(){
   try {
-    if(firebaseReady){
-      await firebase.auth().signOut();
-    }
+    if(firebaseReady) await firebase.auth().signOut();
   } catch(error) {
     console.error("ALLways sign-out error:", error);
   }
+
   cart = {};
   updateCart();
+  renderProducts();
   closeAuth();
   showSection("shop");
 }
@@ -806,10 +910,11 @@ async function signOutCustomer(){
 
 function authError(error){
   const code = error && error.code ? error.code : "";
+
   const messages = {
     "auth/invalid-email": "Please enter a valid email address.",
     "auth/user-disabled": "This account has been disabled.",
-    "auth/user-not-found": "No account exists with this email.",
+    "auth/user-not-found": "No account exists with this email. Use Create new account first.",
     "auth/wrong-password": "Incorrect password.",
     "auth/invalid-credential": "Email or password is incorrect.",
     "auth/weak-password": "Password is too weak. Use at least 6 characters.",
@@ -817,14 +922,12 @@ function authError(error){
     "auth/operation-not-allowed": "Email/password login is not enabled in Firebase.",
     "auth/too-many-requests": "Too many attempts. Please wait and try again.",
     "auth/network-request-failed": "Network error. Check your internet connection.",
-    "auth/internal-error": "Firebase returned an internal error. Please try again."
+    "auth/internal-error": "Firebase returned an internal error. Please try again.",
+    "auth/account-exists-with-different-credential": "This email already has an account using another sign-in method. Use that method first.",
+    "auth/cancelled-popup-request": "Another sign-in window is already open."
   };
 
-  if(messages[code]){
-    return messages[code];
-  }
-  console.error("Unknown Firebase error code:", code, error);
-  return code ? `Firebase error: ${code}` : "Something went wrong. Please try again.";
+  return messages[code] || (code ? "Firebase error: " + code : "Something went wrong. Please try again.");
 }
 
 
@@ -836,27 +939,18 @@ function startALLways(){
   console.log("ALLways application starting...");
 
   document.querySelectorAll(".tab").forEach(function(tab){
-    tab.onclick = function(){
-      showSection(tab.dataset.section);
-    };
+    tab.onclick = function(){ showSection(tab.dataset.section); };
   });
 
   const search = document.getElementById("search");
-  if(search){
-    search.addEventListener("input", renderProducts);
-  }
+  if(search) search.addEventListener("input", renderProducts);
 
   const checkoutBtn = document.getElementById("checkoutBtn");
-  if(checkoutBtn){
-    checkoutBtn.addEventListener("click", openCheckout);
-  }
+  if(checkoutBtn) checkoutBtn.addEventListener("click", openCheckout);
 
   updateCart();
   renderOrders();
-
-  // FETCH LIVE DATA FROM GOOGLE SHEETS
   loadInventory();
-
   initAuth();
 }
 

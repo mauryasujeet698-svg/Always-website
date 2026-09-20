@@ -42,12 +42,77 @@ jobs:
           flutter create . --platforms=android --org com.allways.app
           if [ -f /tmp/google-services.json ]; then mkdir -p android/app; cp /tmp/google-services.json android/app/google-services.json; fi
 
+      - name: Configure ALLways Android package and Firebase Google Services
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          target_package = "com.allways.app"
+
+          # flutter create --org com.allways.app would otherwise produce
+          # com.allways.app.allways_app. ALLways is already registered in
+          # Firebase/Google OAuth as com.allways.app, so force the exact ID.
+          app = Path("android/app")
+          groovy = app / "build.gradle"
+          kotlin = app / "build.gradle.kts"
+          settings_groovy = Path("android/settings.gradle")
+          settings_kotlin = Path("android/settings.gradle.kts")
+
+          if groovy.exists():
+              p = groovy
+              s = p.read_text()
+              s = re.sub(r'namespace\\s+["\\'][^"\\']+["\\']', 'namespace "' + target_package + '"', s, count=1)
+              s = re.sub(r'applicationId\\s+["\\'][^"\\']+["\\']', 'applicationId "' + target_package + '"', s, count=1)
+              p.write_text(s)
+          elif kotlin.exists():
+              p = kotlin
+              s = p.read_text()
+              s = re.sub(r'namespace\\s*=\\s*"[^"]+"', 'namespace = "' + target_package + '"', s, count=1)
+              s = re.sub(r'applicationId\\s*=\\s*"[^"]+"', 'applicationId = "' + target_package + '"', s, count=1)
+              p.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle file found")
+
+          # Apply the official Google Services Gradle plugin so the checked-in
+          # google-services.json is actually processed during the build.
+          if settings_groovy.exists():
+              p = settings_groovy
+              s = p.read_text()
+              if 'com.google.gms.google-services' not in s:
+                  marker = 'plugins {'
+                  s = s.replace(marker, marker + '\\n    id "com.google.gms.google-services" version "4.5.0" apply false', 1)
+              p.write_text(s)
+              app_text = groovy.read_text() if groovy.exists() else ""
+              if 'com.google.gms.google-services' not in app_text:
+                  app_text = app_text.replace('plugins {', 'plugins {\\n    id "com.google.gms.google-services"', 1)
+                  groovy.write_text(app_text)
+          elif settings_kotlin.exists():
+              p = settings_kotlin
+              s = p.read_text()
+              if 'com.google.gms.google-services' not in s:
+                  marker = 'plugins {'
+                  s = s.replace(marker, marker + '\\n    id("com.google.gms.google-services") version "4.5.0" apply false', 1)
+              p.write_text(s)
+              app_text = kotlin.read_text() if kotlin.exists() else ""
+              if 'com.google.gms.google-services' not in app_text:
+                  app_text = app_text.replace('plugins {', 'plugins {\\n    id("com.google.gms.google-services")', 1)
+                  kotlin.write_text(app_text)
+          else:
+              raise SystemExit("No Android settings Gradle file found")
+          PY
+
+          grep -R -n 'applicationId.*com.allways.app' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
+
       - name: Verify Firebase configuration
         run: |
           cd mobile
           test -f android/app/google-services.json
           grep -q '"client_type": 1' android/app/google-services.json
           grep -q '"package_name": "com.allways.app"' android/app/google-services.json
+          grep -q 'com.allways.app' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null
+          grep -q 'com.google.gms.google-services' android/settings.gradle android/settings.gradle.kts 2>/dev/null
 
       - name: Configure permanent ALLways release signing
         env:

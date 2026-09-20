@@ -393,7 +393,10 @@ class _AuthState extends State<AuthScreen>{
     setState(() => busy = true);
     try {
       final signIn = GoogleSignIn.instance;
-      await signIn.signOut();
+      // Do not sign out immediately before authentication. With Android's
+      // Credential Manager flow this can force an unnecessary account reauth
+      // and surface as [16] Account reauth failed. authenticate() can show
+      // the account chooser itself when needed.
       final GoogleSignInAccount account = await signIn.authenticate();
       final GoogleSignInAuthentication auth = account.authentication;
       final idToken = auth.idToken;

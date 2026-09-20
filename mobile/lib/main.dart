@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -135,6 +137,19 @@ class _ShellState extends State<Shell> {
   void msg(String s){if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s)));}
   void login(){Navigator.push(context,MaterialPageRoute(builder:(_)=>const AuthScreen()));}
 
+  Future<void> cancelOrder(String payload) async {
+    if(user==null)return;
+    final parts=payload.split('||');final orderId=parts.first;final reason=parts.length>1&&parts[1].trim().isNotEmpty?parts.sublist(1).join('||').trim():'Customer requested cancellation';
+    try{
+      final snap=await FirebaseFirestore.instance.collection('orders').doc(orderId).get();
+      if(!snap.exists){msg('Order not found.');return;}
+      final o=snap.data()??{};if(o['customerId']!=user!.uid){msg('You cannot cancel this order.');return;}
+      final status=(o['status']??'').toString();if(status!='New Order'&&status!='Confirmed'){msg('This order can no longer be cancelled.');return;}
+      await FirebaseFirestore.instance.collection('orders').doc(orderId).update({'status':'Cancelled','statusNote':'Cancelled by customer','cancellationReason':reason,'updatedAt':DateTime.now().millisecondsSinceEpoch});
+      msg('Order #'+orderId+' cancelled.');
+    }catch(e){msg('Could not cancel the order. Please try again.');}
+  }
+
   Future<void> loadAddresses() async {
     if(user==null)return;
     try{
@@ -170,15 +185,19 @@ class _ShellState extends State<Shell> {
       await FirebaseFirestore.instance.collection('orders').doc(id).set(order);
       await saveAddress(name.trim(),ph,address.trim());
       setState(()=>cart.clear());
-      if(mounted){setState(()=>tab=2);msg('Order #'+id+' placed successfully • COD');}
+      if(mounted){
+        Navigator.of(context).pop();
+        setState(()=>tab=0);
+        await showDialog(context:context,builder:(_)=>AlertDialog(title:const Text('Thank you for your order!'),content:Text('Your order #'+id+' has been placed successfully. We will contact you to confirm delivery.'),actions:[FilledButton(onPressed:()=>Navigator.pop(context),child:const Text('Continue shopping'))]));
+      }
     }catch(e){msg('Order could not be saved. Please try again.');}
   }
 
   Widget build(BuildContext c){
     final pages=[
-      ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add),
+      ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty),
       const Center(child:Text('Travel — Coming Soon',style:TextStyle(fontSize:20))),
-      OrdersPage(user:user),
+      OrdersPage(user:user,onCancel:cancelOrder),
       ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress),
     ];
     return Scaffold(
@@ -205,7 +224,8 @@ class _ShellState extends State<Shell> {
 
 class ShopPage extends StatefulWidget {
   final List<Product> products;final bool loading;final String? error;final Future<void> Function({bool silent}) onRefresh;final void Function(Product) onAdd;
-  const ShopPage({super.key,required this.products,required this.loading,required this.error,required this.onRefresh,required this.onAdd});
+  final Map<String,CartItem> cart;final void Function(String,int) onQty;
+  const ShopPage({super.key,required this.products,required this.loading,required this.error,required this.onRefresh,required this.onAdd,required this.cart,required this.onQty});
   State<ShopPage> createState()=>_ShopPageState();
 }
 class _ShopPageState extends State<ShopPage>{
@@ -227,7 +247,9 @@ class _ShopPageState extends State<ShopPage>{
         onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p)))),
         leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
         subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
-        trailing:IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart))))),
+        trailing:widget.cart.containsKey(p.id)
+          ? Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline))])
+          : IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart))))),
     ]));
   }
 }
@@ -250,9 +272,27 @@ class CartScreen extends StatefulWidget{
   State<CartScreen> createState()=>_CartScreenState();
 }
 class _CartScreenState extends State<CartScreen>{
-  final n=TextEditingController(),p=TextEditingController(),a=TextEditingController(),note=TextEditingController();bool placing=false;
+  final n=TextEditingController(),p=TextEditingController(),a=TextEditingController(),note=TextEditingController();bool placing=false,locating=false;
   @override void dispose(){n.dispose();p.dispose();a.dispose();note.dispose();super.dispose();}
   void use(Map<String,dynamic> x){n.text=(x['name']??'').toString();p.text=(x['phone']??'').toString();a.text=(x['address']??'').toString();setState((){});}
+  Future<void> useCurrentLocation() async {
+    setState(()=>locating=true);
+    try{
+      if(!await Geolocator.isLocationServiceEnabled()){msg('Please turn on Location/GPS and try again.');return;}
+      var permission=await Geolocator.checkPermission();
+      if(permission==LocationPermission.denied)permission=await Geolocator.requestPermission();
+      if(permission==LocationPermission.denied||permission==LocationPermission.deniedForever){msg('Location permission was not granted. Please enter your address manually.');return;}
+      final pos=await Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high));
+      try{
+        final marks=await placemarkFromCoordinates(pos.latitude,pos.longitude);
+        if(marks.isNotEmpty){final x=marks.first;final parts=[x.name,x.subLocality,x.locality,x.subAdministrativeArea,x.administrativeArea,x.postalCode].where((v)=>v!=null&&v!.trim().isNotEmpty).map((v)=>v!.trim()).toList();a.text=parts.toSet().join(', ');}
+      }catch(_){ }
+      if(a.text.trim().isEmpty)a.text='Current location: '+pos.latitude.toStringAsFixed(6)+', '+pos.longitude.toStringAsFixed(6);
+      msg('Current location added. Please add your house number or landmark if needed.');
+    }catch(_){msg('Could not get your current location. Please enter the address manually.');}
+    finally{if(mounted)setState(()=>locating=false);}
+  }
+  void msg(String text){if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));}
   Widget build(BuildContext c){
     final sub=widget.cart.values.fold<num>(0,(s,x)=>s+x.product.price*x.qty);final fee=sub>=499?0:30;final grand=sub+fee;
     return Scaffold(appBar:AppBar(title:const Text('Cart & Checkout')),body:ListView(padding:const EdgeInsets.all(16),children:[
@@ -262,7 +302,10 @@ class _CartScreenState extends State<CartScreen>{
       if(widget.addresses.isNotEmpty) ...[const Text('Saved addresses'),...widget.addresses.map((x)=>Card(child:ListTile(onTap:()=>use(x),leading:const Icon(Icons.location_on_outlined),title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:const Icon(Icons.arrow_forward_ios,size:15))))],
       TextField(controller:n,decoration:const InputDecoration(labelText:'Full name')),const SizedBox(height:9),
       TextField(controller:p,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'10-digit phone number')),const SizedBox(height:9),
-      TextField(controller:a,maxLines:3,decoration:const InputDecoration(labelText:'Delivery address')),const SizedBox(height:9),
+      TextField(controller:a,maxLines:3,decoration:const InputDecoration(labelText:'Delivery address')),
+      const SizedBox(height:6),
+      OutlinedButton.icon(onPressed:locating?null:useCurrentLocation,icon:locating?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.my_location),label:Text(locating?'Getting location…':'Use current location')),
+      const SizedBox(height:9),
       TextField(controller:note,maxLines:2,decoration:const InputDecoration(labelText:'Delivery note (optional)')),const SizedBox(height:14),
       Card(child:Padding(padding:const EdgeInsets.all(15),child:Column(children:[Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[const Text('Subtotal'),Text('₹'+sub.toStringAsFixed(0))]),Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[const Text('Delivery'),Text(fee==0?'FREE':'₹'+fee.toString())]),const Divider(),Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[const Text('Total',style:TextStyle(fontWeight:FontWeight.w900)),Text('₹'+grand.toStringAsFixed(0),style:const TextStyle(fontWeight:FontWeight.w900))]),const SizedBox(height:7),const Align(alignment:Alignment.centerLeft,child:Text('Payment: Cash on Delivery (COD)',style:TextStyle(fontWeight:FontWeight.w700)))]))),
       const SizedBox(height:12),FilledButton(onPressed:placing?null:()async{setState(()=>placing=true);await widget.onPlace(n.text,p.text,a.text,note.text);if(mounted)setState(()=>placing=false);},child:Text(placing?'Placing order…':'Place COD Order'))
@@ -271,7 +314,8 @@ class _CartScreenState extends State<CartScreen>{
 }
 
 class OrdersPage extends StatelessWidget{
-  final User? user;const OrdersPage({super.key,required this.user});
+  final User? user;final Future<void> Function(String) onCancel;
+  const OrdersPage({super.key,required this.user,required this.onCancel});
   Widget build(BuildContext c){
     if(user==null)return const InfoCard(title:'Your orders',detail:'Sign in to place and track your ALLways orders.');
     return StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').where('customerId',isEqualTo:user!.uid).snapshots(),builder:(c,s){
@@ -281,14 +325,21 @@ class OrdersPage extends StatelessWidget{
       return ListView(padding:const EdgeInsets.all(16),children:[
         const Text('Your Orders',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
         if(docs.isEmpty)const InfoCard(title:'No orders yet',detail:'Your placed orders will appear here.'),
-        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final items=(o['items'] as List? ?? []).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
+        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final canCancel=status=='New Order'||status=='Confirmed';final items=(o['items'] as List? ?? []).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
           return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(status+' • ₹'+(o['total']??0).toString()),children:[
             Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               StatusView(status:status),if((o['estimatedDelivery']??'').toString().isNotEmpty)Text('ETA: '+o['estimatedDelivery'].toString(),style:const TextStyle(fontWeight:FontWeight.w700)),
-              const SizedBox(height:5),Text((o['statusNote']??'').toString()),const SizedBox(height:8),Text(items),Text('Address: '+(o['address']??'').toString())
+              const SizedBox(height:5),Text((o['statusNote']??'').toString()),const SizedBox(height:8),Text(items),Text('Address: '+(o['address']??'').toString()),
+              if((o['cancellationReason']??'').toString().isNotEmpty)Padding(padding:const EdgeInsets.only(top:8),child:Text('Cancellation reason: '+o['cancellationReason'].toString())),
+              if(canCancel)Padding(padding:const EdgeInsets.only(top:12),child:OutlinedButton.icon(onPressed:()=>_confirmCancel(c,o['id']?.toString()??d.id,onCancel),icon:const Icon(Icons.cancel_outlined),label:const Text('Cancel order')))
             ]))]));})
       ]);
     });
+  }
+  Future<void> _confirmCancel(BuildContext c,String id,Future<void> Function(String) cancel) async {
+    final reason=TextEditingController();
+    final ok=await showDialog<bool>(context:c,builder:(_)=>AlertDialog(title:const Text('Cancel order?'),content:TextField(controller:reason,maxLines:3,decoration:const InputDecoration(labelText:'Reason for cancellation')),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Keep order')),FilledButton(onPressed:()=>Navigator.pop(c,reason.text.trim().isNotEmpty),child:const Text('Cancel order'))]))??false;
+    final clean=reason.text.trim();reason.dispose();if(ok)await cancel(id+'||'+clean);
   }
 }
 class StatusView extends StatelessWidget{final String status;const StatusView({super.key,required this.status});Widget build(BuildContext c){

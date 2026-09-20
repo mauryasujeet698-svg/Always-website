@@ -8,8 +8,19 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow create: if signedIn() && request.resource.data.customerId == request.auth.uid;
       allow read: if signedIn() && (resource.data.customerId == request.auth.uid || isAdmin());
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.customerId == request.auth.uid
+          && resource.data.status in ['New Order', 'Confirmed']
+          && request.resource.data.customerId == resource.data.customerId
+          && request.resource.data.status == 'Cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusNote', 'cancellationReason', 'updatedAt'])
+        );
       allow delete: if false;
+    }
+    match /customers/{uid}/addresses/{addressId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
     }
   }
 }

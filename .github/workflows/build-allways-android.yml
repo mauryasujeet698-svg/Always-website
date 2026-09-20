@@ -70,6 +70,14 @@ jobs:
         run: |
           cd mobile
           flutter pub get
+      - name: Flutter analyze and tests
+        run: |
+          cd mobile
+          flutter analyze
+          flutter test
+          cd ..
+          node --check functions/index.js
+
       - name: Build release APK
         run: |
           cd mobile

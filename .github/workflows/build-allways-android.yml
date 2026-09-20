@@ -16,59 +16,44 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.35.2"
           channel: stable
           cache: true
-
       - name: Generate Android project
         run: |
           cd mobile
-          if [ -f android/app/google-services.json ]; then
-            cp android/app/google-services.json /tmp/google-services.json
-          fi
+          if [ -f android/app/google-services.json ]; then cp android/app/google-services.json /tmp/google-services.json; fi
           rm -rf android
           flutter create . --platforms=android --org com.allways.app
-          if [ -f /tmp/google-services.json ]; then
-            mkdir -p android/app
-            cp /tmp/google-services.json android/app/google-services.json
-          fi
-
+          if [ -f /tmp/google-services.json ]; then mkdir -p android/app; cp /tmp/google-services.json android/app/google-services.json; fi
       - name: Verify Firebase configuration
         run: |
           cd mobile
-          if [ ! -f android/app/google-services.json ]; then
-            echo "google-services.json is missing."
-            echo "Expected: mobile/android/app/google-services.json"
-            exit 1
-          fi
-
-      - name: Get packages
-        run: |
-          cd mobile
-          flutter pub get
-
-      - name: Set ALLways app label
+          test -f android/app/google-services.json
+      - name: Set ALLways app label and notification permission
         run: |
           cd mobile
           python3 - <<'PY'
           from pathlib import Path
           p=Path('android/app/src/main/AndroidManifest.xml')
           s=p.read_text()
-          s=s.replace('android:label="${applicationName}"','android:label="ALLways"')
-          if 'android.permission.REQUEST_INSTALL_PACKAGES' not in s:
-              s=s.replace('<application ', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application ', 1)
+          s=s.replace('android:label="\${applicationName}"','android:label="ALLways"')
+          s=s.replace('    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\\n','')
+          if 'android.permission.POST_NOTIFICATIONS' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\\n    <application ', 1)
           p.write_text(s)
           PY
-
+      - name: Get packages
+        run: |
+          cd mobile
+          flutter pub get
       - name: Build release APK
         run: |
           cd mobile
           flutter build apk --release
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

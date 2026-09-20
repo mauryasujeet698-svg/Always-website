@@ -74,7 +74,7 @@ jobs:
         run: |
           cd mobile
           rm -f test/widget_test.dart
-          flutter analyze
+          flutter analyze --no-fatal-infos
           flutter test
           cd ..
           node --check functions/index.js

@@ -19,12 +19,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.35.2"
           channel: stable
           cache: true
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
       - name: Generate Android project
         run: |
           cd mobile
@@ -32,10 +40,108 @@ jobs:
           rm -rf android
           flutter create . --platforms=android --org com.allways.app
           if [ -f /tmp/google-services.json ]; then mkdir -p android/app; cp /tmp/google-services.json android/app/google-services.json; fi
+
       - name: Verify Firebase configuration
         run: |
           cd mobile
           test -f android/app/google-services.json
+          grep -q '"client_type": 1' android/app/google-services.json
+          grep -q '"package_name": "com.allways.app"' android/app/google-services.json
+
+      - name: Configure permanent ALLways release signing
+        env:
+          ALLWAYS_KEYSTORE_BASE64: ${{ secrets.ALLWAYS_KEYSTORE_BASE64 }}
+          ALLWAYS_KEYSTORE_PASSWORD: ${{ secrets.ALLWAYS_KEYSTORE_PASSWORD }}
+          ALLWAYS_KEY_PASSWORD: ${{ secrets.ALLWAYS_KEY_PASSWORD }}
+        run: |
+          test -n "$ALLWAYS_KEYSTORE_BASE64"
+          test -n "$ALLWAYS_KEYSTORE_PASSWORD"
+          test -n "$ALLWAYS_KEY_PASSWORD"
+          cd mobile
+          mkdir -p android/keystore
+          printf '%s' "$ALLWAYS_KEYSTORE_BASE64" | base64 --decode > android/keystore/allways-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ALLWAYS_KEYSTORE_PASSWORD
+          keyPassword=$ALLWAYS_KEY_PASSWORD
+          keyAlias=allways
+          storeFile=keystore/allways-release.jks
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app")
+          groovy = p / "build.gradle"
+          kotlin = p / "build.gradle.kts"
+
+          if groovy.exists():
+              f = groovy
+              s = f.read_text()
+              if "key.properties" not in s:
+                  prefix = '''import java.util.Properties
+          import java.io.FileInputStream
+
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+                  s = prefix + s
+              if "signingConfigs {" not in s:
+                  s = s.replace("android {", '''android {
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties["keyAlias"]
+                      keyPassword keystoreProperties["keyPassword"]
+                      storeFile keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null
+                      storePassword keystoreProperties["storePassword"]
+                  }
+              }''', 1)
+              if "signingConfig signingConfigs.release" not in s:
+                  s = s.replace("buildTypes {", '''buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+              buildTypes {''', 1)
+              f.write_text(s)
+          elif kotlin.exists():
+              f = kotlin
+              s = f.read_text()
+              if "key.properties" not in s:
+                  prefix = '''import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+                  s = prefix + s
+              if "create("release")" not in s:
+                  s = s.replace("android {", '''android {
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }''', 1)
+              if 'signingConfig = signingConfigs.getByName("release")' not in s:
+                  s = s.replace("buildTypes {", '''buildTypes {
+                  getByName("release") {
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+              }
+              buildTypes {''', 1)
+              f.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle build file found")
+          PY
+
       - name: Set ALLways app label and notification permission
         run: |
           cd mobile
@@ -45,13 +151,14 @@ jobs:
           s=p.read_text()
           import re
           s=re.sub(r'android:label="[^"]+"', 'android:label="ALLways"', s, count=1)
-          s=s.replace('    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\\n','')
+          s=s.replace('    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n','')
           if 'android.permission.POST_NOTIFICATIONS' not in s:
-              s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\\n    <application ', 1)
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application ', 1)
           if 'android.permission.ACCESS_FINE_LOCATION' not in s:
               s=s.replace('<application ', '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n    <application ', 1)
           p.write_text(s)
           PY
+
       - name: Apply ALLways launcher icon
         run: |
           cd mobile
@@ -68,10 +175,12 @@ jobs:
           s=p.read_text().replace('android:icon="@mipmap/ic_launcher"','android:icon="@drawable/ic_allways"')
           p.write_text(s)
           PY
+
       - name: Get packages
         run: |
           cd mobile
           flutter pub get
+
       - name: Flutter analyze and tests
         run: |
           cd mobile
@@ -90,18 +199,25 @@ jobs:
           flutter test
           cd ..
           node --check functions/index.js
+
       - name: Build release APK
-        run: echo "ALLways APK build starting"
-      - name: Build release APK actual
         run: |
           cd mobile
           flutter build apk --release
+
+      - name: Verify APK signing certificate
+        run: |
+          cd mobile
+          apksigner verify --verbose build/app/outputs/flutter-apk/app-release.apk
+          apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: allways-release-apk
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
       - name: Publish latest APK release
         env:
           GH_TOKEN: ${{ github.token }}

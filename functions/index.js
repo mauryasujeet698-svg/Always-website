@@ -33,7 +33,7 @@ async function sendOrderNotification(data, fallbackStatus) {
         status,
         click_action: "FLUTTER_NOTIFICATION_CLICK"
       },
-      android: { priority: "high", notification: { channelId: "allways_orders" } }
+      android: { priority: "high" }
     });
   } catch (e) {
     console.error("ALLways FCM send failed", e);

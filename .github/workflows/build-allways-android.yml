@@ -70,11 +70,13 @@ jobs:
         run: |
           cd mobile
           flutter pub get
+      - name: Remove generated Flutter test
+        run: |
+          rm -f mobile/test/widget_test.dart
       - name: Flutter analyze and tests
         run: |
           cd mobile
           flutter analyze
-          rm -f test/widget_test.dart
           flutter test
           cd ..
           node --check functions/index.js

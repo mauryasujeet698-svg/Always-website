@@ -51,6 +51,19 @@ jobs:
           cd mobile
           flutter pub get
 
+      - name: Set ALLways app label
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          s=s.replace('android:label="${applicationName}"','android:label="ALLways"')
+          if 'android.permission.REQUEST_INSTALL_PACKAGES' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application ', 1)
+          p.write_text(s)
+          PY
+
       - name: Build release APK
         run: |
           cd mobile

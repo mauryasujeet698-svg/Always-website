@@ -27,6 +27,9 @@ jobs:
           cache: true
       - name: Generate Android project
         run: |
+          if [ -f android/app/google-services.json ]; then
+            cp android/app/google-services.json /tmp/google-services.json
+          fi
           rm -rf android
           flutter create . --platforms=android --org com.allways.app
           if [ -f /tmp/google-services.json ]; then

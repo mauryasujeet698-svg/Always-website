@@ -23,6 +23,9 @@ Future<void> bg(RemoteMessage m) async { await Firebase.initializeApp(options: D
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await GoogleSignIn.instance.initialize(
+    serverClientId: '869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com',
+  );
   FirebaseMessaging.onBackgroundMessage(bg);
   runApp(const AllwaysApp());
 }
@@ -389,18 +392,15 @@ class _AuthState extends State<AuthScreen>{
   Future<void> googleSignIn() async {
     setState(() => busy = true);
     try {
-      final google = GoogleSignIn(serverClientId: '869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com', scopes: <String>['email']);
-      await google.signOut();
-      final GoogleSignInAccount? account = await google.signIn();
-      if (account == null) {
-        if (mounted) setState(() => busy = false);
-        return;
+      final signIn = GoogleSignIn.instance;
+      await signIn.signOut();
+      final GoogleSignInAccount account = await signIn.authenticate();
+      final GoogleSignInAuthentication auth = account.authentication;
+      final idToken = auth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception('Google did not return an ID token.');
       }
-      final GoogleSignInAuthentication auth = await account.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: auth.accessToken,
-        idToken: auth.idToken,
-      );
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
       await FirebaseAuth.instance.signInWithCredential(credential);
       if (mounted) Navigator.pop(context);
     } catch (e) {

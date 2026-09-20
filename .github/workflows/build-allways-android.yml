@@ -1,0 +1,49 @@
+name: Build ALLways Android APK
+
+on:
+  push:
+    branches:
+      - allways-android-app
+      - main
+    paths:
+      - "mobile/**"
+      - ".github/workflows/build-allways-android.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.2"
+          channel: stable
+          cache: true
+      - name: Generate Android project
+        run: |
+          if [ ! -d android ]; then
+            flutter create . --platforms=android --org com.allways.app
+          fi
+      - name: Verify Firebase configuration
+        run: |
+          if [ ! -f android/app/google-services.json ]; then
+            echo "google-services.json is missing."
+            echo "Add it at mobile/android/app/google-services.json."
+            exit 1
+          fi
+      - name: Get packages
+        run: flutter pub get
+      - name: Build release APK
+        run: flutter build apk --release
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: allways-release-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error

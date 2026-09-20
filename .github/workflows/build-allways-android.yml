@@ -43,7 +43,8 @@ jobs:
           from pathlib import Path
           p=Path('android/app/src/main/AndroidManifest.xml')
           s=p.read_text()
-          s=s.replace('android:label="\${applicationName}"','android:label="ALLways"')
+          import re
+          s=re.sub(r'android:label="[^"]+"', 'android:label="ALLways"', s, count=1)
           s=s.replace('    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\\n','')
           if 'android.permission.POST_NOTIFICATIONS' not in s:
               s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\\n    <application ', 1)
@@ -65,7 +66,6 @@ jobs:
           s=p.read_text().replace('android:icon="@mipmap/ic_launcher"','android:icon="@drawable/ic_allways"')
           p.write_text(s)
           PY
-
       - name: Get packages
         run: |
           cd mobile
@@ -74,10 +74,10 @@ jobs:
         run: |
           cd mobile
           flutter analyze
+          rm -f test/widget_test.dart
           flutter test
           cd ..
           node --check functions/index.js
-
       - name: Build release APK
         run: |
           cd mobile

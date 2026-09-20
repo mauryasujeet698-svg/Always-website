@@ -13,20 +13,20 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.35.2"
           channel: stable
           cache: true
+
       - name: Generate Android project
         run: |
+          cd mobile
           if [ -f android/app/google-services.json ]; then
             cp android/app/google-services.json /tmp/google-services.json
           fi
@@ -36,17 +36,26 @@ jobs:
             mkdir -p android/app
             cp /tmp/google-services.json android/app/google-services.json
           fi
+
       - name: Verify Firebase configuration
         run: |
+          cd mobile
           if [ ! -f android/app/google-services.json ]; then
             echo "google-services.json is missing."
-            echo "Add it at mobile/android/app/google-services.json."
+            echo "Expected: mobile/android/app/google-services.json"
             exit 1
           fi
+
       - name: Get packages
-        run: flutter pub get
+        run: |
+          cd mobile
+          flutter pub get
+
       - name: Build release APK
-        run: flutter build apk --release
+        run: |
+          cd mobile
+          flutter build apk --release
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

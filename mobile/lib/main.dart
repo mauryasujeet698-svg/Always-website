@@ -228,7 +228,7 @@ class OrdersPage extends StatelessWidget{
       return ListView(padding:const EdgeInsets.all(16),children:[
         const Text('Your Orders',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
         if(docs.isEmpty)const InfoCard(title:'No orders yet',detail:'Your placed orders will appear here.'),
-        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final items=(o['items']as List???[]).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
+        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final items=(o['items'] as List? ?? []).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
           return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(status+' • ₹'+(o['total']??0).toString()),children:[
             Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               StatusView(status:status),if((o['estimatedDelivery']??'').toString().isNotEmpty)Text('ETA: '+o['estimatedDelivery'].toString(),style:const TextStyle(fontWeight:FontWeight.w700)),

@@ -48,6 +48,8 @@ jobs:
           s=s.replace('    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\\n','')
           if 'android.permission.POST_NOTIFICATIONS' not in s:
               s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\\n    <application ', 1)
+          if 'android.permission.ACCESS_FINE_LOCATION' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n    <application ', 1)
           p.write_text(s)
           PY
       - name: Apply ALLways launcher icon

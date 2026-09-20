@@ -89,6 +89,8 @@ jobs:
           cd ..
           node --check functions/index.js
       - name: Build release APK
+        run: echo "ALLways APK build starting"
+      - name: Build release APK actual
         run: |
           cd mobile
           flutter build apk --release

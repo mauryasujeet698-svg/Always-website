@@ -369,11 +369,11 @@ class AuthScreen extends StatefulWidget{const AuthScreen({super.key});State<Auth
 class _AuthState extends State<AuthScreen>{
   final email=TextEditingController(),pass=TextEditingController(),name=TextEditingController();bool signup=false,busy=false,hide=true;
   @override void dispose(){email.dispose();pass.dispose();name.dispose();super.dispose();}
-  String err(Object e){if(e is FirebaseAuthException){if(e.code=='invalid-credential'||e.code=='wrong-password')return'Email or password is incorrect.';if(e.code=='user-not-found')return'No account exists with this email.';if(e.code=='email-already-in-use')return'An account already exists with this email.';if(e.code=='weak-password')return'Use a stronger password.';if(e.code=='invalid-email')return'Enter a valid email address.';return e.message??'Authentication failed.';}return'Something went wrong.';}
+  String err(Object e){if(e is FirebaseAuthException){if(e.code=='invalid-credential'||e.code=='wrong-password')return'Email or password is incorrect. Use Forgot password if this is an existing account.';if(e.code=='user-not-found')return'No account exists with this email.';if(e.code=='email-already-in-use')return'An account already exists with this email.';if(e.code=='weak-password')return'Use a stronger password.';if(e.code=='invalid-email')return'Enter a valid email address.';return e.message??'Authentication failed.';}return'Something went wrong.';}
   Future<void> googleSignIn() async {
     setState(() => busy = true);
     try {
-      final GoogleSignInAccount? account = await GoogleSignIn().signIn();
+      final GoogleSignInAccount? account = await GoogleSignIn(serverClientId: '869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com').signIn();
       if (account == null) {
         if (mounted) setState(() => busy = false);
         return;

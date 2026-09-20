@@ -285,7 +285,7 @@ class _CartScreenState extends State<CartScreen>{
       final pos=await Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high));
       try{
         final marks=await placemarkFromCoordinates(pos.latitude,pos.longitude);
-        if(marks.isNotEmpty){final x=marks.first;final parts=[x.name,x.subLocality,x.locality,x.subAdministrativeArea,x.administrativeArea,x.postalCode].where((v)=>v!=null&&v!.trim().isNotEmpty).map((v)=>v!.trim()).toList();a.text=parts.toSet().join(', ');}
+        if(marks.isNotEmpty){final x=marks.first;final parts=[x.name,x.subLocality,x.locality,x.subAdministrativeArea,x.administrativeArea,x.postalCode].whereType<String>().where((v)=>v.trim().isNotEmpty).map((v)=>v.trim()).toList();a.text=parts.toSet().join(', ');}
       }catch(_){ }
       if(a.text.trim().isEmpty)a.text='Current location: '+pos.latitude.toStringAsFixed(6)+', '+pos.longitude.toStringAsFixed(6);
       msg('Current location added. Please add your house number or landmark if needed.');

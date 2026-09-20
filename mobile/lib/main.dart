@@ -156,6 +156,7 @@ class _ShellState extends State<Shell> {
 
   Future<void> placeOrder(String name,String phone,String address,String note) async {
     if(user==null){login();return;} if(cart.isEmpty)return;
+    await setupNotifications();
     final ph=phone.replaceAll(RegExp(r'\D'),'');
     if(name.trim().isEmpty||!RegExp(r'^\d{10}$').hasMatch(ph)||address.trim().isEmpty){msg('Enter name, valid 10-digit phone and address.');return;}
     for(final x in cart.values){final p=products.where((z)=>z.id==x.product.id).firstOrNull;if(p==null||p.stock<x.qty){msg(x.product.name+' is no longer available.');await loadInventory();return;}}

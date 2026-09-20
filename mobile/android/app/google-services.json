@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "869987297351-vvvffbl9ukvi7kajprn9ljain763r86h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.allways.app",
+            "certificate_hash": "eeb7c219b6d8b962665ec7753b4514b62b35601a"
+          }
+        },
+        {
           "client_id": "869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com",
           "client_type": 3
         }

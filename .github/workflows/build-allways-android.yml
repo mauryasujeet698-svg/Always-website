@@ -98,6 +98,7 @@ jobs:
                       storePassword keystoreProperties["storePassword"]
                   }
               }''', 1)
+              s = s.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release")
               if "signingConfig signingConfigs.release" not in s:
                   s = s.replace("buildTypes {", '''buildTypes {
                   release {
@@ -127,10 +128,11 @@ jobs:
                   create("release") {
                       keyAlias = keystoreProperties["keyAlias"] as String
                       keyPassword = keystoreProperties["keyPassword"] as String
-                      storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+                      storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
                       storePassword = keystoreProperties["storePassword"] as String
                   }
               }''', 1)
+              s = s.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
               if 'signingConfig = signingConfigs.getByName("release")' not in s:
                   s = s.replace("buildTypes {", '''buildTypes {
                   getByName("release") {
@@ -212,7 +214,12 @@ jobs:
           APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
-          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+          CERT_OUTPUT="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)"
+          echo "$CERT_OUTPUT"
+          echo "$CERT_OUTPUT" | grep -qi 'SHA-1 digest: eab7c219b6d8b962665ec7753b4514b62b35601a' || {
+            echo "ERROR: APK is not signed with the permanent ALLways release certificate."
+            exit 1
+          }
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

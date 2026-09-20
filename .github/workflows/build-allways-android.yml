@@ -216,7 +216,7 @@ jobs:
           "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
           CERT_OUTPUT="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)"
           echo "$CERT_OUTPUT"
-          echo "$CERT_OUTPUT" | grep -qi 'SHA-1 digest: eab7c219b6d8b962665ec7753b4514b62b35601a' || {
+          echo "$CERT_OUTPUT" | grep -qi 'SHA-1 digest: ee37c219b6d8b962665ec7753b4514b62b35601a' || {
             echo "ERROR: APK is not signed with the permanent ALLways release certificate."
             exit 1
           }

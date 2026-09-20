@@ -10,6 +10,9 @@ on:
       - ".github/workflows/build-allways-android.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -46,6 +49,23 @@ jobs:
               s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\\n    <application ', 1)
           p.write_text(s)
           PY
+      - name: Apply ALLways launcher icon
+        run: |
+          cd mobile
+          mkdir -p android/app/src/main/res/drawable
+          cat > android/app/src/main/res/drawable/ic_allways.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+            <path android:fillColor="#000000" android:pathData="M54,4A50,50 0,1 0,54 104A50,50 0,1 0,54 4"/>
+            <path android:fillColor="#FFFFFF" android:pathData="M54,23 L28,82 L40,82 L46,68 L62,68 L68,82 L80,82 Z M54,42 L59,58 L49,58 Z"/>
+          </vector>
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text().replace('android:icon="@mipmap/ic_launcher"','android:icon="@drawable/ic_allways"')
+          p.write_text(s)
+          PY
+
       - name: Get packages
         run: |
           cd mobile
@@ -60,3 +80,11 @@ jobs:
           name: allways-release-apk
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+      - name: Publish latest APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view allways-latest >/dev/null 2>&1; then
+            gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"
+          fi
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --clobber --repo "$GITHUB_REPOSITORY"

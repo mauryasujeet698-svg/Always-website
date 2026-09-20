@@ -63,8 +63,8 @@ jobs:
           if groovy.exists():
               p = groovy
               s = p.read_text()
-              s = re.sub(r'namespace\s+["\\'][^"\\']+["\\']', 'namespace "' + target_package + '"', s, count=1)
-              s = re.sub(r'applicationId\s+["\\'][^"\\']+["\\']', 'applicationId "' + target_package + '"', s, count=1)
+              s = re.sub(r"namespace\s+['\"][^'\"]+['\"]", 'namespace "' + target_package + '"', s, count=1)
+              s = re.sub(r"applicationId\s+['\"][^'\"]+['\"]", 'applicationId "' + target_package + '"', s, count=1)
               p.write_text(s)
           elif kotlin.exists():
               p = kotlin

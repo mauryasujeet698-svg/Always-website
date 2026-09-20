@@ -51,9 +51,9 @@ jobs:
 
       - name: Configure permanent ALLways release signing
         env:
-          ALLWAYS_KEYSTORE_BASE64: \${{ secrets.ALLWAYS_KEYSTORE_BASE64 }}
-          ALLWAYS_KEYSTORE_PASSWORD: \${{ secrets.ALLWAYS_KEYSTORE_PASSWORD }}
-          ALLWAYS_KEY_PASSWORD: \${{ secrets.ALLWAYS_KEY_PASSWORD }}
+          ALLWAYS_KEYSTORE_BASE64: ${{ secrets.ALLWAYS_KEYSTORE_BASE64 }}
+          ALLWAYS_KEYSTORE_PASSWORD: ${{ secrets.ALLWAYS_KEYSTORE_PASSWORD }}
+          ALLWAYS_KEY_PASSWORD: ${{ secrets.ALLWAYS_KEY_PASSWORD }}
         run: |
           test -n "$ALLWAYS_KEYSTORE_BASE64"
           test -n "$ALLWAYS_KEYSTORE_PASSWORD"
@@ -221,7 +221,7 @@ jobs:
 
       - name: Publish latest APK release
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view allways-latest >/dev/null 2>&1; then
             gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"

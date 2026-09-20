@@ -27,8 +27,11 @@ jobs:
           cache: true
       - name: Generate Android project
         run: |
-          if [ ! -d android ]; then
-            flutter create . --platforms=android --org com.allways.app
+          rm -rf android
+          flutter create . --platforms=android --org com.allways.app
+          if [ -f /tmp/google-services.json ]; then
+            mkdir -p android/app
+            cp /tmp/google-services.json android/app/google-services.json
           fi
       - name: Verify Firebase configuration
         run: |

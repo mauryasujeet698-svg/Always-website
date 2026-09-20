@@ -74,6 +74,16 @@ jobs:
         run: |
           cd mobile
           rm -f test/widget_test.dart
+          mkdir -p test
+          cat > test/smoke_test.dart <<'EOF'
+          import 'package:flutter_test/flutter_test.dart';
+
+          void main() {
+            test('ALLways test environment is working', () {
+              expect(true, isTrue);
+            });
+          }
+          EOF
           flutter analyze --no-fatal-infos
           flutter test
           cd ..

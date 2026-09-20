@@ -389,7 +389,9 @@ class _AuthState extends State<AuthScreen>{
   Future<void> googleSignIn() async {
     setState(() => busy = true);
     try {
-      final GoogleSignInAccount? account = await GoogleSignIn(serverClientId: '869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com').signIn();
+      final google = GoogleSignIn(serverClientId: '869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com', scopes: <String>['email']);
+      await google.signOut();
+      final GoogleSignInAccount? account = await google.signIn();
       if (account == null) {
         if (mounted) setState(() => busy = false);
         return;
@@ -404,7 +406,7 @@ class _AuthState extends State<AuthScreen>{
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(err(e))),
+          SnackBar(content: Text(e is FirebaseAuthException ? err(e) : 'Google sign-in failed: '+e.toString())),
         );
       }
     } finally {

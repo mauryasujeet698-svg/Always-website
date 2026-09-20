@@ -7,9 +7,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'firebase_options.dart';
 
 const inventoryEndpoint='https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec';
+const updateManifestUrl='https://raw.githubusercontent.com/mauryasujeet698-svg/Always-website/allways-android-app/mobile/update.json';
 
 Future<void> bg(RemoteMessage m) async { await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); }
 
@@ -47,9 +50,12 @@ class _ShellState extends State<Shell> {
   int tab=0; List<Product> products=[]; bool loading=true; String? error; Timer? timer;
   final Map<String,CartItem> cart={}; List<Map<String,dynamic>> addresses=[]; User? user;
   StreamSubscription<User?>? auth; StreamSubscription<RemoteMessage>? messages;
+  String? updateVersion;
+  String? updateUrl;
+  String? updateNotes;
 
   @override void initState(){
-    super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory();
+    super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();
     timer=Timer.periodic(const Duration(seconds:30),(_)=>loadInventory(silent:true));
     auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();}else{addresses=[];}});
     messages=FirebaseMessaging.onMessage.listen((m){if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text((m.notification?.title??'ALLways')+': '+(m.notification?.body??'New update'))));});
@@ -61,8 +67,45 @@ class _ShellState extends State<Shell> {
     try{
       await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);
       final t=await FirebaseMessaging.instance.getToken();
-      if(t!=null){final p=await SharedPreferences.getInstance();await p.setString('allways_fcm_token',t);}
+      if(t!=null){
+        final p=await SharedPreferences.getInstance();
+        await p.setString('allways_fcm_token',t);
+      }
+      FirebaseMessaging.instance.onTokenRefresh.listen((t) async {
+        final p=await SharedPreferences.getInstance();
+        await p.setString('allways_fcm_token',t);
+      });
     }catch(_){}
+  }
+
+  Future<void> checkForUpdate() async {
+    try {
+      final r=await http.get(Uri.parse(updateManifestUrl)).timeout(const Duration(seconds:8));
+      if(r.statusCode!=200)return;
+      final data=jsonDecode(r.body);
+      if(data is! Map)return;
+      final remote=(data['version']??'').toString();
+      final url=(data['apkUrl']??'').toString();
+      if(remote.isEmpty||url.isEmpty)return;
+      final info=await PackageInfo.fromPlatform();
+      if(_versionGreater(remote,info.version)){
+        if(!mounted)return;
+        setState((){updateVersion=remote;updateUrl=url;updateNotes=(data['notes']??'').toString();});
+      }
+    }catch(_){}
+  }
+
+  bool _versionGreater(String remote,String local){
+    List<int> p(String v)=>v.split('.').map((x)=>int.tryParse(x.replaceAll(RegExp(r'[^0-9]'),''))??0).toList();
+    final a=p(remote),b=p(local);
+    for(var i=0;i<3;i++){final x=i<a.length?a[i]:0,y=i<b.length?b[i]:0;if(x!=y)return x>y;}
+    return false;
+  }
+
+  Future<void> openUpdate() async {
+    final u=updateUrl;
+    if(u==null)return;
+    await launchUrl(Uri.parse(u),mode:LaunchMode.externalApplication);
   }
   Future<void> loadInventory({bool silent=false}) async {
     if(!silent&&mounted)setState(()=>loading=true);
@@ -120,7 +163,7 @@ class _ShellState extends State<Shell> {
     final order={'id':id,'customerId':user!.uid,'email':user!.email??'','name':name.trim(),'phone':ph,'address':address.trim(),'note':note.trim(),
       'items':cart.values.map((x)=>{'id':x.product.id,'name':x.product.name,'qty':x.qty,'price':x.product.price}).toList(),
       'subtotal':sub,'delivery':delivery,'total':grand,'paymentMethod':'COD','status':'New Order','estimatedDelivery':'',
-      'statusNote':'Order received','cancellationReason':'','rating':null,'createdAt':DateTime.now().millisecondsSinceEpoch,'updatedAt':DateTime.now().millisecondsSinceEpoch,'time':DateTime.now().toLocal().toString()};
+      'statusNote':'Order received','cancellationReason':'','rating':null,'fcmToken':(await SharedPreferences.getInstance()).getString('allways_fcm_token')??'','createdAt':DateTime.now().millisecondsSinceEpoch,'updatedAt':DateTime.now().millisecondsSinceEpoch,'time':DateTime.now().toLocal().toString()};
     try{
       await FirebaseFirestore.instance.collection('orders').doc(id).set(order);
       await saveAddress(name.trim(),ph,address.trim());
@@ -137,7 +180,15 @@ class _ShellState extends State<Shell> {
       ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress),
     ];
     return Scaffold(
-      body:SafeArea(child:pages[tab]),
+      body:SafeArea(child:Column(children:[
+        if(updateVersion!=null)
+          MaterialBanner(
+            content:Text('New ALLways update '+updateVersion!+(updateNotes!.isEmpty?'':' — '+updateNotes!)),
+            leading:const Icon(Icons.system_update),
+            actions:[TextButton(onPressed:openUpdate,child:const Text('UPDATE NOW'))],
+          ),
+        Expanded(child:pages[tab]),
+      ])),
       bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:const[
         NavigationDestination(icon:Icon(Icons.shopping_bag_outlined),label:'Shop'),
         NavigationDestination(icon:Icon(Icons.directions_car_outlined),label:'Travel'),

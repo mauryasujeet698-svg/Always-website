@@ -1,4 +1,4 @@
-# ALLways Android build workflow
+# ALLways Android build workflow - signing verification
 name: Build ALLways Android APK
 
 on:

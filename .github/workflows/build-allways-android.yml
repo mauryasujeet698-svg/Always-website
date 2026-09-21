@@ -303,16 +303,12 @@ jobs:
       - name: Verify Android launcher manifest
         run: |
           cd mobile
-          APKANALYZER="$(find \"\${ANDROID_HOME:-\$ANDROID_SDK_ROOT}/cmdline-tools\" -type f -name apkanalyzer | sort -V | tail -n 1)"
-          if [ ! -x "$APKANALYZER" ]; then
-            APKANALYZER="$(find \"\${ANDROID_HOME:-\$ANDROID_SDK_ROOT}/build-tools\" -type f -name apkanalyzer | sort -V | tail -n 1)"
-          fi
+          APKANALYZER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}" -type f -name apkanalyzer | sort -V | tail -n 1)"
           test -x "$APKANALYZER"
           "$APKANALYZER" manifest print build/app/outputs/flutter-apk/app-release.apk > /tmp/allways-manifest.txt
           grep -q 'com.allways.app.MainActivity' /tmp/allways-manifest.txt
           grep -q 'android.intent.action.MAIN' /tmp/allways-manifest.txt
           grep -q 'android.intent.category.LAUNCHER' /tmp/allways-manifest.txt
-
       - name: Smoke test APK on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:

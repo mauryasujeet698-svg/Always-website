@@ -441,11 +441,20 @@ class AdminScreen extends StatefulWidget{
 }
 
 class _AdminScreenState extends State<AdminScreen>{
-  final email=TextEditingController(text:adminEmail),pass=TextEditingController();
-  bool busy=false,loggedIn=false;
-  @override void initState(){super.initState();final u=FirebaseAuth.instance.currentUser;if(u?.email?.toLowerCase()==adminEmail.toLowerCase())loggedIn=true;}
+  final email=TextEditingController(text:adminEmail);
+  final pass=TextEditingController();
+  bool busy=false;
+  bool loggedIn=false;
+
+  @override void initState(){
+    super.initState();
+    final u=FirebaseAuth.instance.currentUser;
+    loggedIn=u?.email?.toLowerCase()==adminEmail.toLowerCase();
+  }
+
   @override void dispose(){email.dispose();pass.dispose();super.dispose();}
-  String error(Object e){
+
+  String authError(Object e){
     if(e is FirebaseAuthException){
       if(e.code=='wrong-password'||e.code=='invalid-credential')return'Wrong Firebase admin password.';
       if(e.code=='user-not-found')return'Admin email is not registered in Firebase Authentication.';
@@ -454,54 +463,147 @@ class _AdminScreenState extends State<AdminScreen>{
     }
     return'Admin login failed.';
   }
+
   Future<void> login() async{
     final e=email.text.trim();
-    if(e.toLowerCase()!=adminEmail.toLowerCase()){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Use the configured ALLways admin email.')));return;}
-    if(pass.text.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter the Firebase admin password.')));return;}
+    if(e.toLowerCase()!=adminEmail.toLowerCase()){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Use the configured ALLways admin email.')));
+      return;
+    }
+    if(pass.text.isEmpty){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter the Firebase admin password.')));
+      return;
+    }
     setState(()=>busy=true);
     try{
-      final cred=await FirebaseAuth.instance.signInWithEmailAndPassword(e,pass.text);
-      if(cred.user?.email?.toLowerCase()!=adminEmail.toLowerCase()){await FirebaseAuth.instance.signOut();throw Exception('This account is not the ALLways admin account.');}
+      final cred=await FirebaseAuth.instance.signInWithEmailAndPassword(email:e,password:pass.text);
+      if(cred.user?.email?.toLowerCase()!=adminEmail.toLowerCase()){
+        await FirebaseAuth.instance.signOut();
+        throw Exception('This account is not the ALLways admin account.');
+      }
       if(mounted)setState(()=>loggedIn=true);
-    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error(e))));}
-    finally{if(mounted)setState(()=>busy=false);}
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(authError(e))));
+    }finally{
+      if(mounted)setState(()=>busy=false);
+    }
   }
-  Future<void> update(String id,Map<String,dynamic> data) async{
-    try{await FirebaseFirestore.instance.collection('orders').doc(id).update({...data,'updatedAt':DateTime.now().millisecondsSinceEpoch});}
-    catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));}
-  }
-  @override Widget build(BuildContext c){
-    if(!loggedIn)return Scaffold(appBar:AppBar(title:const Text('ALLways Admin Login')),body:ListView(padding:const EdgeInsets.all(20),children:[
-      const Icon(Icons.admin_panel_settings,size:64),const SizedBox(height:12),
-      const Text('ALLways Admin',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),
-      const SizedBox(height:6),const Text('Use the Firebase password for the admin account. This is separate from your Gmail password.'),
-      const SizedBox(height:20),TextField(controller:email,readOnly:true,decoration:const InputDecoration(labelText:'Admin email')),
-      const SizedBox(height:12),TextField(controller:pass,obscureText:true,decoration:const InputDecoration(labelText:'Firebase admin password')),
-      const SizedBox(height:18),FilledButton(onPressed:busy?null:login,child:Text(busy?'Signing in…':'Sign in to Admin')),
-    ]));
-    return Scaffold(appBar:AppBar(title:const Text('ALLways Admin Dashboard'),actions:[IconButton(onPressed:()async{await FirebaseAuth.instance.signOut();if(mounted)setState(()=>loggedIn=false);},icon:const Icon(Icons.logout))]),
-      body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').snapshots(),builder:(c,s){
-        if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));
-        if(!s.hasData)return const Center(child:CircularProgressIndicator());
-        final docs=[...s.data!.docs]..sort((a,b)=>(b.data()['createdAt']??0).toString().compareTo((a.data()['createdAt']??0).toString()));
-        if(docs.isEmpty)return const Center(child:Text('No orders yet.'));
-        return ListView.builder(padding:const EdgeInsets.all(12),itemCount:docs.length,itemBuilder:(c,i){
-          final d=docs[i],o=d.data(),status=(o['status']??'New Order').toString();
-          const statuses=['New Order','Confirmed','Preparing','Out for delivery','Delivered','Cancelled'];
-          final eta=TextEditingController(text:(o['estimatedDelivery']??'').toString());
-          final note=TextEditingController(text:(o['statusNote']??'').toString());
-          return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['name']??'Customer').toString()+' • '+status+' • ₹'+(o['total']??0).toString()),children:[
-            Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-              Text((o['email']??'').toString()),Text((o['phone']??'').toString()),Text((o['address']??'').toString()),const SizedBox(height:8),
-              DropdownButtonFormField<String>(initialValue:statuses.contains(status)?status:'New Order',items:statuses.map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v){if(v==null)return;final n=v=='Confirmed'?'Order confirmed':v=='Preparing'?'Your order is being prepared':v=='Out for delivery'?'Your order is on the way':v=='Delivered'?'Order delivered':v=='Cancelled'?'Order cancelled':'Order received';update(d.id,{'status':v,'statusNote':n});}),
-              const SizedBox(height:8),TextField(controller:eta,decoration:const InputDecoration(labelText:'Estimated delivery / ETA')),const SizedBox(height:6),
-              FilledButton(onPressed:()=>update(d.id,{'estimatedDelivery':eta.text.trim()}),child:const Text('Set ETA')),
-              const SizedBox(height:6),TextField(controller:note,decoration:const InputDecoration(labelText:'Customer message')),const SizedBox(height:6),
-              OutlinedButton(onPressed:()=>update(d.id,{'statusNote':note.text.trim()}),child:const Text('Update customer message')),
-            ]))
-          ]);
-        });
+
+  Future<void> updateOrder(String id,Map<String,dynamic> data) async{
+    try{
+      await FirebaseFirestore.instance.collection('orders').doc(id).update({
+        ...data,'updatedAt':DateTime.now().millisecondsSinceEpoch
       });
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));
+    }
+  }
+
+  Widget orderCard(QueryDocumentSnapshot<Map<String,dynamic>> d){
+    final o=d.data();
+    final status=(o['status']??'New Order').toString();
+    const statuses=['New Order','Confirmed','Preparing','Out for delivery','Delivered','Cancelled'];
+    final eta=TextEditingController(text:(o['estimatedDelivery']??'').toString());
+    final note=TextEditingController(text:(o['statusNote']??'').toString());
+    return Card(
+      child:ExpansionTile(
+        title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
+        subtitle:Text((o['name']??'Customer').toString()+' • '+status+' • ₹'+(o['total']??0).toString()),
+        children:[
+          Padding(
+            padding:const EdgeInsets.all(14),
+            child:Column(
+              crossAxisAlignment:CrossAxisAlignment.start,
+              children:[
+                Text((o['email']??'').toString()),
+                Text((o['phone']??'').toString()),
+                Text((o['address']??'').toString()),
+                const SizedBox(height:8),
+                DropdownButtonFormField<String>(
+                  value:statuses.contains(status)?status:'New Order',
+                  items:statuses.map((x)=>DropdownMenuItem<String>(value:x,child:Text(x))).toList(),
+                  onChanged:(v){
+                    if(v==null)return;
+                    final n=v=='Confirmed'?'Order confirmed':
+                      v=='Preparing'?'Your order is being prepared':
+                      v=='Out for delivery'?'Your order is on the way':
+                      v=='Delivered'?'Order delivered':
+                      v=='Cancelled'?'Order cancelled':'Order received';
+                    updateOrder(d.id,{'status':v,'statusNote':n});
+                  },
+                ),
+                const SizedBox(height:8),
+                TextField(controller:eta,decoration:const InputDecoration(labelText:'Estimated delivery / ETA')),
+                const SizedBox(height:6),
+                FilledButton(onPressed:()=>updateOrder(d.id,{'estimatedDelivery':eta.text.trim()}),child:const Text('Set ETA')),
+                const SizedBox(height:6),
+                TextField(controller:note,decoration:const InputDecoration(labelText:'Customer message')),
+                const SizedBox(height:6),
+                OutlinedButton(onPressed:()=>updateOrder(d.id,{'statusNote':note.text.trim()}),child:const Text('Update customer message')),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override Widget build(BuildContext c){
+    if(!loggedIn){
+      return Scaffold(
+        appBar:AppBar(title:const Text('ALLways Admin Login')),
+        body:ListView(
+          padding:const EdgeInsets.all(20),
+          children:[
+            const Icon(Icons.admin_panel_settings,size:64),
+            const SizedBox(height:12),
+            const Text('ALLways Admin',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),
+            const SizedBox(height:6),
+            const Text('Use the Firebase password for the admin account. This is separate from your Gmail password.'),
+            const SizedBox(height:20),
+            TextField(controller:email,readOnly:true,decoration:const InputDecoration(labelText:'Admin email')),
+            const SizedBox(height:12),
+            TextField(controller:pass,obscureText:true,decoration:const InputDecoration(labelText:'Firebase admin password')),
+            const SizedBox(height:18),
+            FilledButton(onPressed:busy?null:login,child:Text(busy?'Signing in…':'Sign in to Admin')),
+          ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar:AppBar(
+        title:const Text('ALLways Admin Dashboard'),
+        actions:[
+          IconButton(
+            onPressed:()async{
+              await FirebaseAuth.instance.signOut();
+              if(mounted)setState(()=>loggedIn=false);
+            },
+            icon:const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+        stream:FirebaseFirestore.instance.collection('orders').snapshots(),
+        builder:(c,s){
+          if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));
+          if(!s.hasData)return const Center(child:CircularProgressIndicator());
+          final docs=[...s.data!.docs];
+          docs.sort((a,b){
+            final av=(a.data()['createdAt']??0) as num;
+            final bv=(b.data()['createdAt']??0) as num;
+            return bv.compareTo(av);
+          });
+          if(docs.isEmpty)return const Center(child:Text('No orders yet.'));
+          return ListView.builder(
+            padding:const EdgeInsets.all(12),
+            itemCount:docs.length,
+            itemBuilder:(c,i)=>orderCard(docs[i]),
+          );
+        },
+      ),
+    );
   }
 }
 

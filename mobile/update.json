@@ -1,5 +1,5 @@
 {
-  "version": "1.4.2",
-  "apkUrl": "https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/app-release.apk",
-  "notes": "Improved update detection and in-app APK installation."
+  "version": "1.4.3",
+  "apkUrl": "https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/allways-v1.4.3.apk",
+  "notes": "Fixed update download caching, admin login, sharing, and notification handling."
 }

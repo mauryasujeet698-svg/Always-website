@@ -166,7 +166,11 @@ jobs:
           s=p.read_text()
           if "android.permission.REQUEST_INSTALL_PACKAGES" not in s:
               import re
-              s=re.sub(r"(<manifest[^>]*>)", r"\1\n    <uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>", s, count=1)
+              match = re.search(r"<manifest[^>]*>", s)
+              if not match:
+                  raise SystemExit("AndroidManifest.xml has no manifest root")
+              permission = '\\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>'
+              s = s[:match.end()] + permission + s[match.end():]
           if "androidx.core.content.FileProvider" not in s:
               provider='''\n        <provider
               android:name="androidx.core.content.FileProvider"
@@ -177,7 +181,10 @@ jobs:
                   android:name="android.support.FILE_PROVIDER_PATHS"
                   android:resource="@xml/file_paths" />
           </provider>'''
-              s=s.replace("</application>", provider+"\n    </application>", 1)
+              marker = "</application>"
+              if marker not in s:
+                  raise SystemExit("AndroidManifest.xml has no application closing tag")
+              s = s.replace(marker, provider + "\n    " + marker, 1)
           p.write_text(s)
           PY
 

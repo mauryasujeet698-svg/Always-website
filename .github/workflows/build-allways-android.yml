@@ -81,7 +81,7 @@ jobs:
           p = candidates[0]
           s = p.read_text()
           if "apk_installer" not in s:
-              s = s.replace("import io.flutter.embedding.android.FlutterActivity", "import android.app.NotificationChannel\nimport android.app.NotificationManager\nimport android.content.Intent\nimport android.net.Uri\nimport android.os.Build\nimport android.provider.Settings\nimport androidx.core.app.NotificationCompat\nimport androidx.core.content.FileProvider\nimport io.flutter.embedding.android.FlutterActivity\nimport io.flutter.plugin.common.MethodChannel\nimport java.io.File")
+              s = s.replace("import io.flutter.embedding.android.FlutterActivity", "import android.app.NotificationChannel\nimport android.app.NotificationManager\nimport android.content.ClipData\nimport android.content.Intent\nimport android.net.Uri\nimport android.os.Build\nimport android.provider.Settings\nimport androidx.core.app.NotificationCompat\nimport androidx.core.content.FileProvider\nimport io.flutter.embedding.android.FlutterActivity\nimport io.flutter.plugin.common.MethodChannel\nimport java.io.File")
               s = s.replace(
                   "class MainActivity : FlutterActivity()",
                   """class MainActivity : FlutterActivity() {

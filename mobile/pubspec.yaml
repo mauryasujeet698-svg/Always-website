@@ -1,7 +1,7 @@
 name: allways_app
 description: ALLways Android app - shared Firebase backend with the ALLways website.
 publish_to: "none"
-version: 1.4.3+8
+version: 1.4.4+9
 environment:
   sdk: ">=3.6.0 <4.0.0"
 dependencies:
@@ -29,3 +29,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/release_pad.bin
+

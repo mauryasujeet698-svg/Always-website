@@ -23,9 +23,6 @@ Future<void> bg(RemoteMessage m) async { await Firebase.initializeApp(options: D
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await GoogleSignIn.instance.initialize(
-    serverClientId: '869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com',
-  );
   FirebaseMessaging.onBackgroundMessage(bg);
   runApp(const AllwaysApp());
 }
@@ -393,6 +390,12 @@ class _AuthState extends State<AuthScreen>{
     setState(() => busy = true);
     try {
       final signIn = GoogleSignIn.instance;
+      // Initialize Google Sign-In only when the user actually chooses Google.
+      // Keeping this out of app startup prevents an auth-plugin initialization
+      // failure from preventing the entire ALLways app from opening.
+      await signIn.initialize(
+        serverClientId: '869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com',
+      );
       // Do not sign out immediately before authentication. With Android's
       // Credential Manager flow this can force an unnecessary account reauth
       // and surface as [16] Account reauth failed. authenticate() can show

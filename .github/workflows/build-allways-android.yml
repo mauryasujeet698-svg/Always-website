@@ -165,7 +165,7 @@ jobs:
           p=Path("android/app/src/main/AndroidManifest.xml")
           s=p.read_text()
           if "android.permission.REQUEST_INSTALL_PACKAGES" not in s:
-              s=s.replace("<application ", "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>\n    <application ", 1)
+              import re\n              s=re.sub(r"<application\\b", "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>\\n    <application", s, count=1)
           if "androidx.core.content.FileProvider" not in s:
               provider='''\n        <provider
               android:name="androidx.core.content.FileProvider"

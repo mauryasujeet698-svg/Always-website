@@ -125,11 +125,20 @@ jobs:
                               return@setMethodCallHandler
                           }
                           val apk = File(path)
+                          if (!apk.exists() || !apk.isFile || !apk.canRead()) {
+                              result.error("NO_APK", "Downloaded APK is missing or unreadable", null)
+                              return@setMethodCallHandler
+                          }
                           val uri = FileProvider.getUriForFile(this, packageName + ".fileprovider", apk)
-                          val intent = Intent(Intent.ACTION_VIEW).apply {
+                          val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                               setDataAndType(uri, "application/vnd.android.package-archive")
                               addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                               addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                              clipData = ClipData.newRawUri("ALLways APK", uri)
+                          }
+                          if (intent.resolveActivity(packageManager) == null) {
+                              result.error("NO_INSTALLER", "Android package installer is unavailable", null)
+                              return@setMethodCallHandler
                           }
                           startActivity(intent)
                           result.success("started")
@@ -170,6 +179,18 @@ jobs:
               s=s.replace("</application>", provider+"\n    </application>", 1)
           p.write_text(s)
           PY
+
+      - name: Verify in-app updater installer bridge
+        run: |
+          cd mobile
+          MAIN_ACTIVITY="$(find android/app/src/main/kotlin -type f -name MainActivity.kt | head -n 1)"
+          test -n "$MAIN_ACTIVITY"
+          grep -q 'ACTION_INSTALL_PACKAGE' "$MAIN_ACTIVITY"
+          grep -q 'FileProvider.getUriForFile' "$MAIN_ACTIVITY"
+          grep -q 'ClipData.newRawUri' "$MAIN_ACTIVITY"
+          grep -q 'FLAG_GRANT_READ_URI_PERMISSION' "$MAIN_ACTIVITY"
+          grep -q 'androidx.core.content.FileProvider' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' android/app/src/main/AndroidManifest.xml
 
       - name: Configure ALLways Android package and Firebase Google Services
         run: |
@@ -451,13 +472,13 @@ jobs:
       - name: Prepare versioned APK asset
         run: |
           cd mobile
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/allways-v1.4.4.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/allways-v1.4.5.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: allways-release-apk-v1.4.4
-          path: mobile/build/app/outputs/flutter-apk/allways-v1.4.4.apk
+          name: allways-release-apk-v1.4.5
+          path: mobile/build/app/outputs/flutter-apk/allways-v1.4.5.apk
           if-no-files-found: error
 
       - name: Publish latest APK release
@@ -467,6 +488,6 @@ jobs:
           if ! gh release view allways-latest >/dev/null 2>&1; then
             gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"
           fi
-          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.4.apk --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.5.apk --clobber --repo "$GITHUB_REPOSITORY"
           gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --clobber --repo "$GITHUB_REPOSITORY"
 

@@ -406,7 +406,7 @@ jobs:
             });
           }
           EOF
-          flutter analyze --no-fatal-infos
+          flutter analyze --no-fatal-infos --no-fatal-infos
           flutter test
           cd ..
           node --check functions/index.js

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -108,8 +110,28 @@ class _ShellState extends State<Shell> {
 
   Future<void> openUpdate() async {
     final u=updateUrl;
-    if(u==null)return;
-    await launchUrl(Uri.parse(u),mode:LaunchMode.externalApplication);
+    if(u==null||u.isEmpty)return;
+    final messenger=ScaffoldMessenger.of(context);
+    final controller=ValueNotifier<double>(0);
+    try {
+      showDialog(context:context,barrierDismissible:false,builder:(_)=>AlertDialog(
+        title:const Text('Updating ALLways'),
+        content:ValueListenableBuilder<double>(valueListenable:controller,builder:(_,p,__)=>Column(
+          mainAxisSize:MainAxisSize.min,
+          children:[LinearProgressIndicator(value:p>0?p:null),const SizedBox(height:12),
+            Text(p>0?'Downloading '+(p*100).toStringAsFixed(0)+'%':'Starting download…')]
+        )),
+      ));
+      final file=File(Directory.systemTemp.path+'/allways_update.apk');
+      await Dio().download(u,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
+      if(mounted)Navigator.of(context).pop();
+      final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
+      if(result=='permission_required')messenger.showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
+      else if(result!='started')messenger.showSnackBar(SnackBar(content:Text('Could not start installation: '+(result??'unknown error'))));
+    }catch(e){
+      if(mounted&&Navigator.of(context).canPop())Navigator.of(context).pop();
+      messenger.showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));
+    }finally{controller.dispose();}
   }
   Future<void> loadInventory({bool silent=false}) async {
     if(!silent&&mounted)setState(()=>loading=true);
@@ -360,10 +382,31 @@ class ProfilePage extends StatelessWidget{
       final current=await PackageInfo.fromPlatform();
       int v(String x)=>x.split('.').map((e)=>int.tryParse(e)??0).fold(0,(a,b)=>a*1000+b);
       if(latest.isNotEmpty&&v(latest)>v(current.version)){
-        if(c.mounted)showDialog(context:c,builder:(_)=>AlertDialog(title:const Text('Update available'),content:Text('ALLways '+latest+' is available. Update now for the latest improvements.'),actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Later')),FilledButton(onPressed:()async{Navigator.pop(c);final url=(data['apkUrl']??'').toString();if(url.isNotEmpty)await launchUrl(Uri.parse(url),mode:LaunchMode.externalApplication);},child:const Text('UPDATE NOW'))]));
+        if(c.mounted)showDialog(context:c,builder:(_)=>AlertDialog(title:const Text('Update available'),content:Text('ALLways '+latest+' is available. Update now for the latest improvements.'),actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Later')),FilledButton(onPressed:()async{Navigator.pop(c);final url=(data['apkUrl']??'').toString();if(url.isNotEmpty)await _downloadAndInstall(c,url);},child:const Text('UPDATE NOW'))]));
       }else if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('You are using the latest ALLways version.')));
     }catch(_){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates. Please try again.')));}
   }
+  Future<void> _downloadAndInstall(BuildContext c,String u) async {
+    final controller=ValueNotifier<double>(0);
+    try{
+      showDialog(context:c,barrierDismissible:false,builder:(_)=>AlertDialog(
+        title:const Text('Updating ALLways'),
+        content:ValueListenableBuilder<double>(valueListenable:controller,builder:(_,p,__)=>Column(
+          mainAxisSize:MainAxisSize.min,
+          children:[LinearProgressIndicator(value:p>0?p:null),const SizedBox(height:12),
+            Text(p>0?'Downloading '+(p*100).toStringAsFixed(0)+'%':'Starting download…')]
+        )),
+      ));
+      final file=File(Directory.systemTemp.path+'/allways_update.apk');
+      await Dio().download(u,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
+      if(c.mounted)Navigator.of(c).pop();
+      final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
+      if(c.mounted&&result=='permission_required')ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
+      else if(c.mounted&&result!='started')ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Could not start installation: '+(result??'unknown error'))));
+    }catch(e){if(c.mounted&&Navigator.of(c).canPop())Navigator.of(c).pop();if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));}
+    finally{controller.dispose();}
+  }
+
   Widget build(BuildContext c){
     if(user==null)return Center(child:FilledButton(onPressed:onLogin,child:const Text('Sign in / Sign up')));
     return ListView(padding:const EdgeInsets.all(16),children:[

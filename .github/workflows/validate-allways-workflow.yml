@@ -1,0 +1,18 @@
+name: Validate ALLways workflow
+
+on:
+  push:
+    branches:
+      - allways-android-app
+    paths:
+      - ".github/workflows/build-allways-android.yml"
+      - ".github/workflows/validate-allways-workflow.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate YAML
+        run: ruby -e 'require "yaml"; YAML.load_file(".github/workflows/build-allways-android.yml"); puts "YAML OK"'

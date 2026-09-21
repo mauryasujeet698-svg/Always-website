@@ -284,6 +284,102 @@ ervices' not in s:
           grep -q 'com.allways.app' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null
           grep -q 'com.google.gms.google-services' android/settings.gradle android/settings.gradle.kts 2>/dev/null
 
+      - name: Configure permanent ALLways release signing
+        env:
+          ALLWAYS_KEYSTORE_BASE64: ${{ secrets.ALLWAYS_KEYSTORE_BASE64 }}
+          ALLWAYS_KEYSTORE_PASSWORD: ${{ secrets.ALLWAYS_KEYSTORE_PASSWORD }}
+          ALLWAYS_KEY_PASSWORD: ${{ secrets.ALLWAYS_KEY_PASSWORD }}
+        run: |
+          test -n "$ALLWAYS_KEYSTORE_BASE64"
+          test -n "$ALLWAYS_KEYSTORE_PASSWORD"
+          test -n "$ALLWAYS_KEY_PASSWORD"
+          cd mobile
+          mkdir -p android/keystore
+          printf '%s' "$ALLWAYS_KEYSTORE_BASE64" | base64 --decode > android/keystore/allways-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ALLWAYS_KEYSTORE_PASSWORD
+          keyPassword=$ALLWAYS_KEY_PASSWORD
+          keyAlias=allways
+          storeFile=keystore/allways-release.jks
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app")
+          groovy = p / "build.gradle"
+          kotlin = p / "build.gradle.kts"
+
+          if groovy.exists():
+              f = groovy
+              s = f.read_text()
+              if "key.properties" not in s:
+                  prefix = '''import java.util.Properties
+          import java.io.FileInputStream
+
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+                  s = prefix + s
+              if "signingConfigs {" not in s:
+                  s = s.replace("android {", '''android {
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties["keyAlias"]
+                      keyPassword keystoreProperties["keyPassword"]
+                      storeFile keystoreProperties["storeFile"] ? rootProject.file(keystoreProperties["storeFile"]) : null
+                      storePassword keystoreProperties["storePassword"]
+                  }
+              }''', 1)
+              s = s.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release")
+              if "signingConfig signingConfigs.release" not in s:
+                  s = s.replace("buildTypes {", '''buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+              buildTypes {''', 1)
+              f.write_text(s)
+          elif kotlin.exists():
+              f = kotlin
+              s = f.read_text()
+              if "key.properties" not in s:
+                  prefix = '''import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+                  s = prefix + s
+              if 'create("release")' not in s:
+                  s = s.replace("android {", '''android {
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = keystoreProperties["storeFile"]?.let { rootProject.file(it as String) }
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }''', 1)
+              s = s.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
+              if 'signingConfig = signingConfigs.getByName("release")' not in s:
+                  s = s.replace("buildTypes {", '''buildTypes {
+                  getByName("release") {
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+              }
+              buildTypes {''', 1)
+              f.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle build file found")
+          PY
+
       - name: Persist Android project changes
         env:
           GITHUB_TOKEN: ${{ github.token }}

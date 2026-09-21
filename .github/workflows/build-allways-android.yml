@@ -431,6 +431,8 @@ jobs:
           git add mobile/android
           if ! git diff --cached --quiet; then
             git commit -m "Persist permanent ALLways Android project"
+            git fetch origin allways-android-app
+            git rebase origin/allways-android-app
             git push origin HEAD:allways-android-app
           fi
 

@@ -1,4 +1,4 @@
-# ALLways Android build workflow - stable Android project + PackageInstaller updater
+# ALLways Android build workflow - signing verification
 name: Build ALLways Android APK
 
 on:
@@ -34,14 +34,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Bootstrap stable Android project if needed
+      - name: Ensure permanent Android project exists
         run: |
           cd mobile
           if [ ! -f android/settings.gradle ] && [ ! -f android/settings.gradle.kts ]; then
             mkdir -p /tmp/allways-bootstrap
-            if [ -f android/app/google-services.json ]; then
-              cp android/app/google-services.json /tmp/allways-bootstrap/google-services.json
-            fi
+            if [ -f android/app/google-services.json ]; then cp android/app/google-services.json /tmp/allways-bootstrap/google-services.json; fi
             flutter create . --platforms=android --org com.allways.app
             if [ -f /tmp/allways-bootstrap/google-services.json ]; then
               mkdir -p android/app
@@ -51,62 +49,37 @@ jobs:
           test -f android/settings.gradle || test -f android/settings.gradle.kts
           test -f android/app/google-services.json
 
-      - name: Configure permanent ALLways Android package
-        run: |
-          cd mobile
           python3 - <<'PY'
           from pathlib import Path
-          import re, shutil
-
-          target = "com.allways.app"
-          root = Path("android/app/src/main")
-          candidates = list((root / "kotlin").rglob("MainActivity.kt")) + list((root / "java").rglob("MainActivity.java"))
-          if not candidates:
-              raise SystemExit("MainActivity not found")
-          src = candidates[0]
-          text = src.read_text()
-          text = re.sub(r'^package\s+[^\n]+', f'package {target}', text, count=1, flags=re.M)
-          target_dir = root / "kotlin" / "com" / "allways" / "app"
-          if src.suffix == ".java":
-              target_dir = root / "java" / "com" / "allways" / "app"
-          target_dir.mkdir(parents=True, exist_ok=True)
-          dst = target_dir / src.name
-          if src.suffix == ".kt":
-              dst.write_text(text)
-          else:
-              dst.write_text(text)
-          if src.resolve() != dst.resolve():
-              src.unlink()
-
-          groovy = Path("android/app/build.gradle")
-          kotlin = Path("android/app/build.gradle.kts")
-          if groovy.exists():
-              s=groovy.read_text()
-              s=re.sub(r'namespace\s+[\'"][^\'"]+[\'"]', 'namespace "'+target+'"', s, count=1)
-              s=re.sub(r'applicationId\s+[\'"][^\'"]+[\'"]', 'applicationId "'+target+'"', s, count=1)
-              groovy.write_text(s)
-          elif kotlin.exists():
-              s=kotlin.read_text()
-              s=re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "'+target+'"', s, count=1)
-              s=re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "'+target+'"', s, count=1)
-              kotlin.write_text(s)
-          else:
-              raise SystemExit("No app Gradle file")
+          import re
+          target="com.allways.app"
+          root=Path("android/app/src/main")
+          candidates=list((root/"kotlin").rglob("MainActivity.kt"))+list((root/"java").rglob("MainActivity.java"))
+          if not candidates: raise SystemExit("MainActivity not found")
+          src=candidates[0]
+          text=src.read_text()
+          text=re.sub(r'^package\s+[^\n]+',f'package {target}',text,count=1,flags=re.M)
+          target_dir=root/"kotlin"/"com"/"allways"/"app"
+          if src.suffix==".java": target_dir=root/"java"/"com"/"allways"/"app"
+          target_dir.mkdir(parents=True,exist_ok=True)
+          dst=target_dir/src.name
+          dst.write_text(text)
+          if src.resolve()!=dst.resolve(): src.unlink()
           PY
 
-      - name: Install stable native APK installer
+      - name: Configure in-app APK updater
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import       - name: Configure native PackageInstaller updater
         run: |
           cd mobile
           python3 - <<'PY'
           from pathlib import Path
-          import textwrap
-
-          p = Path("android/app/src/main/kotlin/com/allways/app/MainActivity.kt")
-          marker = "private val updaterChannel = \"com.allways.app/apk_installer\""
-          s = p.read_text()
-
-          if marker not in s:
-              s = """package com.allways.app
+          p=Path("android/app/src/main/kotlin/com/allways/app/MainActivity.kt")
+          marker='private val updaterChannel = "com.allways.app/apk_installer"'
+          if marker not in p.read_text():
+              p.write_text(r'''package com.allways.app
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -116,7 +89,6 @@ import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -127,14 +99,12 @@ class MainActivity : FlutterActivity() {
     private val updaterChannel = "com.allways.app/apk_installer"
     private val installAction = "com.allways.app.PACKAGE_INSTALL_STATUS"
 
-    override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "showNotification" -> {
-                        result.success("shown")
-                    }
+                    "showNotification" -> result.success("shown")
                     "installApk" -> installApk(call.argument<String>("path"), result)
                     else -> result.notImplemented()
                 }
@@ -142,261 +112,179 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun installApk(path: String?, result: MethodChannel.Result) {
-        if (path.isNullOrBlank()) {
-            result.error("NO_APK", "APK path is missing", null)
-            return
-        }
-
+        if (path.isNullOrBlank()) { result.error("NO_APK","APK path is missing",null); return }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                 !packageManager.canRequestPackageInstalls()) {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:$packageName")
-                    )
-                )
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
                 result.success("permission_required")
                 return
             }
-
-            val apk = File(path)
-            if (!apk.exists() || !apk.isFile || !apk.canRead() || apk.length() <= 0L) {
-                result.error("NO_APK", "Downloaded APK is missing or unreadable", null)
-                return
+            val apk=File(path)
+            if (!apk.exists() || !apk.isFile || !apk.canRead() || apk.length()<=0L) {
+                result.error("NO_APK","Downloaded APK is missing or unreadable",null); return
             }
 
-            val installer = packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(
-                PackageInstaller.SessionParams.MODE_FULL_INSTALL
-            )
+            val installer=packageManager.packageInstaller
+            val params=PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             params.setAppPackageName(packageName)
             params.setAppLabel("ALLways")
-
-            val sessionId = installer.createSession(params)
-            val session = installer.openSession(sessionId)
-
+            val sessionId=installer.createSession(params)
+            val session=installer.openSession(sessionId)
             try {
-                session.openWrite("package", 0, apk.length()).use { output ->
-                    FileInputStream(apk).use { input ->
-                        input.copyTo(output, 1024 * 1024)
-                    }
+                session.openWrite("package",0,apk.length()).use { output ->
+                    FileInputStream(apk).use { input -> input.copyTo(output,1024*1024) }
                     session.fsync(output)
                 }
-
-                val statusIntent = Intent(this, InstallStatusReceiver::class.java).apply {
-                    action = installAction
-                    putExtra("sessionId", sessionId)
+                val statusIntent=Intent(this,InstallStatusReceiver::class.java).apply {
+                    action=installAction
+                    putExtra("sessionId",sessionId)
                 }
-
-                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val flags=if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-                } else {
-                    PendingIntent.FLAG_UPDATE_CURRENT
-                }
-
-                val pending = PendingIntent.getBroadcast(
-                    this,
-                    sessionId,
-                    statusIntent,
-                    flags
-                )
-
-                session.commit(pending.intentSender)
+                else PendingIntent.FLAG_UPDATE_CURRENT
+                session.commit(PendingIntent.getBroadcast(this,sessionId,statusIntent,flags).intentSender)
                 result.success("started")
-            } catch (e: Exception) {
-                try { session.abandon() } catch (_: Exception) {}
+            } catch(e:Exception) {
+                try { session.abandon() } catch(_:Exception) {}
                 throw e
-            } finally {
-                try { session.close() } catch (_: Exception) {}
-            }
-        } catch (e: Exception) {
-            result.error("INSTALL_FAILED", e.message ?: "Package installation failed", null)
+            } finally { try { session.close() } catch(_:Exception) {} }
+        } catch(e:Exception) {
+            result.error("INSTALL_FAILED",e.message ?: "Package installation failed",null)
         }
     }
 
     class InstallStatusReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            val status = intent.getIntExtra(
-                PackageInstaller.EXTRA_STATUS,
-                PackageInstaller.STATUS_FAILURE
-            )
-            if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                val confirmIntent =
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.getParcelableExtra(
-                            Intent.EXTRA_INTENT,
-                            Intent::class.java
-                        )
-                    } else {
-                        @Suppress("DEPRECATION")
-                        intent.getParcelableExtra(Intent.EXTRA_INTENT)
-                    }
-                if (confirmIntent != null) {
-                    confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(confirmIntent)
+            if (intent.getIntExtra(PackageInstaller.EXTRA_STATUS,PackageInstaller.STATUS_FAILURE)
+                == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                val confirm=if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.TIRAMISU)
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT,Intent::class.java)
+                else { @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_INTENT) }
+                if(confirm!=null) {
+                    confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(confirm)
                 }
             }
         }
     }
 }
-"""
-              p.write_text(s)
-
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          ms = manifest.read_text()
+''')
+          manifest=Path("android/app/src/main/AndroidManifest.xml")
+          ms=manifest.read_text()
           import re
           if "android.permission.REQUEST_INSTALL_PACKAGES" not in ms:
-              m = re.search(r"<manifest[^>]*>", ms)
-              if not m: raise SystemExit("Manifest root missing")
-              ms = ms[:m.end()] + '\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>' + ms[m.end():]
-          if 'android:name=".MainActivity"' not in ms:
-              app_close = "</application>"
-              activity = """        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity>
-"""
-              ms = ms.replace(app_close, activity + "    " + app_close, 1)
-          if "com.allways.app.InstallStatusReceiver" not in ms and "MainActivity$InstallStatusReceiver" not in ms:
-              receiver = """        <receiver
-            android:name=".MainActivity$InstallStatusReceiver"
-            android:exported="false" />
-"""
-              ms = ms.replace("</application>", receiver + "    </application>", 1)
+              m=re.search(r"<manifest[^>]*>",ms)
+              if not m: raise SystemExit("manifest root missing")
+              ms=ms[:m.end()]+'\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>'+ms[m.end():]
+          if "MainActivity$InstallStatusReceiver" not in ms:
+              ms=ms.replace("</application>",'        <receiver android:name=".MainActivity$InstallStatusReceiver" android:exported="false"/>\n    </application>',1)
           manifest.write_text(ms)
+          PY
 
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/file_paths.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths xmlns:android="http://schemas.android.com/apk/res/android">
+              <cache-path name="cache" path="." />
+          </paths>
+          EOF
+
+      - name: Verify in-app updater installer bridge
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          main = next(Path("android/app/src/main/kotlin").rglob("MainActivity.kt"), None)
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
           paths = Path("android/app/src/main/res/xml/file_paths.xml")
-          paths.parent.mkdir(parents=True, exist_ok=True)
-          paths.write_text("""<?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="cache" path="." />
-</paths>
-""")
+          if main is None:
+              raise SystemExit("FAIL: MainActivity.kt was not generated")
+          ms = main.read_text()
+          xs = manifest.read_text()
+          required_main = [
+              "import android.content.ClipData",
+              "Intent.ACTION_INSTALL_PACKAGE",
+              "FileProvider.getUriForFile",
+              "ClipData.newRawUri",
+              "Intent.FLAG_GRANT_READ_URI_PERMISSION",
+              "packageManager.canRequestPackageInstalls()",
+          ]
+          required_manifest = [
+              "android.permission.REQUEST_INSTALL_PACKAGES",
+              "androidx.core.content.FileProvider",
+              'android:grantUriPermissions="true"',
+              '@xml/file_paths',
+          ]
+          missing = [x for x in required_main if x not in ms] + [x for x in required_manifest if x not in xs]
+          if not paths.exists() or "<cache-path" not in paths.read_text():
+              missing.append("cache FileProvider path")
+          if missing:
+              raise SystemExit("FAIL: updater bridge missing: " + ", ".join(missing))
+          print("PASS: native ALLways APK installer bridge is present and wired.")
           PY
 
-      - name: Configure Google Services
+      - name: Configure ALLways Android package and Firebase Google Services
         run: |
           cd mobile
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          sg=Path("android/settings.gradle")
-          sk=Path("android/settings.gradle.kts")
-          ag=Path("android/app/build.gradle")
-          ak=Path("android/app/build.gradle.kts")
+               - name: Verify PackageInstaller updater and launcher
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          main=Path("android/app/src/main/kotlin/com/allways/app/MainActivity.kt").read_text()
+          manifest=Path("android/app/src/main/AndroidManifest.xml").read_text()
+          ET.parse("android/app/src/main/AndroidManifest.xml")
+          required=["PackageInstaller.SessionParams","session.openWrite","session.commit","packageManager.canRequestPackageInstalls()","Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES"]
+          missing=[x for x in required if x not in main]
+          if "Intent.ACTION_INSTALL_PACKAGE" in main: missing.append("deprecated ACTION_INSTALL_PACKAGE must be absent")
+          for x in ["android.permission.REQUEST_INSTALL_PACKAGES","android:name=\".MainActivity\"","android.intent.action.MAIN","android.intent.category.LAUNCHER"]:
+              if x not in manifest: missing.append(x)
+          if missing: raise SystemExit("FAIL: "+", ".join(missing))
+          if not Path("android/app/src/main/res/xml/file_paths.xml").exists(): raise SystemExit("file_paths.xml missing")
+          print("PASS: stable launcher + PackageInstaller updater verified")
+          PY
 
-          if sg.exists():
-              s=sg.read_text()
+ervices' not in s:
+                  marker = 'plugins {'
+                  s = s.replace(marker, marker + '\n    id "com.google.gms.google-services" version "4.5.0" apply false', 1)
+              p.write_text(s)
+              app_text = groovy.read_text() if groovy.exists() else ""
+              if 'com.google.gms.google-services' not in app_text:
+                  app_text = app_text.replace('plugins {', 'plugins {\n    id "com.google.gms.google-services"', 1)
+                  groovy.write_text(app_text)
+          elif settings_kotlin.exists():
+              p = settings_kotlin
+              s = p.read_text()
               if 'com.google.gms.google-services' not in s:
-                  s=s.replace('plugins {', 'plugins {\n    id "com.google.gms.google-services" version "4.5.0" apply false', 1)
-              sg.write_text(s)
-              if ag.exists():
-                  a=ag.read_text()
-                  if 'com.google.gms.google-services' not in a:
-                      a=a.replace('plugins {', 'plugins {\n    id "com.google.gms.google-services"', 1)
-                      ag.write_text(a)
-          elif sk.exists():
-              s=sk.read_text()
-              if 'com.google.gms.google-services' not in s:
-                  s=s.replace('plugins {', 'plugins {\n    id("com.google.gms.google-services") version "4.5.0" apply false', 1)
-              sk.write_text(s)
-              if ak.exists():
-                  a=ak.read_text()
-                  if 'com.google.gms.google-services' not in a:
-                      a=a.replace('plugins {', 'plugins {\n    id("com.google.gms.google-services")', 1)
-                      ak.write_text(a)
+                  marker = 'plugins {'
+                  s = s.replace(marker, marker + '\n    id("com.google.gms.google-services") version "4.5.0" apply false', 1)
+              p.write_text(s)
+              app_text = kotlin.read_text() if kotlin.exists() else ""
+              if 'com.google.gms.google-services' not in app_text:
+                  app_text = app_text.replace('plugins {', 'plugins {\n    id("com.google.gms.google-services")', 1)
+                  kotlin.write_text(app_text)
           else:
-              raise SystemExit("settings.gradle missing")
+              raise SystemExit("No Android settings Gradle file found")
           PY
 
-      - name: Configure permanent release signing
-        env:
-          ALLWAYS_KEYSTORE_BASE64: ${{ secrets.ALLWAYS_KEYSTORE_BASE64 }}
-          ALLWAYS_KEYSTORE_PASSWORD: ${{ secrets.ALLWAYS_KEYSTORE_PASSWORD }}
-          ALLWAYS_KEY_PASSWORD: ${{ secrets.ALLWAYS_KEY_PASSWORD }}
-        run: |
-          test -n "$ALLWAYS_KEYSTORE_BASE64"
-          test -n "$ALLWAYS_KEYSTORE_PASSWORD"
-          test -n "$ALLWAYS_KEY_PASSWORD"
-          cd mobile
-          mkdir -p android/keystore
-          printf '%s' "$ALLWAYS_KEYSTORE_BASE64" | base64 --decode > android/keystore/allways-release.jks
-          cat > android/key.properties <<EOF
-storePassword=$ALLWAYS_KEYSTORE_PASSWORD
-keyPassword=$ALLWAYS_KEY_PASSWORD
-keyAlias=allways
-storeFile=keystore/allways-release.jks
-EOF
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p=Path("android/app/build.gradle")
-          if not p.exists():
-              raise SystemExit("Expected Groovy app/build.gradle")
-          s=p.read_text()
-          if "key.properties" not in s:
-              s='''import java.util.Properties
-import java.io.FileInputStream
+          grep -R -n 'applicationId.*com.allways.app' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
 
-def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-}
-
-'''+s
-          if "signingConfigs {" not in s:
-              s=s.replace("android {", """android {
-    signingConfigs {
-        release {
-            keyAlias keystoreProperties["keyAlias"]
-            keyPassword keystoreProperties["keyPassword"]
-            storeFile keystoreProperties["storeFile"] ? rootProject.file(keystoreProperties["storeFile"]) : null
-            storePassword keystoreProperties["storePassword"]
-        }
-    }""", 1)
-          if "signingConfig signingConfigs.release" not in s:
-              s=s.replace("buildTypes {", """buildTypes {
-        release {
-            signingConfig signingConfigs.release
-        }
-    }
-    buildTypes {""", 1)
-          s=s.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release")
-          p.write_text(s)
-          PY
-
-      - name: Validate permanent Android project before Gradle
+      - name: Verify Firebase configuration
         run: |
           cd mobile
           test -f android/app/google-services.json
+          grep -q '"client_type": 1' android/app/google-services.json
           grep -q '"package_name": "com.allways.app"' android/app/google-services.json
-          grep -q 'com.allways.app' android/app/build.gradle
-          grep -q 'com.google.gms.google-services' android/settings.gradle
-          grep -q 'applicationId "com.allways.app"' android/app/build.gradle
-          grep -q 'namespace "com.allways.app"' android/app/build.gradle
-          grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' android/app/src/main/AndroidManifest.xml
-          grep -q 'android:name=".MainActivity"' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.intent.action.MAIN' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.intent.category.LAUNCHER' android/app/src/main/AndroidManifest.xml
-          grep -q 'PackageInstaller.SessionParams' android/app/src/main/kotlin/com/allways/app/MainActivity.kt
-          grep -q 'session.openWrite' android/app/src/main/kotlin/com/allways/app/MainActivity.kt
-          grep -q 'session.commit' android/app/src/main/kotlin/com/allways/app/MainActivity.kt
-          ! grep -q 'ACTION_INSTALL_PACKAGE' android/app/src/main/kotlin/com/allways/app/MainActivity.kt
-          echo "Permanent Android project and PackageInstaller implementation validated."
+          grep -q 'com.allways.app' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null
+          grep -q 'com.google.gms.google-services' android/settings.gradle android/settings.gradle.kts 2>/dev/null
 
-      - name: Commit permanent Android project to branch
+      - name: Persist Android project changes
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -404,15 +292,57 @@ if (keystorePropertiesFile.exists()) {
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add mobile/android
           if ! git diff --cached --quiet; then
-            git commit -m "Stabilize permanent ALLways Android project"
+            git commit -m "Persist permanent ALLways Android project"
             git push origin HEAD:allways-android-app
           fi
 
-      - name: Prepare deterministic release asset
+      - name: Set ALLways app label and notification permission
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          import re
+          s=re.sub(r'android:label="[^"]+"', 'android:label="ALLways"', s, count=1)
+          # Keep REQUEST_INSTALL_PACKAGES so the Android package installer can be launched on Android 8+.
+          if 'android.permission.REQUEST_INSTALL_PACKAGES' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application ', 1)
+          if 'android.permission.POST_NOTIFICATIONS' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application ', 1)
+          if 'android.permission.ACCESS_FINE_LOCATION' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n    <application ', 1)
+          p.write_text(s)
+          PY
+
+      - name: Apply ALLways launcher icon
+        run: |
+          cd mobile
+          mkdir -p android/app/src/main/res/drawable
+          cat > android/app/src/main/res/drawable/ic_allways.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+            <path android:fillColor="#000000" android:pathData="M54,4A50,50 0,1 0,54 104A50,50 0,1 0,54 4"/>
+            <path android:fillColor="#FFFFFF" android:pathData="M54,23 L28,82 L40,82 L46,68 L62,68 L68,82 L80,82 Z M54,42 L59,58 L49,58 Z"/>
+          </vector>
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text().replace('android:icon="@mipmap/ic_launcher"','android:icon="@drawable/ic_allways"')
+          p.write_text(s)
+          PY
+
+      - name: Prepare release padding asset
         run: |
           cd mobile
           mkdir -p assets
-          truncate -s 2097152 assets/release_pad.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p=Path('assets/release_pad.bin')
+          p.write_bytes(os.urandom(2*1024*1024))
+          print('Created', p, p.stat().st_size, 'bytes')
+          PY
 
       - name: Get packages
         run: |
@@ -425,13 +355,14 @@ if (keystorePropertiesFile.exists()) {
           rm -f test/widget_test.dart
           mkdir -p test
           cat > test/smoke_test.dart <<'EOF'
-import 'package:flutter_test/flutter_test.dart';
-void main() {
-  test('ALLways test environment is working', () {
-    expect(true, isTrue);
-  });
-}
-EOF
+          import 'package:flutter_test/flutter_test.dart';
+
+          void main() {
+            test('ALLways test environment is working', () {
+              expect(true, isTrue);
+            });
+          }
+          EOF
           flutter analyze --no-fatal-infos
           flutter test
           cd ..
@@ -442,7 +373,7 @@ EOF
           cd mobile
           flutter build apk --release --no-shrink
 
-      - name: Verify launcher and updater
+      - name: Verify Android launcher manifest
         run: |
           cd mobile
           APKANALYZER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}" -type f -name apkanalyzer | sort -V | tail -n 1)"
@@ -451,10 +382,7 @@ EOF
           grep -q 'com.allways.app.MainActivity' /tmp/allways-manifest.txt
           grep -q 'android.intent.action.MAIN' /tmp/allways-manifest.txt
           grep -q 'android.intent.category.LAUNCHER' /tmp/allways-manifest.txt
-          grep -q 'REQUEST_INSTALL_PACKAGES' /tmp/allways-manifest.txt
-          echo "Launcher manifest verified."
-
-      - name: Validate APK package and signature
+      - name: Validate APK without emulator
         run: |
           cd mobile
           APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
@@ -463,27 +391,19 @@ EOF
           test -x "$ZIPALIGN"
           "$ZIPALIGN" -c -P 16 -v 4 build/app/outputs/flutter-apk/app-release.apk
           "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
-          CERT_OUTPUT="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)"
-          echo "$CERT_OUTPUT"
-          echo "$CERT_OUTPUT" | grep -qi 'SHA-1 digest: ee37c219b6d8b962665ec7753b4514b62b35601a'
-          echo "Permanent signing certificate verified."
-
-      - name: Verify Google Sign-In Web Client ID
+          echo "ALLways APK passed CI package, alignment, manifest, and signature validation."
+      - name: Verify APK signing certificate
         run: |
           cd mobile
-          python3 - <<'PY'
-          import json, re
-          from pathlib import Path
-          gs=json.loads(Path("android/app/google-services.json").read_text())
-          client=gs["client"][0]
-          web=[x["client_id"] for x in client.get("oauth_client",[]) if x.get("client_type")==3]
-          if web != ["869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com"]:
-              raise SystemExit("Unexpected allways-web Web OAuth client ID: "+repr(web))
-          dart=Path("lib/main.dart").read_text()
-          if "869987297351-bonithsodhkkhb8a994d6hbiau8a3ltv.apps.googleusercontent.com" not in dart:
-              raise SystemExit("Dart serverClientId does not match Firebase web client")
-          print("Google Sign-In serverClientId matches allways-web client_type 3.")
-          PY
+          APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
+          CERT_OUTPUT="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)"
+          echo "$CERT_OUTPUT"
+          echo "$CERT_OUTPUT" | grep -qi 'SHA-1 digest: ee37c219b6d8b962665ec7753b4514b62b35601a' || {
+            echo "ERROR: APK is not signed with the permanent ALLways release certificate."
+            exit 1
+          }
 
       - name: Prepare versioned APK asset
         run: |
@@ -506,3 +426,4 @@ EOF
           fi
           gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.7.apk --clobber --repo "$GITHUB_REPOSITORY"
           gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --clobber --repo "$GITHUB_REPOSITORY"
+

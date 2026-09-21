@@ -42,6 +42,33 @@ jobs:
           flutter create . --platforms=android --org com.allways.app
           if [ -f /tmp/google-services.json ]; then mkdir -p android/app; cp /tmp/google-services.json android/app/google-services.json; fi
 
+          # flutter create generates MainActivity under the org + project-name
+          # package (com.allways.app.allways_app). Firebase/Google OAuth is
+          # registered for the exact Android package com.allways.app, so align
+          # the generated activity package and path too. Otherwise the APK can
+          # install successfully but Android cannot launch MainActivity.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+
+          target = "com.allways.app"
+          root = Path("android/app/src/main")
+          candidates = list((root / "kotlin").rglob("MainActivity.kt")) + list((root / "java").rglob("MainActivity.java"))
+          if not candidates:
+              raise SystemExit("Generated MainActivity was not found")
+          src = candidates[0]
+          text = src.read_text()
+          text = re.sub(r'^package\\s+[^\\n]+', f'package {target}', text, count=1, flags=re.M)
+          target_dir = root / "kotlin" / "com" / "allways" / "app"
+          if src.suffix == ".java":
+              target_dir = root / "java" / "com" / "allways" / "app"
+          target_dir.mkdir(parents=True, exist_ok=True)
+          dst = target_dir / src.name
+          dst.write_text(text)
+          if src.resolve() != dst.resolve():
+              src.unlink()
+          PY
+
       - name: Configure ALLways Android package and Firebase Google Services
         run: |
           cd mobile

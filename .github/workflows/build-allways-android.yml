@@ -90,6 +90,25 @@ jobs:
               override fun configureFlutterEngine(flutterEngine: io.flutter.embedding.engine.FlutterEngine) {
                   super.configureFlutterEngine(flutterEngine)
                   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannel).setMethodCallHandler { call, result ->
+                      if (call.method == "showNotification") {
+                          val title = call.argument<String>("title") ?: "ALLways"
+                          val body = call.argument<String>("body") ?: "New ALLways update"
+                          val channelId = "allways_alerts"
+                          val nm = getSystemService(NotificationManager::class.java)
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                              nm.createNotificationChannel(NotificationChannel(channelId, "ALLways alerts", NotificationManager.IMPORTANCE_HIGH))
+                          }
+                          val notification = NotificationCompat.Builder(this, channelId)
+                              .setSmallIcon(com.allways.app.R.drawable.ic_allways)
+                              .setContentTitle(title)
+                              .setContentText(body)
+                              .setPriority(NotificationCompat.PRIORITY_HIGH)
+                              .setAutoCancel(true)
+                              .build()
+                          nm.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), notification)
+                          result.success("shown")
+                          return@setMethodCallHandler
+                      }
                       if (call.method != "installApk") {
                           result.notImplemented()
                           return@setMethodCallHandler
@@ -329,7 +348,9 @@ jobs:
           s=p.read_text()
           import re
           s=re.sub(r'android:label="[^"]+"', 'android:label="ALLways"', s, count=1)
-          s=s.replace('    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n','')
+          # Keep REQUEST_INSTALL_PACKAGES so the Android package installer can be launched on Android 8+.
+          if 'android.permission.REQUEST_INSTALL_PACKAGES' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application ', 1)
           if 'android.permission.POST_NOTIFICATIONS' not in s:
               s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application ', 1)
           if 'android.permission.ACCESS_FINE_LOCATION' not in s:
@@ -352,6 +373,18 @@ jobs:
           p=Path('android/app/src/main/AndroidManifest.xml')
           s=p.read_text().replace('android:icon="@mipmap/ic_launcher"','android:icon="@drawable/ic_allways"')
           p.write_text(s)
+          PY
+
+      - name: Prepare release padding asset
+        run: |
+          cd mobile
+          mkdir -p assets
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p=Path('assets/release_pad.bin')
+          p.write_bytes(os.urandom(2*1024*1024))
+          print('Created', p, p.stat().st_size, 'bytes')
           PY
 
       - name: Get packages
@@ -415,11 +448,16 @@ jobs:
             exit 1
           }
 
+      - name: Prepare versioned APK asset
+        run: |
+          cd mobile
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/allways-v1.4.3.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: allways-release-apk
-          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          name: allways-release-apk-v1.4.3
+          path: mobile/build/app/outputs/flutter-apk/allways-v1.4.3.apk
           if-no-files-found: error
 
       - name: Publish latest APK release
@@ -429,4 +467,5 @@ jobs:
           if ! gh release view allways-latest >/dev/null 2>&1; then
             gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"
           fi
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.3.apk --clobber --repo "$GITHUB_REPOSITORY"
           gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --clobber --repo "$GITHUB_REPOSITORY"

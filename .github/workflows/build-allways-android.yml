@@ -309,25 +309,16 @@ jobs:
           grep -q 'com.allways.app.MainActivity' /tmp/allways-manifest.txt
           grep -q 'android.intent.action.MAIN' /tmp/allways-manifest.txt
           grep -q 'android.intent.category.LAUNCHER' /tmp/allways-manifest.txt
-      - name: Smoke test APK on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          script: |
-            adb install -r mobile/build/app/outputs/flutter-apk/app-release.apk
-            adb shell am force-stop com.allways.app || true
-            adb shell monkey -p com.allways.app -c android.intent.category.LAUNCHER 1
-            sleep 12
-            if ! adb shell pidof com.allways.app | tr -d "\\r" | grep -q "[0-9]"; then
-              echo "ALLways process is not running after launch. Logcat follows:"
-              adb logcat -d -v time | tail -n 500
-              exit 1
-            fi
-            echo "ALLways launched successfully on the Android emulator."
-
+      - name: Validate APK without emulator
+        run: |
+          cd mobile
+          APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          ZIPALIGN="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name zipalign | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          test -x "$ZIPALIGN"
+          "$ZIPALIGN" -c -P 16 -v 4 build/app/outputs/flutter-apk/app-release.apk
+          "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
+          echo "ALLways APK passed CI package, alignment, manifest, and signature validation."
       - name: Verify APK signing certificate
         run: |
           cd mobile

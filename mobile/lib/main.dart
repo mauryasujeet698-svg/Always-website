@@ -10,6 +10,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:share_plus/share_plus.dart';
+
+const adminEmail='mauryasujeet698@gmail.com';
+const shareApkUrl='https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/allways-v1.4.3.apk';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -20,6 +23,7 @@ import 'firebase_options.dart';
 const inventoryEndpoint='https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec';
 const updateManifestUrl='https://raw.githubusercontent.com/mauryasujeet698-svg/Always-website/allways-android-app/mobile/update.json';
 
+@pragma('vm:entry-point')
 Future<void> bg(RemoteMessage m) async { await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); }
 
 Future<void> main() async {
@@ -64,7 +68,7 @@ class _ShellState extends State<Shell> {
     super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();
     timer=Timer.periodic(const Duration(seconds:30),(_)=>loadInventory(silent:true));
     auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();}else{addresses=[];}});
-    messages=FirebaseMessaging.onMessage.listen((m){if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text((m.notification?.title??'ALLways')+': '+(m.notification?.body??'New update'))));});
+    messages=FirebaseMessaging.onMessage.listen((m)async{if(!mounted)return;final title=m.notification?.title??'ALLways';final body=m.notification?.body??'New update';try{await const MethodChannel('com.allways.app/notifications').invokeMethod('showNotification',{'title':title,'body':body});}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
     if(user!=null){setupNotifications();loadAddresses();}
   }
   @override void dispose(){timer?.cancel();auth?.cancel();messages?.cancel();super.dispose();}
@@ -73,14 +77,19 @@ class _ShellState extends State<Shell> {
     try{
       await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);
       final t=await FirebaseMessaging.instance.getToken();
-      if(t!=null){
+      Future<void> save(String token) async {
         final p=await SharedPreferences.getInstance();
-        await p.setString('allways_fcm_token',t);
+        await p.setString('allways_fcm_token',token);
+        if(user!=null){
+          try{
+            await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).set({
+              'uid':user!.uid,'email':user!.email??'','token':token,'updatedAt':FieldValue.serverTimestamp()
+            },SetOptions(merge:true));
+          }catch(_){}
+        }
       }
-      FirebaseMessaging.instance.onTokenRefresh.listen((t) async {
-        final p=await SharedPreferences.getInstance();
-        await p.setString('allways_fcm_token',t);
-      });
+      if(t!=null)await save(t);
+      FirebaseMessaging.instance.onTokenRefresh.listen((t) async { await save(t); });
     }catch(_){}
   }
 
@@ -122,8 +131,9 @@ class _ShellState extends State<Shell> {
             Text(p>0?'Downloading '+(p*100).toStringAsFixed(0)+'%':'Starting download…')]
         )),
       ));
-      final file=File(Directory.systemTemp.path+'/allways_update.apk');
-      await Dio().download(u,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
+      final file=File(Directory.systemTemp.path+'/allways_update_'+DateTime.now().millisecondsSinceEpoch.toString()+'.apk');
+      final downloadUrl=u+(u.contains('?')?'&':'?')+'cacheBust='+DateTime.now().millisecondsSinceEpoch.toString();
+      await Dio().download(downloadUrl,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
       if(mounted)Navigator.of(context).pop();
       final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
       if(result=='permission_required')messenger.showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
@@ -397,8 +407,9 @@ class ProfilePage extends StatelessWidget{
             Text(p>0?'Downloading '+(p*100).toStringAsFixed(0)+'%':'Starting download…')]
         )),
       ));
-      final file=File(Directory.systemTemp.path+'/allways_update.apk');
-      await Dio().download(u,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
+      final file=File(Directory.systemTemp.path+'/allways_update_'+DateTime.now().millisecondsSinceEpoch.toString()+'.apk');
+      final downloadUrl=u+(u.contains('?')?'&':'?')+'cacheBust='+DateTime.now().millisecondsSinceEpoch.toString();
+      await Dio().download(downloadUrl,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
       if(c.mounted)Navigator.of(c).pop();
       final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
       if(c.mounted&&result=='permission_required')ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
@@ -415,12 +426,82 @@ class ProfilePage extends StatelessWidget{
       const SizedBox(height:16),Row(children:[const Expanded(child:Text('Saved addresses',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800))),IconButton(onPressed:onReload,icon:const Icon(Icons.refresh))]),
       if(addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.')
       else ...addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline))))),
-      ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share ALLways'),subtitle:const Text('Share ALLways with friends and family'),onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download the ALLways app: https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/app-release.apk'))),
+      ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share ALLways'),subtitle:const Text('Share ALLways with friends and family'),onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.3: '+shareApkUrl))),
       ListTile(leading:const Icon(Icons.system_update_outlined),title:const Text('Check for updates'),subtitle:const Text('Check for the latest ALLways version'),onTap:()=>_checkForUpdate(c)),
       ListTile(leading:const Icon(Icons.notifications_outlined),title:const Text('Notifications'),subtitle:const Text('Order and ALLways alerts'),onTap:()async{final s=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(s.authorizationStatus==AuthorizationStatus.authorized?'Notifications enabled.':'Permission not granted.')));}),
       ListTile(leading:const Icon(Icons.logout),title:const Text('Log out'),onTap:()=>FirebaseAuth.instance.signOut()),
       const SizedBox(height:20),const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey))
     ]);
+  }
+}
+
+class AdminScreen extends StatefulWidget{
+  const AdminScreen({super.key});
+  @override State<AdminScreen> createState()=>_AdminScreenState();
+}
+
+class _AdminScreenState extends State<AdminScreen>{
+  final email=TextEditingController(text:adminEmail),pass=TextEditingController();
+  bool busy=false,loggedIn=false;
+  @override void initState(){super.initState();final u=FirebaseAuth.instance.currentUser;if(u?.email?.toLowerCase()==adminEmail.toLowerCase())loggedIn=true;}
+  @override void dispose(){email.dispose();pass.dispose();super.dispose();}
+  String error(Object e){
+    if(e is FirebaseAuthException){
+      if(e.code=='wrong-password'||e.code=='invalid-credential')return'Wrong Firebase admin password.';
+      if(e.code=='user-not-found')return'Admin email is not registered in Firebase Authentication.';
+      if(e.code=='operation-not-allowed')return'Email/password sign-in is disabled in Firebase.';
+      return e.message??'Admin login failed.';
+    }
+    return'Admin login failed.';
+  }
+  Future<void> login() async{
+    final e=email.text.trim();
+    if(e.toLowerCase()!=adminEmail.toLowerCase()){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Use the configured ALLways admin email.')));return;}
+    if(pass.text.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter the Firebase admin password.')));return;}
+    setState(()=>busy=true);
+    try{
+      final cred=await FirebaseAuth.instance.signInWithEmailAndPassword(e,pass.text);
+      if(cred.user?.email?.toLowerCase()!=adminEmail.toLowerCase()){await FirebaseAuth.instance.signOut();throw Exception('This account is not the ALLways admin account.');}
+      if(mounted)setState(()=>loggedIn=true);
+    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error(e))));}
+    finally{if(mounted)setState(()=>busy=false);}
+  }
+  Future<void> update(String id,Map<String,dynamic> data) async{
+    try{await FirebaseFirestore.instance.collection('orders').doc(id).update({...data,'updatedAt':DateTime.now().millisecondsSinceEpoch});}
+    catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));}
+  }
+  @override Widget build(BuildContext c){
+    if(!loggedIn)return Scaffold(appBar:AppBar(title:const Text('ALLways Admin Login')),body:ListView(padding:const EdgeInsets.all(20),children:[
+      const Icon(Icons.admin_panel_settings,size:64),const SizedBox(height:12),
+      const Text('ALLways Admin',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),
+      const SizedBox(height:6),const Text('Use the Firebase password for the admin account. This is separate from your Gmail password.'),
+      const SizedBox(height:20),TextField(controller:email,readOnly:true,decoration:const InputDecoration(labelText:'Admin email')),
+      const SizedBox(height:12),TextField(controller:pass,obscureText:true,decoration:const InputDecoration(labelText:'Firebase admin password')),
+      const SizedBox(height:18),FilledButton(onPressed:busy?null:login,child:Text(busy?'Signing in…':'Sign in to Admin')),
+    ]));
+    return Scaffold(appBar:AppBar(title:const Text('ALLways Admin Dashboard'),actions:[IconButton(onPressed:()async{await FirebaseAuth.instance.signOut();if(mounted)setState(()=>loggedIn=false);},icon:const Icon(Icons.logout))]),
+      body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').snapshots(),builder:(c,s){
+        if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));
+        if(!s.hasData)return const Center(child:CircularProgressIndicator());
+        final docs=[...s.data!.docs]..sort((a,b)=>(b.data()['createdAt']??0).toString().compareTo((a.data()['createdAt']??0).toString()));
+        if(docs.isEmpty)return const Center(child:Text('No orders yet.'));
+        return ListView.builder(padding:const EdgeInsets.all(12),itemCount:docs.length,itemBuilder:(c,i){
+          final d=docs[i],o=d.data(),status=(o['status']??'New Order').toString();
+          const statuses=['New Order','Confirmed','Preparing','Out for delivery','Delivered','Cancelled'];
+          final eta=TextEditingController(text:(o['estimatedDelivery']??'').toString());
+          final note=TextEditingController(text:(o['statusNote']??'').toString());
+          return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['name']??'Customer').toString()+' • '+status+' • ₹'+(o['total']??0).toString()),children:[
+            Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text((o['email']??'').toString()),Text((o['phone']??'').toString()),Text((o['address']??'').toString()),const SizedBox(height:8),
+              DropdownButtonFormField<String>(initialValue:statuses.contains(status)?status:'New Order',items:statuses.map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v){if(v==null)return;final n=v=='Confirmed'?'Order confirmed':v=='Preparing'?'Your order is being prepared':v=='Out for delivery'?'Your order is on the way':v=='Delivered'?'Order delivered':v=='Cancelled'?'Order cancelled':'Order received';update(d.id,{'status':v,'statusNote':n});}),
+              const SizedBox(height:8),TextField(controller:eta,decoration:const InputDecoration(labelText:'Estimated delivery / ETA')),const SizedBox(height:6),
+              FilledButton(onPressed:()=>update(d.id,{'estimatedDelivery':eta.text.trim()}),child:const Text('Set ETA')),
+              const SizedBox(height:6),TextField(controller:note,decoration:const InputDecoration(labelText:'Customer message')),const SizedBox(height:6),
+              OutlinedButton(onPressed:()=>update(d.id,{'statusNote':note.text.trim()}),child:const Text('Update customer message')),
+            ]))
+          ]);
+        });
+      });
   }
 }
 

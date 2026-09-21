@@ -183,14 +183,36 @@ jobs:
       - name: Verify in-app updater installer bridge
         run: |
           cd mobile
-          MAIN_ACTIVITY="$(find android/app/src/main/kotlin -type f -name MainActivity.kt | head -n 1)"
-          test -n "$MAIN_ACTIVITY"
-          grep -q 'ACTION_INSTALL_PACKAGE' "$MAIN_ACTIVITY"
-          grep -q 'FileProvider.getUriForFile' "$MAIN_ACTIVITY"
-          grep -q 'ClipData.newRawUri' "$MAIN_ACTIVITY"
-          grep -q 'FLAG_GRANT_READ_URI_PERMISSION' "$MAIN_ACTIVITY"
-          grep -q 'androidx.core.content.FileProvider' android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' android/app/src/main/AndroidManifest.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          main = next(Path("android/app/src/main/kotlin").rglob("MainActivity.kt"), None)
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          paths = Path("android/app/src/main/res/xml/file_paths.xml")
+          if main is None:
+              raise SystemExit("FAIL: MainActivity.kt was not generated")
+          ms = main.read_text()
+          xs = manifest.read_text()
+          required_main = [
+              "import android.content.ClipData",
+              "Intent.ACTION_INSTALL_PACKAGE",
+              "FileProvider.getUriForFile",
+              "ClipData.newRawUri",
+              "Intent.FLAG_GRANT_READ_URI_PERMISSION",
+              "packageManager.canRequestPackageInstalls()",
+          ]
+          required_manifest = [
+              "android.permission.REQUEST_INSTALL_PACKAGES",
+              "androidx.core.content.FileProvider",
+              'android:grantUriPermissions="true"',
+              '@xml/file_paths',
+          ]
+          missing = [x for x in required_main if x not in ms] + [x for x in required_manifest if x not in xs]
+          if not paths.exists() or "<cache-path" not in paths.read_text():
+              missing.append("cache FileProvider path")
+          if missing:
+              raise SystemExit("FAIL: updater bridge missing: " + ", ".join(missing))
+          print("PASS: native ALLways APK installer bridge is present and wired.")
+          PY
 
       - name: Configure ALLways Android package and Firebase Google Services
         run: |

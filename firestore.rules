@@ -19,6 +19,10 @@ service cloud.firestore {
         );
       allow delete: if false;
     }
+    match /fcmTokens/{uid} {
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
     match /customers/{uid}/addresses/{addressId} {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }

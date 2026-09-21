@@ -48,7 +48,6 @@ jobs:
           fi
           test -f android/settings.gradle || test -f android/settings.gradle.kts
           test -f android/app/google-services.json
-
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -57,8 +56,7 @@ jobs:
           candidates=list((root/"kotlin").rglob("MainActivity.kt"))+list((root/"java").rglob("MainActivity.java"))
           if not candidates: raise SystemExit("MainActivity not found")
           src=candidates[0]
-          text=src.read_text()
-          text=re.sub(r'^package\s+[^\n]+',f'package {target}',text,count=1,flags=re.M)
+          text=re.sub(r'^package\s+[^\n]+',f'package {target}',src.read_text(),count=1,flags=re.M)
           target_dir=root/"kotlin"/"com"/"allways"/"app"
           if src.suffix==".java": target_dir=root/"java"/"com"/"allways"/"app"
           target_dir.mkdir(parents=True,exist_ok=True)
@@ -67,18 +65,13 @@ jobs:
           if src.resolve()!=dst.resolve(): src.unlink()
           PY
 
-      - name: Configure in-app APK updater
-        run: |
-          cd mobile
-          python3 - <<'PY'
-          from pathlib import       - name: Configure native PackageInstaller updater
+      - name: Configure native PackageInstaller updater
         run: |
           cd mobile
           python3 - <<'PY'
           from pathlib import Path
           p=Path("android/app/src/main/kotlin/com/allways/app/MainActivity.kt")
-          marker='private val updaterChannel = "com.allways.app/apk_installer"'
-          if marker not in p.read_text():
+          if 'private val updaterChannel = "com.allways.app/apk_installer"' not in p.read_text():
               p.write_text(r'''package com.allways.app
 
 import android.app.PendingIntent
@@ -114,8 +107,7 @@ class MainActivity : FlutterActivity() {
     private fun installApk(path: String?, result: MethodChannel.Result) {
         if (path.isNullOrBlank()) { result.error("NO_APK","APK path is missing",null); return }
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                !packageManager.canRequestPackageInstalls()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
                 startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
                 result.success("permission_required")
                 return
@@ -124,7 +116,6 @@ class MainActivity : FlutterActivity() {
             if (!apk.exists() || !apk.isFile || !apk.canRead() || apk.length()<=0L) {
                 result.error("NO_APK","Downloaded APK is missing or unreadable",null); return
             }
-
             val installer=packageManager.packageInstaller
             val params=PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             params.setAppPackageName(packageName)
@@ -181,7 +172,6 @@ class MainActivity : FlutterActivity() {
               ms=ms.replace("</application>",'        <receiver android:name=".MainActivity$InstallStatusReceiver" android:exported="false"/>\n    </application>',1)
           manifest.write_text(ms)
           PY
-
           mkdir -p android/app/src/main/res/xml
           cat > android/app/src/main/res/xml/file_paths.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -190,48 +180,23 @@ class MainActivity : FlutterActivity() {
           </paths>
           EOF
 
-      - name: Verify in-app updater installer bridge
+      - name: Preserve Flutter launch manifest and validate it
         run: |
           cd mobile
           python3 - <<'PY'
+          import xml.etree.ElementTree as ET
           from pathlib import Path
-          main = next(Path("android/app/src/main/kotlin").rglob("MainActivity.kt"), None)
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          paths = Path("android/app/src/main/res/xml/file_paths.xml")
-          if main is None:
-              raise SystemExit("FAIL: MainActivity.kt was not generated")
-          ms = main.read_text()
-          xs = manifest.read_text()
-          required_main = [
-              "import android.content.ClipData",
-              "Intent.ACTION_INSTALL_PACKAGE",
-              "FileProvider.getUriForFile",
-              "ClipData.newRawUri",
-              "Intent.FLAG_GRANT_READ_URI_PERMISSION",
-              "packageManager.canRequestPackageInstalls()",
-          ]
-          required_manifest = [
-              "android.permission.REQUEST_INSTALL_PACKAGES",
-              "androidx.core.content.FileProvider",
-              'android:grantUriPermissions="true"',
-              '@xml/file_paths',
-          ]
-          missing = [x for x in required_main if x not in ms] + [x for x in required_manifest if x not in xs]
-          if not paths.exists() or "<cache-path" not in paths.read_text():
-              missing.append("cache FileProvider path")
+          p=Path("android/app/src/main/AndroidManifest.xml")
+          ET.parse(p)
+          s=p.read_text()
+          required=['${applicationName}','.MainActivity','@style/LaunchTheme','android.intent.action.MAIN','android.intent.category.LAUNCHER']
+          missing=[x for x in required if x not in s]
           if missing:
-              raise SystemExit("FAIL: updater bridge missing: " + ", ".join(missing))
-          print("PASS: native ALLways APK installer bridge is present and wired.")
+              raise SystemExit("FAIL: Flutter launch manifest missing: "+", ".join(missing))
+          print("PASS: preserved Flutter-generated launch manifest.")
           PY
 
-      - name: Configure ALLways Android package and Firebase Google Services
-        run: |
-          cd mobile
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-               - name: Verify PackageInstaller updater and launcher
+      - name: Verify PackageInstaller updater and launcher
         run: |
           cd mobile
           python3 - <<'PY'
@@ -246,11 +211,48 @@ class MainActivity : FlutterActivity() {
           for x in ["android.permission.REQUEST_INSTALL_PACKAGES","android:name=\".MainActivity\"","android.intent.action.MAIN","android.intent.category.LAUNCHER"]:
               if x not in manifest: missing.append(x)
           if missing: raise SystemExit("FAIL: "+", ".join(missing))
-          if not Path("android/app/src/main/res/xml/file_paths.xml").exists(): raise SystemExit("file_paths.xml missing")
           print("PASS: stable launcher + PackageInstaller updater verified")
           PY
 
-ervices' not in s:
+      - name: Configure ALLways Android package and Firebase Google Services
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          target_package = "com.allways.app"
+
+          # flutter create --org com.allways.app would otherwise produce
+          # com.allways.app.allways_app. ALLways is already registered in
+          # Firebase/Google OAuth as com.allways.app, so force the exact ID.
+          app = Path("android/app")
+          groovy = app / "build.gradle"
+          kotlin = app / "build.gradle.kts"
+          settings_groovy = Path("android/settings.gradle")
+          settings_kotlin = Path("android/settings.gradle.kts")
+
+          if groovy.exists():
+              p = groovy
+              s = p.read_text()
+              s = re.sub(r"namespace\s+['\"][^'\"]+['\"]", 'namespace "' + target_package + '"', s, count=1)
+              s = re.sub(r"applicationId\s+['\"][^'\"]+['\"]", 'applicationId "' + target_package + '"', s, count=1)
+              p.write_text(s)
+          elif kotlin.exists():
+              p = kotlin
+              s = p.read_text()
+              s = re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "' + target_package + '"', s, count=1)
+              s = re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "' + target_package + '"', s, count=1)
+              p.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle file found")
+
+          # Apply the official Google Services Gradle plugin so the checked-in
+          # google-services.json is actually processed during the build.
+          if settings_groovy.exists():
+              p = settings_groovy
+              s = p.read_text()
+              if 'com.google.gms.google-services' not in s:
                   marker = 'plugins {'
                   s = s.replace(marker, marker + '\n    id "com.google.gms.google-services" version "4.5.0" apply false', 1)
               p.write_text(s)

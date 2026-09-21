@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
-  "apkUrl": "https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/allways-release.apk",
-  "notes": "Fixed current location, checkout success screen, cancellation, front-screen quantity controls and sign-in handling."
+  "version": "1.4.1",
+  "apkUrl": "https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/app-release.apk",
+  "notes": "Added in-app APK download and install updates."
 }

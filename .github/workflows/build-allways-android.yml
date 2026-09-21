@@ -69,6 +69,89 @@ jobs:
               src.unlink()
           PY
 
+      - name: Configure in-app APK updater
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+
+          candidates = list(Path("android/app/src/main/kotlin").rglob("MainActivity.kt"))
+          if not candidates:
+              raise SystemExit("MainActivity.kt not found")
+          p = candidates[0]
+          s = p.read_text()
+          if "apk_installer" not in s:
+              s = s.replace("import io.flutter.embedding.android.FlutterActivity", "import android.content.Intent\nimport android.net.Uri\nimport android.os.Build\nimport android.provider.Settings\nimport androidx.core.content.FileProvider\nimport io.flutter.embedding.android.FlutterActivity\nimport io.flutter.plugin.common.MethodChannel\nimport java.io.File")
+              s = s.replace(
+                  "class MainActivity : FlutterActivity()",
+                  """class MainActivity : FlutterActivity() {
+              private val updaterChannel = "com.allways.app/apk_installer"
+
+              override fun configureFlutterEngine(flutterEngine: io.flutter.embedding.engine.FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannel).setMethodCallHandler { call, result ->
+                      if (call.method != "installApk") {
+                          result.notImplemented()
+                          return@setMethodCallHandler
+                      }
+                      val path = call.argument<String>("path")
+                      if (path.isNullOrBlank()) {
+                          result.error("NO_APK", "APK path is missing", null)
+                          return@setMethodCallHandler
+                      }
+                      try {
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+                              startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + packageName)))
+                              result.success("permission_required")
+                              return@setMethodCallHandler
+                          }
+                          val apk = File(path)
+                          val uri = FileProvider.getUriForFile(this, packageName + ".fileprovider", apk)
+                          val intent = Intent(Intent.ACTION_VIEW).apply {
+                              setDataAndType(uri, "application/vnd.android.package-archive")
+                              addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                          }
+                          startActivity(intent)
+                          result.success("started")
+                      } catch (e: Exception) {
+                          result.error("INSTALL_FAILED", e.message, null)
+                      }
+                  }
+              }
+          }"""
+              )
+              p.write_text(s)
+          PY
+
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/file_paths.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths xmlns:android="http://schemas.android.com/apk/res/android">
+              <cache-path name="cache" path="." />
+          </paths>
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("android/app/src/main/AndroidManifest.xml")
+          s=p.read_text()
+          if "android.permission.REQUEST_INSTALL_PACKAGES" not in s:
+              s=s.replace("<application ", "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>\n    <application ", 1)
+          if "androidx.core.content.FileProvider" not in s:
+              provider='''\n        <provider
+              android:name="androidx.core.content.FileProvider"
+              android:authorities="${applicationId}.fileprovider"
+              android:exported="false"
+              android:grantUriPermissions="true">
+              <meta-data
+                  android:name="android.support.FILE_PROVIDER_PATHS"
+                  android:resource="@xml/file_paths" />
+          </provider>'''
+              s=s.replace("</application>", provider+"\n    </application>", 1)
+          p.write_text(s)
+          PY
+
       - name: Configure ALLways Android package and Firebase Google Services
         run: |
           cd mobile

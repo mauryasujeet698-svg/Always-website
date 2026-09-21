@@ -298,7 +298,39 @@ jobs:
       - name: Build release APK
         run: |
           cd mobile
-          flutter build apk --release
+          flutter build apk --release --no-shrink
+
+      - name: Verify Android launcher manifest
+        run: |
+          cd mobile
+          APKANALYZER="$(find \"\${ANDROID_HOME:-\$ANDROID_SDK_ROOT}/cmdline-tools\" -type f -name apkanalyzer | sort -V | tail -n 1)"
+          if [ ! -x "$APKANALYZER" ]; then
+            APKANALYZER="$(find \"\${ANDROID_HOME:-\$ANDROID_SDK_ROOT}/build-tools\" -type f -name apkanalyzer | sort -V | tail -n 1)"
+          fi
+          test -x "$APKANALYZER"
+          "$APKANALYZER" manifest print build/app/outputs/flutter-apk/app-release.apk > /tmp/allways-manifest.txt
+          grep -q 'com.allways.app.MainActivity' /tmp/allways-manifest.txt
+          grep -q 'android.intent.action.MAIN' /tmp/allways-manifest.txt
+          grep -q 'android.intent.category.LAUNCHER' /tmp/allways-manifest.txt
+
+      - name: Smoke test APK on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            adb install -r mobile/build/app/outputs/flutter-apk/app-release.apk
+            adb shell am force-stop com.allways.app || true
+            adb shell monkey -p com.allways.app -c android.intent.category.LAUNCHER 1
+            sleep 12
+            if ! adb shell pidof com.allways.app | tr -d "\\r" | grep -q "[0-9]"; then
+              echo "ALLways process is not running after launch. Logcat follows:"
+              adb logcat -d -v time | tail -n 500
+              exit 1
+            fi
+            echo "ALLways launched successfully on the Android emulator."
 
       - name: Verify APK signing certificate
         run: |

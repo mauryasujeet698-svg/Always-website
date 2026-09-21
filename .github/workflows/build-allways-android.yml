@@ -451,13 +451,13 @@ jobs:
       - name: Prepare versioned APK asset
         run: |
           cd mobile
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/allways-v1.4.3.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/allways-v1.4.4.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: allways-release-apk-v1.4.3
-          path: mobile/build/app/outputs/flutter-apk/allways-v1.4.3.apk
+          name: allways-release-apk-v1.4.4
+          path: mobile/build/app/outputs/flutter-apk/allways-v1.4.4.apk
           if-no-files-found: error
 
       - name: Publish latest APK release
@@ -467,5 +467,6 @@ jobs:
           if ! gh release view allways-latest >/dev/null 2>&1; then
             gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"
           fi
-          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.3.apk --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.4.apk --clobber --repo "$GITHUB_REPOSITORY"
           gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --clobber --repo "$GITHUB_REPOSITORY"
+

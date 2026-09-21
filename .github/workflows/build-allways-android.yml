@@ -166,7 +166,7 @@ jobs:
           s=p.read_text()
           if "android.permission.REQUEST_INSTALL_PACKAGES" not in s:
               import re
-              s=re.sub(r"<application\\b", "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>\n    <application", s, count=1)
+              s=re.sub(r"(<manifest[^>]*>)", r"\\1\n    <uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>", s, count=1)
           if "androidx.core.content.FileProvider" not in s:
               provider='''\n        <provider
               android:name="androidx.core.content.FileProvider"

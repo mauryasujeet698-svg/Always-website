@@ -137,7 +137,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget build(BuildContext context) {
     if (_loadingPreference) {
       return const Scaffold(
-        appBar: AppBar(title: Text('ALLways Admin Dashboard')),
+        appBar: const AppBar(title: Text('ALLways Admin Dashboard')),
         body: Center(child: CircularProgressIndicator()),
       );
     }

@@ -346,7 +346,7 @@ class _ShopPageState extends State<ShopPage>{
         leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
         subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
         trailing:Row(mainAxisSize:MainAxisSize.min,children:[
-          IconButton(onPressed:widget.user==null?()=>widget.onAdd(p):()=>widget.onWishlist(p),icon:Icon(widget.wishlistIds.contains(p.id)?Icons.favorite:Icons.favorite_border)),
+          IconButton(onPressed:()=>widget.onWishlist(p),icon:Icon(widget.wishlistIds.contains(p.id)?Icons.favorite:Icons.favorite_border)),
           widget.cart.containsKey(p.id)
             ? Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline))])
             : IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart))

@@ -243,8 +243,8 @@ class _ShellState extends State<Shell> {
     final sub=total;final delivery=sub>=499?0:30;final grand=sub+delivery;final id='AW'+DateTime.now().millisecondsSinceEpoch.toString().substring(4);
     final order={'id':id,'customerId':user!.uid,'email':user!.email??'','name':name.trim(),'phone':ph,'address':address.trim(),'note':note.trim(),
       'items':cart.values.map((x)=>{'id':x.product.id,'name':x.product.name,'qty':x.qty,'price':x.product.price}).toList(),
-      'subtotal':sub,'delivery':delivery,'total':grand,'paymentMethod':'COD','status':'New Order','estimatedDelivery':'',
-      'statusNote':'Order received','cancellationReason':'','rating':null,'fcmToken':(await SharedPreferences.getInstance()).getString('allways_fcm_token')??'','createdAt':DateTime.now().millisecondsSinceEpoch,'updatedAt':DateTime.now().millisecondsSinceEpoch,'time':DateTime.now().toLocal().toString()};
+      'subtotal':sub,'delivery':delivery,'total':grand,'paymentMethod':'COD','status':'New Order','estimatedDelivery':'','eta':'',
+      'statusNote':'Order received','customerMessage':'Order received','cancellationReason':'','rating':null,'fcmToken':(await SharedPreferences.getInstance()).getString('allways_fcm_token')??'','createdAt':DateTime.now().millisecondsSinceEpoch,'updatedAt':DateTime.now().millisecondsSinceEpoch,'time':DateTime.now().toLocal().toString()};
     try{
       await FirebaseFirestore.instance.collection('orders').doc(id).set(order);
       await saveAddress(name.trim(),ph,address.trim());
@@ -438,8 +438,10 @@ class OrdersPage extends StatelessWidget{
         ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final canCancel=status=='New Order'||status=='Confirmed';final items=(o['items'] as List? ?? []).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
           return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(status+' • ₹'+(o['total']??0).toString()),children:[
             Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-              StatusView(status:status),if((o['estimatedDelivery']??'').toString().isNotEmpty)Text('ETA: '+o['estimatedDelivery'].toString(),style:const TextStyle(fontWeight:FontWeight.w700)),
-              const SizedBox(height:5),Text((o['statusNote']??'').toString()),const SizedBox(height:8),Text(items),Text('Address: '+(o['address']??'').toString()),
+              StatusView(status:status),
+              if((o['eta']??o['estimatedDelivery']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(top:10,bottom:8),child:ListTile(leading:const Icon(Icons.schedule),title:const Text('Estimated delivery',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['eta']??o['estimatedDelivery']).toString(),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)))),
+              if((o['customerMessage']??o['statusNote']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(bottom:10),child:ListTile(leading:const Icon(Icons.message_outlined),title:const Text('Message from ALLways',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['customerMessage']??o['statusNote']).toString(),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)))),
+              const SizedBox(height:3),Text(items),Text('Address: '+(o['address']??'').toString()),
               if((o['cancellationReason']??'').toString().isNotEmpty)Padding(padding:const EdgeInsets.only(top:8),child:Text('Cancellation reason: '+o['cancellationReason'].toString())),
               if(canCancel)Padding(padding:const EdgeInsets.only(top:12),child:OutlinedButton.icon(onPressed:()=>_confirmCancel(c,o['id']?.toString()??d.id,onCancel),icon:const Icon(Icons.cancel_outlined),label:const Text('Cancel order')))
             ]))]));})
@@ -662,12 +664,115 @@ class _AdminScreenState extends State<AdminScreen>{
     }
   }
 
+  Future<String?> _pickQuickOption(BuildContext c,{
+    required String title,
+    required List<String> options,
+    required String current,
+  }) async{
+    final preset=options.contains(current)?current:'Other';
+    final controller=TextEditingController(text:preset=='Other'&&current.isNotEmpty?current:'');
+    String selected=preset;
+    try{
+      return await showModalBottomSheet<String>(
+        context:c,
+        isScrollControlled:true,
+        builder:(sheetContext)=>StatefulBuilder(
+          builder:(context,setSheetState){
+            final other=selected=='Other';
+            return Padding(
+              padding:EdgeInsets.fromLTRB(16,16,16,16+MediaQuery.of(context).viewInsets.bottom),
+              child:Column(
+                mainAxisSize:MainAxisSize.min,
+                crossAxisAlignment:CrossAxisAlignment.start,
+                children:[
+                  Text(title,style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),
+                  const SizedBox(height:12),
+                  Wrap(
+                    spacing:8,
+                    runSpacing:8,
+                    children:options.map((option)=>ChoiceChip(
+                      label:Text(option),
+                      selected:selected==option,
+                      onSelected:(_)=>setSheetState(()=>selected=option),
+                    )).toList(),
+                  ),
+                  if(other)const SizedBox(height:12),
+                  if(other)TextField(
+                    controller:controller,
+                    autofocus:true,
+                    maxLines:title.toLowerCase().contains('message')?3:1,
+                    decoration:InputDecoration(
+                      labelText:title.toLowerCase().contains('eta')?'Enter ETA':'Enter customer message',
+                      border:const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height:14),
+                  SizedBox(
+                    width:double.infinity,
+                    child:FilledButton(
+                      onPressed:(){
+                        final result=selected=='Other'?controller.text.trim():selected;
+                        if(result.isEmpty)return;
+                        Navigator.of(sheetContext).pop(result);
+                      },
+                      child:const Text('Apply'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }finally{
+      controller.dispose();
+    }
+  }
+
+  Future<void> _updateEta(QueryDocumentSnapshot<Map<String,dynamic>> d,String current) async{
+    final value=await _pickQuickOption(
+      context,
+      title:'Update ETA',
+      options:const ['5 mins','10 mins','15 mins','Delayed','Other'],
+      current:current,
+    );
+    if(value==null)return;
+    FirebaseFirestore.instance.collection('orders').doc(d.id).update({
+      'eta':value,
+      'estimatedDelivery':value,
+      'updatedAt':DateTime.now().millisecondsSinceEpoch,
+    }).then((_){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('ETA updated successfully')));
+    }).catchError((e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('ETA update failed: '+e.toString())));
+    });
+  }
+
+  Future<void> _updateCustomerMessage(QueryDocumentSnapshot<Map<String,dynamic>> d,String current) async{
+    final value=await _pickQuickOption(
+      context,
+      title:'Update customer message',
+      options:const ['Preparing your order','Out for delivery','Arriving in 2 mins','Item out of stock','Other'],
+      current:current,
+    );
+    if(value==null)return;
+    FirebaseFirestore.instance.collection('orders').doc(d.id).update({
+      'customerMessage':value,
+      'statusNote':value,
+      'updatedAt':DateTime.now().millisecondsSinceEpoch,
+    }).then((_){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Customer message updated successfully')));
+    }).catchError((e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Customer message update failed: '+e.toString())));
+    });
+  }
+
   Widget orderCard(QueryDocumentSnapshot<Map<String,dynamic>> d){
     final o=d.data();
     final status=(o['status']??'New Order').toString();
     const statuses=['New Order','Confirmed','Preparing','Out for delivery','Delivered','Cancelled'];
-    final eta=TextEditingController(text:(o['estimatedDelivery']??'').toString());
-    final note=TextEditingController(text:(o['statusNote']??'').toString());
+    final eta=(o['eta']??o['estimatedDelivery']??'').toString();
+    final note=(o['customerMessage']??o['statusNote']??'').toString();
     return Card(
       child:ExpansionTile(
         title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
@@ -692,17 +797,25 @@ class _AdminScreenState extends State<AdminScreen>{
                       v=='Out for delivery'?'Your order is on the way':
                       v=='Delivered'?'Order delivered':
                       v=='Cancelled'?'Order cancelled':'Order received';
-                    updateOrder(d.id,{'status':v,'statusNote':n});
+                    updateOrder(d.id,{'status':v,'statusNote':n,'customerMessage':n});
                   },
                 ),
                 const SizedBox(height:8),
-                TextField(controller:eta,decoration:const InputDecoration(labelText:'Estimated delivery / ETA')),
-                const SizedBox(height:6),
-                FilledButton(onPressed:()=>updateOrder(d.id,{'estimatedDelivery':eta.text.trim()}),child:const Text('Set ETA')),
-                const SizedBox(height:6),
-                TextField(controller:note,decoration:const InputDecoration(labelText:'Customer message')),
-                const SizedBox(height:6),
-                OutlinedButton(onPressed:()=>updateOrder(d.id,{'statusNote':note.text.trim()}),child:const Text('Update customer message')),
+                ListTile(
+                  contentPadding:EdgeInsets.zero,
+                  title:const Text('ETA',style:TextStyle(fontWeight:FontWeight.w800)),
+                  subtitle:Text(eta.isEmpty?'Not set':eta),
+                  trailing:const Icon(Icons.schedule),
+                  onTap:()=>_updateEta(d,eta),
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding:EdgeInsets.zero,
+                  title:const Text('Customer message',style:TextStyle(fontWeight:FontWeight.w800)),
+                  subtitle:Text(note.isEmpty?'Not set':note),
+                  trailing:const Icon(Icons.message_outlined),
+                  onTap:()=>_updateCustomerMessage(d,note),
+                ),
               ],
             ),
           ),

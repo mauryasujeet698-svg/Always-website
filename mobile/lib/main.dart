@@ -511,13 +511,60 @@ class _ProfilePageState extends State<ProfilePage>{
     }catch(_){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates.')));}
   }
   Future<void> _chooseAppearance(BuildContext c) async {
-    await showDialog<void>(context:c,builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(context,mode,_)=>
-      AlertDialog(title:const Text('Appearance'),content:Column(mainAxisSize:MainAxisSize.min,children:[
-        RadioListTile<ThemeMode>(title:const Text('Light'),value:ThemeMode.light,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','light');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-        RadioListTile<ThemeMode>(title:const Text('Dark'),value:ThemeMode.dark,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','dark');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-        RadioListTile<ThemeMode>(title:const Text('System'),value:ThemeMode.system,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','system');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-      ])));
+    await showDialog<void>(
+      context:c,
+      builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(
+        valueListenable:themeNotifier,
+        builder:(context,mode,_){
+          return AlertDialog(
+            title:const Text('Appearance'),
+            content:Column(
+              mainAxisSize:MainAxisSize.min,
+              children:[
+                RadioListTile<ThemeMode>(
+                  title:const Text('Light'),
+                  value:ThemeMode.light,
+                  groupValue:mode,
+                  onChanged:(v)async{
+                    if(v==null)return;
+                    themeNotifier.value=v;
+                    final p=await SharedPreferences.getInstance();
+                    await p.setString('allways_theme_mode','light');
+                    if(dialogContext.mounted)Navigator.pop(dialogContext);
+                  },
+                ),
+                RadioListTile<ThemeMode>(
+                  title:const Text('Dark'),
+                  value:ThemeMode.dark,
+                  groupValue:mode,
+                  onChanged:(v)async{
+                    if(v==null)return;
+                    themeNotifier.value=v;
+                    final p=await SharedPreferences.getInstance();
+                    await p.setString('allways_theme_mode','dark');
+                    if(dialogContext.mounted)Navigator.pop(dialogContext);
+                  },
+                ),
+                RadioListTile<ThemeMode>(
+                  title:const Text('System'),
+                  value:ThemeMode.system,
+                  groupValue:mode,
+                  onChanged:(v)async{
+                    if(v==null)return;
+                    themeNotifier.value=v;
+                    final p=await SharedPreferences.getInstance();
+                    await p.setString('allways_theme_mode','system');
+                    if(dialogContext.mounted)Navigator.pop(dialogContext);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
+
   Widget _action(BuildContext c,{required IconData icon,required String label,required VoidCallback onTap})=>Expanded(child:Card(child:InkWell(onTap:onTap,borderRadius:BorderRadius.circular(12),child:Padding(padding:const EdgeInsets.symmetric(vertical:14,horizontal:8),child:Column(mainAxisSize:MainAxisSize.min,children:[Icon(icon),const SizedBox(height:6),Text(label,textAlign:TextAlign.center,style:const TextStyle(fontWeight:FontWeight.w700))])))));
   @override Widget build(BuildContext c){
     final u=widget.user;if(u==null)return Center(child:FilledButton(onPressed:widget.onLogin,child:const Text('Sign in / Sign up')));
@@ -585,7 +632,36 @@ class _WishlistPageState extends State<WishlistPage>{
     try{await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('wishlist').doc(p.id).delete();if(mounted)setState(()=>items.removeWhere((x)=>x.id==p.id));}
     catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Could not remove item.')));}
   }
-  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Wishlist')),body:RefreshIndicator(onRefresh:load,child:loading?const Center(child:CircularProgressIndicator()):error!=null?Center(child:Text(error!)):items.isEmpty?ListView(children:[const SizedBox(height:80),const Icon(Icons.favorite_border,size:72),const SizedBox(height:12),const Center(child:Text('Your wishlist is empty',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)))]):ListView(padding:const EdgeInsets.all(16),children:items.map((p)=>Card(child:ListTile(leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('₹'+p.price.toString()+' • '+p.category),trailing:IconButton(onPressed:()=>remove(p),icon:const Icon(Icons.favorite)),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>{},liked:true,onWishlist:()=>remove(p)))))).toList())));
+  @override Widget build(BuildContext c)=>Scaffold(
+    appBar:AppBar(title:const Text('Wishlist')),
+    body:RefreshIndicator(
+      onRefresh:load,
+      child:loading
+        ? const Center(child:CircularProgressIndicator())
+        : error!=null
+          ? Center(child:Text(error!))
+          : items.isEmpty
+            ? ListView(children:[
+                const SizedBox(height:80),
+                const Icon(Icons.favorite_border,size:72),
+                const SizedBox(height:12),
+                const Center(child:Text('Your wishlist is empty',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800))),
+              ])
+            : ListView(
+                padding:const EdgeInsets.all(16),
+                children:items.map((p)=>Card(
+                  child:ListTile(
+                    leading:CircleAvatar(child:Text(p.icon)),
+                    title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
+                    subtitle:Text('₹'+p.price.toString()+' • '+p.category),
+                    trailing:IconButton(onPressed:()=>remove(p),icon:const Icon(Icons.favorite)),
+                    onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>{},liked:true,onWishlist:()=>remove(p))),
+                  ),
+                )).toList(),
+              ),
+    ),
+  );
+
 }
 class AdminScreen extends StatefulWidget{
   const AdminScreen({super.key});

@@ -162,7 +162,12 @@ class _ShellState extends State<Shell> {
       await Dio().download(downloadUrl,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
       if(mounted)Navigator.of(context).pop();
       final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
-      if(result=='permission_required')messenger.showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
+      if(result=='permission_required'){
+        try{
+          await const MethodChannel('com.allways.app/apk_installer').invokeMethod('openInstallSettings');
+        }catch(_){}
+        messenger.showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
+      }
       else if(result!='started')messenger.showSnackBar(SnackBar(content:Text('Could not start installation: '+(result??'unknown error'))));
     }catch(e){
       if(mounted&&Navigator.of(context).canPop())Navigator.of(context).pop();
@@ -484,7 +489,12 @@ class ProfilePage extends StatelessWidget{
       await Dio().download(downloadUrl,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
       if(c.mounted)Navigator.of(c).pop();
       final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
-      if(c.mounted&&result=='permission_required')ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
+      if(c.mounted&&result=='permission_required'){
+        try{
+          await const MethodChannel('com.allways.app/apk_installer').invokeMethod('openInstallSettings');
+        }catch(_){}
+        ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
+      }
       else if(c.mounted&&result!='started')ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Could not start installation: '+(result??'unknown error'))));
     }catch(e){if(c.mounted&&Navigator.of(c).canPop())Navigator.of(c).pop();if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));}
     finally{controller.dispose();}

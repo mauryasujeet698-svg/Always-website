@@ -86,12 +86,11 @@ class CartItem { final Product product; int qty; CartItem(this.product,this.qty)
 class Shell extends StatefulWidget { const Shell({super.key}); State<Shell> createState()=>_ShellState(); }
 class _ShellState extends State<Shell> {
   int tab=0; List<Product> products=[]; bool loading=true; String? error; Timer? timer;
-  final Map<String,CartItem> cart={}; List<Map<String,dynamic>> addresses=[]; User? user;
+  final Map<String,CartItem> cart={}; List<Map<String,dynamic>> addresses=[]; User? user; final Set<String> wishlistIds={};
   StreamSubscription<User?>? auth; StreamSubscription<RemoteMessage>? messages;
   String? updateVersion;
   String? updateUrl;
   String? updateNotes;
-  final Set<String> wishlistIds={};
 
   @override void initState(){
     super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();
@@ -204,6 +203,34 @@ class _ShellState extends State<Shell> {
   void msg(String s){if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s)));}
   void login(){Navigator.push(context,MaterialPageRoute(builder:(_)=>const AuthScreen()));}
 
+  Future<void> loadWishlist() async {
+    if(user==null)return;
+    try{
+      final snap=await FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist').get();
+      wishlistIds..clear()..addAll(snap.docs.map((d)=>d.id));
+      if(mounted)setState((){});
+    }catch(_){}
+  }
+
+  Future<void> toggleWishlist(Product p) async {
+    if(user==null){login();return;}
+    final ref=FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist').doc(p.id);
+    final adding=!wishlistIds.contains(p.id);
+    setState((){if(adding)wishlistIds.add(p.id);else wishlistIds.remove(p.id);});
+    try{
+      if(adding){
+        await ref.set({'id':p.id,'name':p.name,'category':p.category,'icon':p.icon,'description':p.description,'brand':p.brand,'price':p.price,'stock':p.stock,'addedAt':FieldValue.serverTimestamp()});
+        msg('Added to wishlist');
+      }else{
+        await ref.delete();
+        msg('Removed from wishlist');
+      }
+    }catch(_){
+      setState((){if(adding)wishlistIds.remove(p.id);else wishlistIds.add(p.id);});
+      msg('Could not update wishlist. Please try again.');
+    }
+  }
+
   Future<void> cancelOrder(String payload) async {
     if(user==null)return;
     final parts=payload.split('||');final orderId=parts.first;final reason=parts.length>1&&parts[1].trim().isNotEmpty?parts.sublist(1).join('||').trim():'Customer requested cancellation';
@@ -236,37 +263,6 @@ class _ShellState extends State<Shell> {
     if(user==null)return;
     try{await FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('addresses').doc(id).delete();await loadAddresses();}catch(_){}
   }
-  Future<void> loadWishlist() async {
-    if(user==null)return;
-    try{
-      final s=await FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist').get();
-      wishlistIds..clear()..addAll(s.docs.map((d)=>d.id));
-      if(mounted)setState((){});
-    }catch(_){
-      wishlistIds.clear();
-      if(mounted)setState((){});
-    }
-  }
-
-  Future<void> toggleWishlist(Product p) async {
-    if(user==null){login();return;}
-    final ref=FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist').doc(p.id);
-    final adding=!wishlistIds.contains(p.id);
-    setState((){if(adding){wishlistIds.add(p.id);}else{wishlistIds.remove(p.id);}});
-    try{
-      if(adding){
-        await ref.set({'id':p.id,'name':p.name,'category':p.category,'icon':p.icon,'description':p.description,'brand':p.brand,'price':p.price,'stock':p.stock,'addedAt':FieldValue.serverTimestamp()});
-        msg(p.name+' added to wishlist');
-      }else{
-        await ref.delete();
-        msg(p.name+' removed from wishlist');
-      }
-    }catch(_){
-      setState((){if(adding){wishlistIds.remove(p.id);}else{wishlistIds.add(p.id);}});
-      msg('Could not update wishlist. Please try again.');
-    }
-  }
-
 
   Future<void> placeOrder(String name,String phone,String address,String note) async {
     if(user==null){login();return;} if(cart.isEmpty)return;
@@ -296,7 +292,7 @@ class _ShellState extends State<Shell> {
       ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty,user:user,wishlistIds:wishlistIds,onWishlist:toggleWishlist),
       const TravelTeaserScreen(),
       const LocalSellersPage(),
-      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder,onWishlist:loadWishlist),
+      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder),
     ];
     return Scaffold(
       body:SafeArea(child:Column(children:[
@@ -321,48 +317,54 @@ class _ShellState extends State<Shell> {
 }
 
 class ShopPage extends StatefulWidget {
-  final List<Product> products;final bool loading;final String? error;final Future<void> Function({bool silent}) onRefresh;final void Function(Product) onAdd;
-  final Map<String,CartItem> cart;final void Function(String,int) onQty;final User? user;final Set<String> wishlistIds;final Future<void> Function(Product) onWishlist;
+  final List<Product> products; final bool loading; final String? error;
+  final Future<void> Function({bool silent}) onRefresh; final void Function(Product) onAdd;
+  final Map<String,CartItem> cart; final void Function(String,int) onQty;
+  final User? user; final Set<String> wishlistIds; final Future<void> Function(Product) onWishlist;
   const ShopPage({super.key,required this.products,required this.loading,required this.error,required this.onRefresh,required this.onAdd,required this.cart,required this.onQty,required this.user,required this.wishlistIds,required this.onWishlist});
-  State<ShopPage> createState()=>_ShopPageState();
+  @override State<ShopPage> createState()=>_ShopPageState();
 }
 class _ShopPageState extends State<ShopPage>{
   String cat='All',search='';
-  Widget build(BuildContext c){
-    final cats=<String>{'All',...widget.products.map((p)=>p.category)};final q=search.toLowerCase().trim();
+  @override Widget build(BuildContext c){
+    final cats=<String>{'All',...widget.products.map((p)=>p.category)}; final q=search.toLowerCase().trim();
     final list=widget.products.where((p){final text=(p.name+' '+p.category+' '+p.brand+' '+p.description).toLowerCase();return(cat=='All'||p.category==cat)&&(q.isEmpty||text.contains(q));}).toList();
     return RefreshIndicator(onRefresh:()=>widget.onRefresh(),child:ListView(padding:const EdgeInsets.fromLTRB(16,12,16,110),children:[
       const Text('ALLways',style:TextStyle(fontSize:30,fontWeight:FontWeight.w900)),const Text('Closer to You, Always',style:TextStyle(color:Colors.grey)),
-      const SizedBox(height:14),Card(color:Colors.black,child:const Padding(padding:EdgeInsets.all(22),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        Text('Priority Delivery',style:TextStyle(color:Colors.white70)),SizedBox(height:7),Text('Everything you need, closer to home.',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w800)),SizedBox(height:7),Text('Shop local essentials. Simple ordering.',style:TextStyle(color:Colors.white70))]))),
+      const SizedBox(height:14),Card(color:Colors.black,child:const Padding(padding:EdgeInsets.all(22),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Priority Delivery',style:TextStyle(color:Colors.white70)),SizedBox(height:7),Text('Everything you need, closer to home.',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w800)),SizedBox(height:7),Text('Shop local essentials. Simple ordering.',style:TextStyle(color:Colors.white70))]))),
       const SizedBox(height:16),TextField(decoration:const InputDecoration(hintText:'Search items',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>search=v)),
       const SizedBox(height:10),SizedBox(height:44,child:ListView(scrollDirection:Axis.horizontal,children:cats.map((x)=>Padding(padding:const EdgeInsets.only(right:7),child:ChoiceChip(label:Text(x),selected:cat==x,onSelected:(_)=>setState(()=>cat=x)))).toList())),
       const SizedBox(height:14),
       if(widget.loading)const Padding(padding:EdgeInsets.all(40),child:Center(child:CircularProgressIndicator()))
       else if(widget.error!=null)const InfoCard(title:'Could not load inventory',detail:'Check your connection and pull down to retry.')
       else if(list.isEmpty)const InfoCard(title:'No items found',detail:'Try another category or search.')
-      else ...list.map((p)=>Card(margin:const EdgeInsets.only(bottom:9),child:ListTile(
-        onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),isWishlisted:widget.wishlistIds.contains(p.id),onWishlist:()=>widget.onWishlist(p)))),
-        leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
-        subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
-        trailing:Row(mainAxisSize:MainAxisSize.min,children:[
-          IconButton(onPressed:()=>widget.onWishlist(p),icon:Icon(widget.wishlistIds.contains(p.id)?Icons.favorite:Icons.favorite_border)),
-          widget.cart.containsKey(p.id)
-            ? Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline))])
-            : IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart))
-        ]),    ]));
+      else ...list.map((p){
+        final liked=widget.wishlistIds.contains(p.id);
+        return Card(margin:const EdgeInsets.only(bottom:9),child:ListTile(
+          onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),liked:liked,onWishlist:()=>widget.onWishlist(p)))),
+          leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
+          subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
+          trailing:Row(mainAxisSize:MainAxisSize.min,children:[
+            IconButton(onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border)),
+            widget.cart.containsKey(p.id)
+              ? Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline))])
+              : IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart)),
+          ]),
+        );
+      }),
+    ]));
   }
 }
-
 class ProductScreen extends StatelessWidget{
-  final Product product;final VoidCallback onAdd;final bool isWishlisted;final VoidCallback onWishlist;const ProductScreen({super.key,required this.product,required this.onAdd,required this.isWishlisted,required this.onWishlist});
-  Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Product'),actions:[IconButton(onPressed:onWishlist,icon:Icon(isWishlisted?Icons.favorite:Icons.favorite_border))]),body:ListView(padding:const EdgeInsets.all(20),children:[
-    CircleAvatar(radius:55,child:Text(product.icon,style:const TextStyle(fontSize:40))),const SizedBox(height:18),
-    Text(product.name,style:const TextStyle(fontSize:28,fontWeight:FontWeight.w900)),if(product.brand.isNotEmpty)Text(product.brand,style:const TextStyle(color:Colors.grey)),
-    const SizedBox(height:8),Text('₹'+product.price.toString(),style:const TextStyle(fontSize:24,fontWeight:FontWeight.w800)),const SizedBox(height:14),
-    Text(product.description.isEmpty?'Available from the shared ALLways inventory.':product.description),const SizedBox(height:10),
-    Text(product.stock>0?product.stock.toString()+' available':'Currently unavailable'),const SizedBox(height:24),
-    FilledButton.icon(onPressed:product.stock>0?(){onAdd();Navigator.pop(c);}:null,icon:const Icon(Icons.add_shopping_cart),label:const Text('Add to cart'))
+  final Product product; final VoidCallback onAdd; final bool liked; final VoidCallback onWishlist;
+  const ProductScreen({super.key,required this.product,required this.onAdd,required this.liked,required this.onWishlist});
+  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:Text(product.name),actions:[IconButton(onPressed:onWishlist,icon:Icon(liked?Icons.favorite:Icons.favorite_border))]),body:ListView(padding:const EdgeInsets.all(20),children:[
+    CircleAvatar(radius:54,child:Text(product.icon,style:const TextStyle(fontSize:44))),const SizedBox(height:20),
+    Text(product.name,style:const TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:8),Text(product.category,style:const TextStyle(color:Colors.grey)),
+    if(product.brand.isNotEmpty)Text(product.brand,style:const TextStyle(color:Colors.grey)),const SizedBox(height:14),
+    Text('₹'+product.price.toString(),style:const TextStyle(fontSize:24,fontWeight:FontWeight.w800)),const SizedBox(height:14),
+    Text(product.description.isEmpty?'No description available.':product.description),const SizedBox(height:22),
+    FilledButton.icon(onPressed:product.stock>0?onAdd:null,icon:const Icon(Icons.shopping_cart),label:Text(product.stock>0?'Add to cart':'Unavailable')),
   ]));
 }
 
@@ -470,24 +472,14 @@ class OrdersPage extends StatelessWidget{
       final docs=[...s.data!.docs]..sort((a,b)=>((b.data()['createdAt']??0)as num).compareTo(((a.data()['createdAt']??0)as num)));
       return ListView(padding:const EdgeInsets.all(16),children:[
         const Text('Your Orders',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
-        if(docs.isEmpty)Column(children:[
-          const SizedBox(height:35),
-          const Icon(Icons.shopping_bag_outlined,size:78),
-          const SizedBox(height:14),
-          const Text('Your fresh orders will appear here',textAlign:TextAlign.center,style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)),
-          const SizedBox(height:16),
-          FilledButton.icon(onPressed:()=>Navigator.of(c).popUntil((r)=>r.isFirst),icon:const Icon(Icons.shopping_bag_outlined),label:const Text('Start Shopping')),
-          const SizedBox(height:35),
-        ]),
-        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final canCancel=status=='New Order'||status=='Confirmed';final rawItems=(o['items'] as List? ?? []);
+        if(docs.isEmpty)const InfoCard(title:'No orders yet',detail:'Your placed orders will appear here.'),
+        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final canCancel=status=='New Order'||status=='Confirmed';final items=(o['items'] as List? ?? []).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
           return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(status+' • ₹'+(o['total']??0).toString()),children:[
             Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               StatusView(status:status),
               if((o['eta']??o['estimatedDelivery']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(top:10,bottom:8),child:ListTile(leading:const Icon(Icons.schedule),title:const Text('Estimated delivery',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['eta']??o['estimatedDelivery']).toString(),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)))),
               if((o['customerMessage']??o['statusNote']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(bottom:10),child:ListTile(leading:const Icon(Icons.message_outlined),title:const Text('Message from ALLways',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['customerMessage']??o['statusNote']).toString(),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)))),
-              const SizedBox(height:8),const Text('Items ordered',style:TextStyle(fontSize:16,fontWeight:FontWeight.w800)),
-              ...rawItems.map((x)=>ListTile(contentPadding:EdgeInsets.zero,dense:true,title:Text((x['name']??'Item').toString()),subtitle:Text('Qty: '+(x['qty']??0).toString()),trailing:Text('₹'+(x['price']??0).toString()))),
-              const SizedBox(height:3),Text('Address: '+(o['address']??'').toString()),
+              const SizedBox(height:3),Text(items),Text('Address: '+(o['address']??'').toString()),
               if((o['cancellationReason']??'').toString().isNotEmpty)Padding(padding:const EdgeInsets.only(top:8),child:Text('Cancellation reason: '+o['cancellationReason'].toString())),
               if(canCancel)Padding(padding:const EdgeInsets.only(top:12),child:OutlinedButton.icon(onPressed:()=>_confirmCancel(c,o['id']?.toString()??d.id,onCancel),icon:const Icon(Icons.cancel_outlined),label:const Text('Cancel order')))
             ]))]));})
@@ -505,169 +497,96 @@ class StatusView extends StatelessWidget{final String status;const StatusView({s
   return Column(children:[for(int x=0;x<s.length;x++)ListTile(dense:true,contentPadding:EdgeInsets.zero,leading:Icon(x<=i?Icons.check_circle:Icons.radio_button_unchecked,color:x<=i?Colors.green:Colors.grey),title:Text(s[x]))]);
 }}
 
-class ProfilePage extends StatelessWidget{
-  final User? user;final List<Map<String,dynamic>> addresses;final VoidCallback onLogin;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;final Future<void> Function(String) onCancel;final Future<void> Function() onWishlist;
-  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete,required this.onCancel,required this.onWishlist});
-
+class ProfilePage extends StatefulWidget{
+  final User? user; final List<Map<String,dynamic>> addresses; final VoidCallback onLogin;
+  final Future<void> Function() onReload; final Future<void> Function(String) onDelete; final Future<void> Function(String) onCancel;
+  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete,required this.onCancel});
+  @override State<ProfilePage> createState()=>_ProfilePageState();
+}
+class _ProfilePageState extends State<ProfilePage>{
   Future<void> _checkForUpdate(BuildContext c) async {
-    try {
-      final r=await http.get(Uri.parse(updateManifestUrl)).timeout(const Duration(seconds:8));
-      if(r.statusCode!=200)throw Exception();
-      final data=jsonDecode(r.body) as Map<String,dynamic>;
-      final latest=(data['version']??'').toString();
-      final current=await PackageInfo.fromPlatform();
-      int v(String x)=>x.split('.').map((e)=>int.tryParse(e)??0).fold(0,(a,b)=>a*1000+b);
-      if(latest.isNotEmpty&&v(latest)>v(current.version)){
-        if(c.mounted)showDialog(context:c,builder:(_)=>AlertDialog(title:const Text('Update available'),content:Text('ALLways '+latest+' is available. Update now for the latest improvements.'),actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Later')),FilledButton(onPressed:()async{Navigator.pop(c);final url=(data['apkUrl']??'').toString();if(url.isNotEmpty)await _downloadAndInstall(c,url);},child:const Text('UPDATE NOW'))]));
-      }else if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('You are using the latest ALLways version.')));
-    }catch(_){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates. Please try again.')));}
+    try{final r=await http.get(Uri.parse(updateManifestUrl)).timeout(const Duration(seconds:8));if(!c.mounted)return;
+      if(r.statusCode==200){final d=jsonDecode(r.body);if(d is Map&&(d['version']??'').toString().isNotEmpty){ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Latest version: '+d['version'].toString())));return;}}
+      ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates.')));
+    }catch(_){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates.')));}
   }
-
-  Future<void> _downloadAndInstall(BuildContext c,String u) async {
-    final controller=ValueNotifier<double>(0);
-    try{
-      showDialog(context:c,barrierDismissible:false,builder:(_)=>AlertDialog(title:const Text('Updating ALLways'),content:ValueListenableBuilder<double>(valueListenable:controller,builder:(_,p,__)=>Column(mainAxisSize:MainAxisSize.min,children:[LinearProgressIndicator(value:p>0?p:null),const SizedBox(height:12),Text(p>0?'Downloading '+(p*100).toStringAsFixed(0)+'%':'Starting download…')]))));
-      final file=File(Directory.systemTemp.path+'/allways_update_'+DateTime.now().millisecondsSinceEpoch.toString()+'.apk');
-      final downloadUrl=u+(u.contains('?')?'&':'?')+'cacheBust='+DateTime.now().millisecondsSinceEpoch.toString();
-      await Dio().download(downloadUrl,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
-      if(c.mounted)Navigator.of(c).pop();
-      final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
-      if(c.mounted&&result=='permission_required'){
-        try{await const MethodChannel('com.allways.app/apk_installer').invokeMethod('openInstallSettings');}catch(_){}
-        ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
-      }else if(c.mounted&&result!='started')ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Could not start installation: '+(result??'unknown error'))));
-    }catch(e){if(c.mounted&&Navigator.of(c).canPop())Navigator.of(c).pop();if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));}
-    finally{controller.dispose();}
-  }
-
   Future<void> _chooseAppearance(BuildContext c) async {
-    await showDialog<void>(context:c,builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(context,mode,_){return AlertDialog(title:const Text('Appearance'),content:Column(mainAxisSize:MainAxisSize.min,children:[
-      RadioListTile<ThemeMode>(title:const Text('Light'),value:ThemeMode.light,groupValue:mode,onChanged:(value)async{if(value==null)return;themeNotifier.value=value;final prefs=await SharedPreferences.getInstance();await prefs.setString('allways_theme_mode','light');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-      RadioListTile<ThemeMode>(title:const Text('Dark'),value:ThemeMode.dark,groupValue:mode,onChanged:(value)async{if(value==null)return;themeNotifier.value=value;final prefs=await SharedPreferences.getInstance();await prefs.setString('allways_theme_mode','dark');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-      RadioListTile<ThemeMode>(title:const Text('System'),value:ThemeMode.system,groupValue:mode,onChanged:(value)async{if(value==null)return;themeNotifier.value=value;final prefs=await SharedPreferences.getInstance();await prefs.setString('allways_theme_mode','system');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-    ]));}));
-
+    await showDialog<void>(context:c,builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(context,mode,_)=>
+      AlertDialog(title:const Text('Appearance'),content:Column(mainAxisSize:MainAxisSize.min,children:[
+        RadioListTile<ThemeMode>(title:const Text('Light'),value:ThemeMode.light,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','light');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+        RadioListTile<ThemeMode>(title:const Text('Dark'),value:ThemeMode.dark,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','dark');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+        RadioListTile<ThemeMode>(title:const Text('System'),value:ThemeMode.system,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','system');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+      ])));
+  }
   Widget _action(BuildContext c,{required IconData icon,required String label,required VoidCallback onTap})=>Expanded(child:Card(child:InkWell(onTap:onTap,borderRadius:BorderRadius.circular(12),child:Padding(padding:const EdgeInsets.symmetric(vertical:14,horizontal:8),child:Column(mainAxisSize:MainAxisSize.min,children:[Icon(icon),const SizedBox(height:6),Text(label,textAlign:TextAlign.center,style:const TextStyle(fontWeight:FontWeight.w700))])))));
-
-  Widget build(BuildContext c){
-    if(user==null)return Center(child:FilledButton(onPressed:onLogin,child:const Text('Sign in / Sign up')));
+  @override Widget build(BuildContext c){
+    final u=widget.user;if(u==null)return Center(child:FilledButton(onPressed:widget.onLogin,child:const Text('Sign in / Sign up')));
     return ListView(padding:const EdgeInsets.all(16),children:[
       const Text('Profile',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
-      Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.person)),title:Text(user!.displayName??'ALLways customer'),subtitle:Text(user!.email??''))),
-      const SizedBox(height:12),
-      FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
-        future:FirebaseFirestore.instance.collection('customers').doc(user!.uid).get(),
-        builder:(context,snapshot){
-          final isAdmin=snapshot.data?.data()?['role']=='admin';
-          return Column(children:[
-            Row(children:[
-              _action(c,icon:Icons.receipt_long_outlined,label:'Orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:user,onCancel:onCancel)))),
-              const SizedBox(width:8),
-              _action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(addresses:addresses,onReload:onReload,onDelete:onDelete)))),
-              const SizedBox(width:8),
-              _action(c,icon:Icons.favorite_border,label:'Wishlist',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>WishlistPage(user:user,onReload:onWishlist)))),
-            ]),
-            if(isAdmin)...[
-              const SizedBox(height:8),
-              Row(children:[
-                _action(c,icon:Icons.admin_panel_settings_outlined,label:'Admin',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen()))),
-                const Spacer(),
-              ]),
-            ],
-          ]);
-        },
-      ),
-      const SizedBox(height:18),
+      Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.person)),title:Text(u.displayName??'ALLways customer'),subtitle:Text(u.email??''))),
+      const SizedBox(height:8),
+      Row(children:[
+        _action(c,icon:Icons.receipt_long_outlined,label:'Orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:u,onCancel:widget.onCancel)))),
+        const SizedBox(width:8),
+        _action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
+        const SizedBox(width:8),
+        _action(c,icon:Icons.favorite_border,label:'Wishlist',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
+      ]),
+      const SizedBox(height:10),
+      FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(future:FirebaseFirestore.instance.collection('customers').doc(u.uid).get(),builder:(context,snapshot){
+        final admin=snapshot.data?.data()?['role']=='admin';if(!admin)return const SizedBox.shrink();
+        return Card(child:ListTile(leading:const Icon(Icons.admin_panel_settings_outlined),title:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen()))));
+      }),
+      const SizedBox(height:10),Row(children:[const Expanded(child:Text('Saved addresses',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800))),IconButton(onPressed:widget.onReload,icon:const Icon(Icons.refresh))]),
+      if(widget.addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.')
+      else ...widget.addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>widget.onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline))))),
       ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share ALLways'),subtitle:const Text('Share ALLways with friends and family'),onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
       ListTile(leading:const Icon(Icons.system_update_outlined),title:const Text('Check for updates'),subtitle:const Text('Check for the latest ALLways version'),onTap:()=>_checkForUpdate(c)),
       ListTile(leading:const Icon(Icons.brightness_6_outlined),title:const Text('Appearance'),subtitle:const Text('Choose light, dark, or system theme'),onTap:()=>_chooseAppearance(c)),
-      ListTile(leading:const Icon(Icons.notifications_outlined),title:const Text('Notifications'),subtitle:const Text('Order and ALLways alerts'),onTap:()async{final s=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(s.authorizationStatus==AuthorizationStatus.authorized?'Notifications enabled.':'Permission not granted.')));}),
-      const SizedBox(height:20),const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey))
+      ListTile(leading:const Icon(Icons.notifications_outlined),title:const Text('Notifications'),subtitle:const Text('Order and ALLways alerts'),onTap:()async{final st=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(st.authorizationStatus==AuthorizationStatus.authorized?'Notifications enabled.':'Permission not granted.')));}),
+      ListTile(leading:const Icon(Icons.logout),title:const Text('Log out'),onTap:()=>FirebaseAuth.instance.signOut()),
+      const SizedBox(height:20),const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey)),
     ]);
   }
 }
-
 class SavedAddressesPage extends StatelessWidget{
   final List<Map<String,dynamic>> addresses;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;
   const SavedAddressesPage({super.key,required this.addresses,required this.onReload,required this.onDelete});
-  Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Saved addresses')),body:RefreshIndicator(onRefresh:onReload,child:ListView(padding:const EdgeInsets.all(16),children:[
+  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Saved addresses')),body:RefreshIndicator(onRefresh:onReload,child:ListView(padding:const EdgeInsets.all(16),children:[
     if(addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.')
     else ...addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline)))))
   ])));
 }
-
-class WishlistPage extends StatelessWidget{
-  final User? user;final Future<void> Function() onReload;
-  const WishlistPage({super.key,required this.user,required this.onReload});
-
-  Widget build(BuildContext c){
-    if(user==null)return const Scaffold(body:Center(child:Text('Please sign in to view your wishlist.')));
-    final ref=FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist');
-    return Scaffold(
-      appBar:AppBar(title:const Text('Wishlist')),
-      body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-        stream:ref.orderBy('addedAt',descending:true).snapshots(),
-        builder:(context,snapshot){
-          if(snapshot.hasError)return const InfoCard(title:'Wishlist unavailable',detail:'Please check your connection and try again.');
-          if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
-          final docs=snapshot.data!.docs;
-          if(docs.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[
-            Icon(Icons.favorite_border,size:72),
-            SizedBox(height:12),
-            Text('Your wishlist is empty',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)),
-            SizedBox(height:6),
-            Text('Tap the heart on any item to save it here.',textAlign:TextAlign.center),
-          ])));
-          return RefreshIndicator(
-            onRefresh:onReload,
-            child:ListView.builder(
-              padding:const EdgeInsets.all(16),
-              itemCount:docs.length,
-              itemBuilder:(context,index){
-                final p=docs[index].data();
-                return Card(
-                  margin:const EdgeInsets.only(bottom:9),
-                  child:ListTile(
-                    leading:CircleAvatar(child:Text((p['icon']??'🛍️').toString())),
-                    title:Text((p['name']??'Item').toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
-                    subtitle:Text((p['category']??'').toString()+' • ₹'+(p['price']??0).toString()),
-                    trailing:IconButton(
-                      onPressed:()async{
-                        await ref.doc(docs[index].id).delete();
-                        await onReload();
-                      },
-                      icon:const Icon(Icons.favorite),
-                    ),
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
 class LocalSellersPage extends StatelessWidget{
   const LocalSellersPage({super.key});
-  Widget build(BuildContext c)=>StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-    stream:FirebaseFirestore.instance.collection('localSellers').where('active',isEqualTo:true).snapshots(),
-    builder:(context,snapshot){
-      if(snapshot.hasError)return const InfoCard(title:'Local sellers unavailable',detail:'Please check your connection and try again.');
-      if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
-      final sellers=snapshot.data!.docs;
-      return ListView(padding:const EdgeInsets.fromLTRB(16,16,16,100),children:[
-        const Text('Local sellers',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),
-        const SizedBox(height:6),const Text('Discover sellers near you and contact them directly.',style:TextStyle(color:Colors.grey)),
-        const SizedBox(height:16),
-        if(sellers.isEmpty)const InfoCard(title:'No local sellers yet',detail:'Local sellers will appear here when they are onboarded.')
-        else ...sellers.map((d){final s=d.data();return Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.storefront)),title:Text((s['name']??s['businessName']??'Local seller').toString()),subtitle:Text((s['category']??s['address']??'Local seller').toString()),trailing:const Icon(Icons.chevron_right)));})
-      ]);
-    },
-  );
+  @override Widget build(BuildContext c)=>StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('localSellers').where('active',isEqualTo:true).snapshots(),builder:(context,snapshot){
+    if(snapshot.hasError)return const InfoCard(title:'Local sellers unavailable',detail:'Please check your connection and try again.');
+    if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
+    final sellers=snapshot.data!.docs;
+    return ListView(padding:const EdgeInsets.fromLTRB(16,16,16,100),children:[
+      const Text('Local sellers',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:6),
+      const Text('Discover sellers near you and contact them directly.',style:TextStyle(color:Colors.grey)),const SizedBox(height:16),
+      if(sellers.isEmpty)const InfoCard(title:'No local sellers yet',detail:'Local sellers will appear here when they are onboarded.')
+      else ...sellers.map((d){final x=d.data();return Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.storefront)),title:Text((x['name']??x['businessName']??'Local seller').toString()),subtitle:Text((x['category']??x['address']??'Local seller').toString()),trailing:const Icon(Icons.chevron_right)));}),
+    ]);
+  });
 }
-
+class WishlistPage extends StatefulWidget{const WishlistPage({super.key});@override State<WishlistPage> createState()=>_WishlistPageState();}
+class _WishlistPageState extends State<WishlistPage>{
+  bool loading=true;String? error;List<Product> items=[];
+  @override void initState(){super.initState();load();}
+  Future<void> load() async{
+    final u=FirebaseAuth.instance.currentUser;if(u==null){if(mounted)setState(()=>loading=false);return;}
+    try{final snap=await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('wishlist').orderBy('addedAt',descending:true).get();final list=snap.docs.map((d)=>Product.fromJson(d.data())).toList();if(mounted)setState((){items=list;loading=false;error=null;});}
+    catch(_){if(mounted)setState((){loading=false;error='Could not load wishlist.';});}
+  }
+  Future<void> remove(Product p) async{
+    final u=FirebaseAuth.instance.currentUser;if(u==null)return;
+    try{await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('wishlist').doc(p.id).delete();if(mounted)setState(()=>items.removeWhere((x)=>x.id==p.id));}
+    catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Could not remove item.')));}
+  }
+  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Wishlist')),body:RefreshIndicator(onRefresh:load,child:loading?const Center(child:CircularProgressIndicator()):error!=null?Center(child:Text(error!)):items.isEmpty?ListView(children:[const SizedBox(height:80),const Icon(Icons.favorite_border,size:72),const SizedBox(height:12),const Center(child:Text('Your wishlist is empty',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)))]):ListView(padding:const EdgeInsets.all(16),children:items.map((p)=>Card(child:ListTile(leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('₹'+p.price.toString()+' • '+p.category),trailing:IconButton(onPressed:()=>remove(p),icon:const Icon(Icons.favorite)),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>{},liked:true,onWishlist:()=>remove(p)))))).toList())));
+}
 class AdminScreen extends StatefulWidget{
   const AdminScreen({super.key});
   @override State<AdminScreen> createState()=>_AdminScreenState();
@@ -835,6 +754,49 @@ class _AdminScreenState extends State<AdminScreen>{
     });
   }
 
+  Widget _bannerManager(BuildContext c){
+    return Card(child:ExpansionTile(
+      leading:const Icon(Icons.view_carousel_outlined),title:const Text('Manage Banners',style:TextStyle(fontWeight:FontWeight.w800)),
+      subtitle:const Text('Add or remove customer home banners'),
+      children:[StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+        stream:FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
+        builder:(context,snapshot){
+          if(snapshot.hasError)return const Padding(padding:EdgeInsets.all(16),child:Text('Could not load banners.'));
+          final data=snapshot.data?.data()??{};final urls=List<String>.from(data['imageUrls']??const []);
+          return Padding(padding:const EdgeInsets.fromLTRB(16,0,16,16),child:Column(children:[
+            if(urls.isEmpty)const Padding(padding:EdgeInsets.all(16),child:Text('No banners uploaded yet.'))
+            else ...urls.asMap().entries.map((e)=>Card(child:ListTile(leading:SizedBox(width:72,height:48,child:Image.network(e.value,fit:BoxFit.cover,errorBuilder:(_,__,___)=>const Icon(Icons.broken_image))),title:Text('Banner '+(e.key+1).toString()),trailing:IconButton(onPressed:()=>_removeBanner(e.value),icon:const Icon(Icons.delete_outline))))),
+            const SizedBox(height:8),SizedBox(width:double.infinity,child:FilledButton.icon(onPressed:_addBanner,icon:const Icon(Icons.add_photo_alternate_outlined),label:const Text('Add Banner'))),
+          ]));
+        },
+      )],
+    ));
+  }
+
+  Future<void> _addBanner() async{
+    try{
+      final image=await ImagePicker().pickImage(source:ImageSource.gallery,imageQuality:85);
+      if(image==null)return;
+      final ref=FirebaseStorage.instance.ref().child('banners/banner_'+DateTime.now().millisecondsSinceEpoch.toString()+'.jpg');
+      await ref.putFile(File(image.path));
+      final url=await ref.getDownloadURL();
+      final doc=FirebaseFirestore.instance.collection('settings').doc('banners');
+      final snap=await doc.get();
+      final data=snap.data()??{};final urls=List<String>.from(data['imageUrls']??const [])..add(url);
+      await doc.set({'imageUrls':urls,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner added successfully.')));
+    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Banner upload failed: '+e.toString())));}
+  }
+
+  Future<void> _removeBanner(String url) async{
+    try{
+      final doc=FirebaseFirestore.instance.collection('settings').doc('banners');
+      final snap=await doc.get();final data=snap.data()??{};final urls=List<String>.from(data['imageUrls']??const [])..remove(url);
+      await doc.set({'imageUrls':urls,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner removed.')));
+    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not remove banner: '+e.toString())));}
+  }
+
   Widget orderCard(QueryDocumentSnapshot<Map<String,dynamic>> d){
     final o=d.data();
     final status=(o['status']??'New Order').toString();
@@ -869,10 +831,6 @@ class _AdminScreenState extends State<AdminScreen>{
                   },
                 ),
                 const SizedBox(height:8),
-                const Text('Items ordered',style:TextStyle(fontSize:16,fontWeight:FontWeight.w800)),
-                const SizedBox(height:4),
-                ...((o['items'] as List?)??[]).map((x)=>ListTile(contentPadding:EdgeInsets.zero,dense:true,title:Text((x['name']??'Item').toString()),subtitle:Text('Qty: '+(x['qty']??0).toString()),trailing:Text('₹'+(x['price']??0).toString()))),
-                const Divider(),
                 ListTile(
                   contentPadding:EdgeInsets.zero,
                   title:const Text('ETA',style:TextStyle(fontWeight:FontWeight.w800)),
@@ -932,12 +890,7 @@ class _AdminScreenState extends State<AdminScreen>{
           ),
         ],
       ),
-      body:ListView(
-        padding:const EdgeInsets.only(bottom:24),
-        children:[
-          _bannerManager(),
-          const SizedBox(height:8),
-          StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+      body:ListView(padding:const EdgeInsets.all(12),children:[_bannerManager(c),const SizedBox(height:8),treamBuilder<QuerySnapshot<Map<String,dynamic>>>(
         stream:FirebaseFirestore.instance.collection('orders').snapshots(),
         builder:(c,s){
           if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));
@@ -955,71 +908,8 @@ class _AdminScreenState extends State<AdminScreen>{
             itemBuilder:(c,i)=>orderCard(docs[i]),
           );
         },
-          ),
-        ],
       ),
     );
-  }
-
-  Widget _bannerManager(){
-    final ref=FirebaseFirestore.instance.collection('settings').doc('banners');
-    return Card(
-      child:Padding(
-        padding:const EdgeInsets.all(14),
-        child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          const Text('Manage Banners',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),
-          const SizedBox(height:4),
-          const Text('Add or remove the banners shown to customers.'),
-          const SizedBox(height:12),
-          StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
-            stream:ref.snapshots(),
-            builder:(context,snapshot){
-              if(snapshot.hasError)return Text('Could not load banners: '+snapshot.error.toString());
-              if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
-              final raw=snapshot.data?.data()?['imageUrls'];
-              final urls=raw is List?raw.map((x)=>x.toString()).where((x)=>x.isNotEmpty).toList():<String>[];
-              if(urls.isEmpty)return const Padding(padding:EdgeInsets.only(bottom:12),child:Text('No banners added yet.'));
-              return Column(children:[
-                ...urls.map((url)=>Card(
-                  clipBehavior:Clip.antiAlias,
-                  child:Column(children:[
-                    Image.network(url,height:150,width:double.infinity,fit:BoxFit.cover,errorBuilder:(_,__,___)=>const SizedBox(height:150,child:Center(child:Icon(Icons.broken_image)))),
-                    Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>_removeBanner(url),icon:const Icon(Icons.delete_outline),label:const Text('Remove'))),
-                  ]),
-                )),
-                const SizedBox(height:4),
-              ]);
-            },
-          ),
-          FilledButton.icon(onPressed:_addBanner,icon:const Icon(Icons.add_photo_alternate_outlined),label:const Text('Add Banner')),
-        ]),
-      ),
-    );
-  }
-
-  Future<void> _removeBanner(String url) async{
-    try{
-      await FirebaseFirestore.instance.collection('settings').doc('banners').set({'imageUrls':FieldValue.arrayRemove([url])},SetOptions(merge:true));
-      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner removed')));
-    }catch(e){
-      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not remove banner: '+e.toString())));
-    }
-  }
-
-  Future<void> _addBanner() async{
-    try{
-      final picked=await ImagePicker().pickImage(source:ImageSource.gallery,imageQuality:88,maxWidth:1600);
-      if(picked==null)return;
-      final file=File(picked.path);
-      final name='banner_'+DateTime.now().millisecondsSinceEpoch.toString()+'.jpg';
-      final storageRef=FirebaseStorage.instance.ref().child('banners').child(name);
-      final upload=await storageRef.putFile(file);
-      final url=await upload.ref.getDownloadURL();
-      await FirebaseFirestore.instance.collection('settings').doc('banners').set({'imageUrls':FieldValue.arrayUnion([url])},SetOptions(merge:true));
-      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner added successfully')));
-    }catch(e){
-      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not add banner: '+e.toString())));
-    }
   }
 }
 

@@ -775,6 +775,10 @@ class _AdminScreenState extends State<AdminScreen>{
                   },
                 ),
                 const SizedBox(height:8),
+                const Text('Items ordered',style:TextStyle(fontSize:16,fontWeight:FontWeight.w800)),
+                const SizedBox(height:4),
+                ...((o['items'] as List?)??[]).map((x)=>ListTile(contentPadding:EdgeInsets.zero,dense:true,title:Text((x['name']??'Item').toString()),subtitle:Text('Qty: '+(x['qty']??0).toString()),trailing:Text('₹'+(x['price']??0).toString()))),
+                const Divider(),
                 ListTile(
                   contentPadding:EdgeInsets.zero,
                   title:const Text('ETA',style:TextStyle(fontWeight:FontWeight.w800)),
@@ -834,7 +838,12 @@ class _AdminScreenState extends State<AdminScreen>{
           ),
         ],
       ),
-      body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+      body:ListView(
+        padding:const EdgeInsets.only(bottom:24),
+        children:[
+          _bannerManager(),
+          const SizedBox(height:8),
+          StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
         stream:FirebaseFirestore.instance.collection('orders').snapshots(),
         builder:(c,s){
           if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));
@@ -852,8 +861,71 @@ class _AdminScreenState extends State<AdminScreen>{
             itemBuilder:(c,i)=>orderCard(docs[i]),
           );
         },
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _bannerManager(){
+    final ref=FirebaseFirestore.instance.collection('settings').doc('banners');
+    return Card(
+      child:Padding(
+        padding:const EdgeInsets.all(14),
+        child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('Manage Banners',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),
+          const SizedBox(height:4),
+          const Text('Add or remove the banners shown to customers.'),
+          const SizedBox(height:12),
+          StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+            stream:ref.snapshots(),
+            builder:(context,snapshot){
+              if(snapshot.hasError)return Text('Could not load banners: '+snapshot.error.toString());
+              if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
+              final raw=snapshot.data?.data()?['imageUrls'];
+              final urls=raw is List?raw.map((x)=>x.toString()).where((x)=>x.isNotEmpty).toList():<String>[];
+              if(urls.isEmpty)return const Padding(padding:EdgeInsets.only(bottom:12),child:Text('No banners added yet.'));
+              return Column(children:[
+                ...urls.map((url)=>Card(
+                  clipBehavior:Clip.antiAlias,
+                  child:Column(children:[
+                    Image.network(url,height:150,width:double.infinity,fit:BoxFit.cover,errorBuilder:(_,__,___)=>const SizedBox(height:150,child:Center(child:Icon(Icons.broken_image)))),
+                    Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>_removeBanner(url),icon:const Icon(Icons.delete_outline),label:const Text('Remove'))),
+                  ]),
+                )),
+                const SizedBox(height:4),
+              ]);
+            },
+          ),
+          FilledButton.icon(onPressed:_addBanner,icon:const Icon(Icons.add_photo_alternate_outlined),label:const Text('Add Banner')),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _removeBanner(String url) async{
+    try{
+      await FirebaseFirestore.instance.collection('settings').doc('banners').set({'imageUrls':FieldValue.arrayRemove([url])},SetOptions(merge:true));
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner removed')));
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not remove banner: '+e.toString())));
+    }
+  }
+
+  Future<void> _addBanner() async{
+    try{
+      final picked=await ImagePicker().pickImage(source:ImageSource.gallery,imageQuality:88,maxWidth:1600);
+      if(picked==null)return;
+      final file=File(picked.path);
+      final name='banner_'+DateTime.now().millisecondsSinceEpoch.toString()+'.jpg';
+      final storageRef=FirebaseStorage.instance.ref().child('banners').child(name);
+      final upload=await storageRef.putFile(file);
+      final url=await upload.ref.getDownloadURL();
+      await FirebaseFirestore.instance.collection('settings').doc('banners').set({'imageUrls':FieldValue.arrayUnion([url])},SetOptions(merge:true));
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner added successfully')));
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not add banner: '+e.toString())));
+    }
   }
 }
 

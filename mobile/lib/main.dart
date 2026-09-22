@@ -24,6 +24,8 @@ const shareApkUrl='https://github.com/mauryasujeet698-svg/Always-website/release
 const inventoryEndpoint='https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec';
 const updateManifestUrl='https://raw.githubusercontent.com/mauryasujeet698-svg/Always-website/allways-android-app/mobile/update.json';
 
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
+
 @pragma('vm:entry-point')
 Future<void> bg(RemoteMessage m) async { await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); }
 
@@ -36,11 +38,24 @@ Future<void> main() async {
 
 class AllwaysApp extends StatelessWidget {
   const AllwaysApp({super.key});
-  Widget build(BuildContext c)=>MaterialApp(
-    debugShowCheckedModeBanner:false,title:'ALLways',
-    theme:ThemeData(useMaterial3:true,colorScheme:ColorScheme.fromSeed(seedColor:Colors.black),
-      inputDecorationTheme:const InputDecorationTheme(border:OutlineInputBorder())),
-    home:const Shell());
+  Widget build(BuildContext c)=>ValueListenableBuilder<ThemeMode>(
+    valueListenable:themeNotifier,
+    builder:(context,mode,_)=>
+      MaterialApp(
+        debugShowCheckedModeBanner:false,
+        title:'ALLways',
+        theme:ThemeData(
+          useMaterial3:true,
+          colorScheme:ColorScheme.fromSeed(seedColor:Colors.black),
+          inputDecorationTheme:const InputDecorationTheme(
+            border:OutlineInputBorder(),
+          ),
+        ),
+        darkTheme:ThemeData.dark(useMaterial3:true),
+        themeMode:mode,
+        home:const Shell(),
+      ),
+  );
 }
 
 class Product {
@@ -312,19 +327,54 @@ class _CartScreenState extends State<CartScreen>{
   Future<void> useCurrentLocation() async {
     setState(()=>locating=true);
     try{
-      if(!await Geolocator.isLocationServiceEnabled()){msg('Please turn on Location/GPS and try again.');return;}
+      if(!await Geolocator.isLocationServiceEnabled()){
+        msg('Please turn on Location/GPS and try again.');
+        return;
+      }
       var permission=await Geolocator.checkPermission();
-      if(permission==LocationPermission.denied)permission=await Geolocator.requestPermission();
-      if(permission==LocationPermission.denied||permission==LocationPermission.deniedForever){msg('Location permission was not granted. Please enter your address manually.');return;}
-      final pos=await Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high));
+      if(permission==LocationPermission.denied){
+        permission=await Geolocator.requestPermission();
+      }
+      if(permission==LocationPermission.denied||permission==LocationPermission.deniedForever){
+        msg('Location permission was not granted. Please enter your address manually.');
+        return;
+      }
+      final pos=await Geolocator.getCurrentPosition(
+        locationSettings:const LocationSettings(accuracy:LocationAccuracy.high),
+      ).timeout(const Duration(seconds:10));
       try{
         final marks=await placemarkFromCoordinates(pos.latitude,pos.longitude);
-        if(marks.isNotEmpty){final x=marks.first;final parts=[x.name,x.subLocality,x.locality,x.subAdministrativeArea,x.administrativeArea,x.postalCode].whereType<String>().where((v)=>v.trim().isNotEmpty).map((v)=>v.trim()).toList();a.text=parts.toSet().join(', ');}
-      }catch(_){ }
-      if(a.text.trim().isEmpty)a.text='Current location: '+pos.latitude.toStringAsFixed(6)+', '+pos.longitude.toStringAsFixed(6);
+        if(marks.isNotEmpty){
+          final x=marks.first;
+          final parts=[
+            x.street,
+            x.thoroughfare,
+            x.name,
+            x.subLocality,
+            x.locality,
+            x.subAdministrativeArea,
+            x.administrativeArea,
+            x.postalCode,
+          ].whereType<String>()
+           .where((v)=>v.trim().isNotEmpty)
+           .map((v)=>v.trim())
+           .toList();
+          a.text=parts.toSet().join(', ');
+        }
+      }catch(_){}
+      if(a.text.trim().isEmpty){
+        a.text='Current location: '+pos.latitude.toStringAsFixed(6)+', '+pos.longitude.toStringAsFixed(6);
+      }
       msg('Current location added. Please add your house number or landmark if needed.');
-    }catch(_){msg('Could not get your current location. Please enter the address manually.');}
-    finally{if(mounted)setState(()=>locating=false);}
+    }catch(e){
+      if(e is TimeoutException){
+        msg('Location request timed out after 10 seconds. GPS may be slow; please try again or enter the address manually.');
+      }else{
+        msg('Could not get your current location: '+e.toString());
+      }
+    }finally{
+      if(mounted)setState(()=>locating=false);
+    }
   }
   void msg(String text){if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));}
   Widget build(BuildContext c){
@@ -419,9 +469,81 @@ class ProfilePage extends StatelessWidget{
     finally{controller.dispose();}
   }
 
+  Future<void> _chooseAppearance(BuildContext c) async {
+    await showDialog<void>(
+      context:c,
+      builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(
+        valueListenable:themeNotifier,
+        builder:(context,mode,_){
+          return AlertDialog(
+            title:const Text('Appearance'),
+            content:Column(
+              mainAxisSize:MainAxisSize.min,
+              children:[
+                RadioListTile<ThemeMode>(
+                  title:const Text('Light'),
+                  value:ThemeMode.light,
+                  groupValue:mode,
+                  onChanged:(value) async {
+                    if(value==null)return;
+                    themeNotifier.value=value;
+                    final prefs=await SharedPreferences.getInstance();
+                    await prefs.setString('allways_theme_mode','light');
+                    if(dialogContext.mounted)Navigator.pop(dialogContext);
+                  },
+                ),
+                RadioListTile<ThemeMode>(
+                  title:const Text('Dark'),
+                  value:ThemeMode.dark,
+                  groupValue:mode,
+                  onChanged:(value) async {
+                    if(value==null)return;
+                    themeNotifier.value=value;
+                    final prefs=await SharedPreferences.getInstance();
+                    await prefs.setString('allways_theme_mode','dark');
+                    if(dialogContext.mounted)Navigator.pop(dialogContext);
+                  },
+                ),
+                RadioListTile<ThemeMode>(
+                  title:const Text('System'),
+                  value:ThemeMode.system,
+                  groupValue:mode,
+                  onChanged:(value) async {
+                    if(value==null)return;
+                    themeNotifier.value=value;
+                    final prefs=await SharedPreferences.getInstance();
+                    await prefs.setString('allways_theme_mode','system');
+                    if(dialogContext.mounted)Navigator.pop(dialogContext);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget build(BuildContext c){
     if(user==null)return Center(child:FilledButton(onPressed:onLogin,child:const Text('Sign in / Sign up')));
     return ListView(padding:const EdgeInsets.all(16),children:[
+      FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+        future:FirebaseFirestore.instance.collection('customers').doc(user!.uid).get(),
+        builder:(context,snapshot){
+          final data=snapshot.data?.data();
+          if(data?['role']!='admin')return const SizedBox.shrink();
+          return Card(
+            child:Padding(
+              padding:const EdgeInsets.all(12),
+              child:FilledButton.icon(
+                onPressed:()=>debugPrint('Admin tapped'),
+                icon:const Icon(Icons.admin_panel_settings),
+                label:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),
+              ),
+            ),
+          );
+        },
+      ),
       const Text('Profile',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
       Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.person)),title:Text(user!.displayName??'ALLways customer'),subtitle:Text(user!.email??''))),
       const SizedBox(height:16),Row(children:[const Expanded(child:Text('Saved addresses',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800))),IconButton(onPressed:onReload,icon:const Icon(Icons.refresh))]),
@@ -429,6 +551,12 @@ class ProfilePage extends StatelessWidget{
       else ...addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline))))),
       ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share ALLways'),subtitle:const Text('Share ALLways with friends and family'),onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
       ListTile(leading:const Icon(Icons.system_update_outlined),title:const Text('Check for updates'),subtitle:const Text('Check for the latest ALLways version'),onTap:()=>_checkForUpdate(c)),
+      ListTile(
+        leading:const Icon(Icons.brightness_6_outlined),
+        title:const Text('Appearance'),
+        subtitle:const Text('Choose light, dark, or system theme'),
+        onTap:()=>_chooseAppearance(c),
+      ),
       ListTile(leading:const Icon(Icons.notifications_outlined),title:const Text('Notifications'),subtitle:const Text('Order and ALLways alerts'),onTap:()async{final s=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(s.authorizationStatus==AuthorizationStatus.authorized?'Notifications enabled.':'Permission not granted.')));}),
       ListTile(leading:const Icon(Icons.logout),title:const Text('Log out'),onTap:()=>FirebaseAuth.instance.signOut()),
       const SizedBox(height:20),const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey))

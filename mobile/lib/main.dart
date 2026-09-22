@@ -890,24 +890,31 @@ class _AdminScreenState extends State<AdminScreen>{
           ),
         ],
       ),
-      body:ListView(padding:const EdgeInsets.all(12),children:[_bannerManager(c),const SizedBox(height:8),treamBuilder<QuerySnapshot<Map<String,dynamic>>>(
-        stream:FirebaseFirestore.instance.collection('orders').snapshots(),
-        builder:(c,s){
-          if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));
-          if(!s.hasData)return const Center(child:CircularProgressIndicator());
-          final docs=[...s.data!.docs];
-          docs.sort((a,b){
-            final av=(a.data()['createdAt']??0) as num;
-            final bv=(b.data()['createdAt']??0) as num;
-            return bv.compareTo(av);
-          });
-          if(docs.isEmpty)return const Center(child:Text('No orders yet.'));
-          return ListView.builder(
-            padding:const EdgeInsets.all(12),
-            itemCount:docs.length,
-            itemBuilder:(c,i)=>orderCard(docs[i]),
-          );
-        },
+      body:Column(
+        children:[
+          _bannerManager(c),
+          Expanded(
+            child:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+              stream:FirebaseFirestore.instance.collection('orders').snapshots(),
+              builder:(c,s){
+                if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));
+                if(!s.hasData)return const Center(child:CircularProgressIndicator());
+                final docs=[...s.data!.docs];
+                docs.sort((a,b){
+                  final av=(a.data()['createdAt']??0) as num;
+                  final bv=(b.data()['createdAt']??0) as num;
+                  return bv.compareTo(av);
+                });
+                if(docs.isEmpty)return const Center(child:Text('No orders yet.'));
+                return ListView.builder(
+                  padding:const EdgeInsets.all(12),
+                  itemCount:docs.length,
+                  itemBuilder:(c,i)=>orderCard(docs[i]),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

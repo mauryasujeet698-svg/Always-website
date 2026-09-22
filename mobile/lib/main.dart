@@ -16,7 +16,6 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'admin_dashboard_screen.dart';
 import 'travel_teaser_screen.dart';
 import 'firebase_options.dart';
 

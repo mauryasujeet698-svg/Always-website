@@ -353,36 +353,35 @@ class _CartScreenState extends State<CartScreen>{
         locationSettings:const LocationSettings(accuracy:LocationAccuracy.high),
       ).timeout(const Duration(seconds:10));
       try{
-        try{
-          final marks=await placemarkFromCoordinates(pos.latitude,pos.longitude);
-          if(marks.isNotEmpty){
-            final x=marks.first;
-            final parts=[
-              x.street,
-              x.subLocality,
-              x.thoroughfare,
+        final marks=await placemarkFromCoordinates(pos.latitude,pos.longitude);
+        if(marks.isNotEmpty){
+          final x=marks.first;
+          final parts=[
+            x.street,
+            x.subLocality,
+            x.thoroughfare,
+          ].whereType<String>()
+           .where((v)=>v.trim().isNotEmpty)
+           .map((v)=>v.trim())
+           .toList();
+          if(parts.isEmpty){
+            final fallback=[
+              x.locality,
+              x.subAdministrativeArea,
+              x.administrativeArea,
+              x.postalCode,
             ].whereType<String>()
              .where((v)=>v.trim().isNotEmpty)
              .map((v)=>v.trim())
              .toList();
-            if(parts.isEmpty){
-              final fallback=[
-                x.locality,
-                x.subAdministrativeArea,
-                x.administrativeArea,
-                x.postalCode,
-              ].whereType<String>()
-               .where((v)=>v.trim().isNotEmpty)
-               .map((v)=>v.trim())
-               .toList();
-              parts.addAll(fallback);
-            }
-            a.text=parts.toSet().join(', ');
+            parts.addAll(fallback);
           }
-        }catch(_){
-          // Geocoding is intentionally isolated from the location lookup.
+          a.text=parts.toSet().join(', ');
         }
-      }catch(_){}
+      }catch(_){
+        // Geocoding is isolated so a geocoder failure never reaches the
+        // general location catch block.
+      }
       if(a.text.trim().isEmpty){
         a.text='Latitude: '+pos.latitude.toString()+
             ', Longitude: '+pos.longitude.toString();

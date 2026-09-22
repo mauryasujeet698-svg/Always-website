@@ -91,13 +91,14 @@ class _ShellState extends State<Shell> {
   String? updateVersion;
   String? updateUrl;
   String? updateNotes;
+  final Set<String> wishlistIds={};
 
   @override void initState(){
     super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();
     timer=Timer.periodic(const Duration(seconds:30),(_)=>loadInventory(silent:true));
-    auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();}else{addresses=[];}});
+    auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();loadWishlist();}else{addresses=[];wishlistIds.clear();}});
     messages=FirebaseMessaging.onMessage.listen((m)async{if(!mounted)return;final title=m.notification?.title??'ALLways';final body=m.notification?.body??'New update';try{await const MethodChannel('com.allways.app/apk_installer').invokeMethod('showNotification',{'title':title,'body':body});}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
-    if(user!=null){setupNotifications();loadAddresses();}
+    if(user!=null){setupNotifications();loadAddresses();loadWishlist();}
   }
   @override void dispose(){timer?.cancel();auth?.cancel();messages?.cancel();super.dispose();}
 
@@ -235,6 +236,37 @@ class _ShellState extends State<Shell> {
     if(user==null)return;
     try{await FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('addresses').doc(id).delete();await loadAddresses();}catch(_){}
   }
+  Future<void> loadWishlist() async {
+    if(user==null)return;
+    try{
+      final s=await FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist').get();
+      wishlistIds..clear()..addAll(s.docs.map((d)=>d.id));
+      if(mounted)setState((){});
+    }catch(_){
+      wishlistIds.clear();
+      if(mounted)setState((){});
+    }
+  }
+
+  Future<void> toggleWishlist(Product p) async {
+    if(user==null){login();return;}
+    final ref=FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist').doc(p.id);
+    final adding=!wishlistIds.contains(p.id);
+    setState((){if(adding){wishlistIds.add(p.id);}else{wishlistIds.remove(p.id);}});
+    try{
+      if(adding){
+        await ref.set({'id':p.id,'name':p.name,'category':p.category,'icon':p.icon,'description':p.description,'brand':p.brand,'price':p.price,'stock':p.stock,'addedAt':FieldValue.serverTimestamp()});
+        msg(p.name+' added to wishlist');
+      }else{
+        await ref.delete();
+        msg(p.name+' removed from wishlist');
+      }
+    }catch(_){
+      setState((){if(adding){wishlistIds.remove(p.id);}else{wishlistIds.add(p.id);}});
+      msg('Could not update wishlist. Please try again.');
+    }
+  }
+
 
   Future<void> placeOrder(String name,String phone,String address,String note) async {
     if(user==null){login();return;} if(cart.isEmpty)return;
@@ -261,10 +293,10 @@ class _ShellState extends State<Shell> {
 
   Widget build(BuildContext c){
     final pages=[
-      ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty),
+      ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty,user:user,wishlistIds:wishlistIds,onWishlist:toggleWishlist),
       const TravelTeaserScreen(),
       const LocalSellersPage(),
-      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder),
+      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder,onWishlist:loadWishlist),
     ];
     return Scaffold(
       body:SafeArea(child:Column(children:[
@@ -290,8 +322,8 @@ class _ShellState extends State<Shell> {
 
 class ShopPage extends StatefulWidget {
   final List<Product> products;final bool loading;final String? error;final Future<void> Function({bool silent}) onRefresh;final void Function(Product) onAdd;
-  final Map<String,CartItem> cart;final void Function(String,int) onQty;
-  const ShopPage({super.key,required this.products,required this.loading,required this.error,required this.onRefresh,required this.onAdd,required this.cart,required this.onQty});
+  final Map<String,CartItem> cart;final void Function(String,int) onQty;final User? user;final Set<String> wishlistIds;final Future<void> Function(Product) onWishlist;
+  const ShopPage({super.key,required this.products,required this.loading,required this.error,required this.onRefresh,required this.onAdd,required this.cart,required this.onQty,required this.user,required this.wishlistIds,required this.onWishlist});
   State<ShopPage> createState()=>_ShopPageState();
 }
 class _ShopPageState extends State<ShopPage>{
@@ -310,19 +342,21 @@ class _ShopPageState extends State<ShopPage>{
       else if(widget.error!=null)const InfoCard(title:'Could not load inventory',detail:'Check your connection and pull down to retry.')
       else if(list.isEmpty)const InfoCard(title:'No items found',detail:'Try another category or search.')
       else ...list.map((p)=>Card(margin:const EdgeInsets.only(bottom:9),child:ListTile(
-        onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p)))),
+        onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),isWishlisted:widget.wishlistIds.contains(p.id),onWishlist:()=>widget.onWishlist(p)))),
         leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
         subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
-        trailing:widget.cart.containsKey(p.id)
-          ? Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline))])
-          : IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart))))),
-    ]));
+        trailing:Row(mainAxisSize:MainAxisSize.min,children:[
+          IconButton(onPressed:widget.user==null?()=>widget.onAdd(p):()=>widget.onWishlist(p),icon:Icon(widget.wishlistIds.contains(p.id)?Icons.favorite:Icons.favorite_border)),
+          widget.cart.containsKey(p.id)
+            ? Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline))])
+            : IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart))
+        ]),    ]));
   }
 }
 
 class ProductScreen extends StatelessWidget{
-  final Product product;final VoidCallback onAdd;const ProductScreen({super.key,required this.product,required this.onAdd});
-  Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Product')),body:ListView(padding:const EdgeInsets.all(20),children:[
+  final Product product;final VoidCallback onAdd;final bool isWishlisted;final VoidCallback onWishlist;const ProductScreen({super.key,required this.product,required this.onAdd,required this.isWishlisted,required this.onWishlist});
+  Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Product'),actions:[IconButton(onPressed:onWishlist,icon:Icon(isWishlisted?Icons.favorite:Icons.favorite_border))]),body:ListView(padding:const EdgeInsets.all(20),children:[
     CircleAvatar(radius:55,child:Text(product.icon,style:const TextStyle(fontSize:40))),const SizedBox(height:18),
     Text(product.name,style:const TextStyle(fontSize:28,fontWeight:FontWeight.w900)),if(product.brand.isNotEmpty)Text(product.brand,style:const TextStyle(color:Colors.grey)),
     const SizedBox(height:8),Text('₹'+product.price.toString(),style:const TextStyle(fontSize:24,fontWeight:FontWeight.w800)),const SizedBox(height:14),
@@ -472,8 +506,8 @@ class StatusView extends StatelessWidget{final String status;const StatusView({s
 }}
 
 class ProfilePage extends StatelessWidget{
-  final User? user;final List<Map<String,dynamic>> addresses;final VoidCallback onLogin;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;final Future<void> Function(String) onCancel;
-  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete,required this.onCancel});
+  final User? user;final List<Map<String,dynamic>> addresses;final VoidCallback onLogin;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;final Future<void> Function(String) onCancel;final Future<void> Function() onWishlist;
+  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete,required this.onCancel,required this.onWishlist});
 
   Future<void> _checkForUpdate(BuildContext c) async {
     try {
@@ -525,13 +559,20 @@ class ProfilePage extends StatelessWidget{
         future:FirebaseFirestore.instance.collection('customers').doc(user!.uid).get(),
         builder:(context,snapshot){
           final isAdmin=snapshot.data?.data()?['role']=='admin';
-          return Row(children:[
-            _action(c,icon:Icons.receipt_long_outlined,label:'Orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:user,onCancel:onCancel)))),
-            const SizedBox(width:8),
-            _action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(addresses:addresses,onReload:onReload,onDelete:onDelete)))),
-            if(isAdmin)...[
+          return Column(children:[
+            Row(children:[
+              _action(c,icon:Icons.receipt_long_outlined,label:'Orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:user,onCancel:onCancel)))),
               const SizedBox(width:8),
-              _action(c,icon:Icons.admin_panel_settings_outlined,label:'Admin',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen()))),
+              _action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(addresses:addresses,onReload:onReload,onDelete:onDelete)))),
+              const SizedBox(width:8),
+              _action(c,icon:Icons.favorite_border,label:'Wishlist',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>WishlistPage(user:user,onReload:onWishlist)))),
+            ]),
+            if(isAdmin)...[
+              const SizedBox(height:8),
+              Row(children:[
+                _action(c,icon:Icons.admin_panel_settings_outlined,label:'Admin',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen()))),
+                const Spacer(),
+              ]),
             ],
           ]);
         },
@@ -553,6 +594,59 @@ class SavedAddressesPage extends StatelessWidget{
     if(addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.')
     else ...addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline)))))
   ])));
+}
+
+class WishlistPage extends StatelessWidget{
+  final User? user;final Future<void> Function() onReload;
+  const WishlistPage({super.key,required this.user,required this.onReload});
+
+  Widget build(BuildContext c){
+    if(user==null)return const Scaffold(body:Center(child:Text('Please sign in to view your wishlist.')));
+    final ref=FirebaseFirestore.instance.collection('customers').doc(user!.uid).collection('wishlist');
+    return Scaffold(
+      appBar:AppBar(title:const Text('Wishlist')),
+      body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+        stream:ref.orderBy('addedAt',descending:true).snapshots(),
+        builder:(context,snapshot){
+          if(snapshot.hasError)return const InfoCard(title:'Wishlist unavailable',detail:'Please check your connection and try again.');
+          if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
+          final docs=snapshot.data!.docs;
+          if(docs.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[
+            Icon(Icons.favorite_border,size:72),
+            SizedBox(height:12),
+            Text('Your wishlist is empty',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)),
+            SizedBox(height:6),
+            Text('Tap the heart on any item to save it here.',textAlign:TextAlign.center),
+          ])));
+          return RefreshIndicator(
+            onRefresh:onReload,
+            child:ListView.builder(
+              padding:const EdgeInsets.all(16),
+              itemCount:docs.length,
+              itemBuilder:(context,index){
+                final p=docs[index].data();
+                return Card(
+                  margin:const EdgeInsets.only(bottom:9),
+                  child:ListTile(
+                    leading:CircleAvatar(child:Text((p['icon']??'🛍️').toString())),
+                    title:Text((p['name']??'Item').toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
+                    subtitle:Text((p['category']??'').toString()+' • ₹'+(p['price']??0).toString()),
+                    trailing:IconButton(
+                      onPressed:()async{
+                        await ref.doc(docs[index].id).delete();
+                        await onReload();
+                      },
+                      icon:const Icon(Icons.favorite),
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class LocalSellersPage extends StatelessWidget{

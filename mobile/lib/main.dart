@@ -45,6 +45,7 @@ Future<void> main() async {
     themeNotifier.value = ThemeMode.system;
   }
   runApp(const AllwaysApp());
+}
 
 class AllwaysApp extends StatelessWidget {
   const AllwaysApp({super.key});

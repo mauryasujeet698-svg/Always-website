@@ -198,7 +198,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final allOrders = snapshot.data?.docs ?? const [];
+                final allOrders = snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
                 final orders = allOrders.where((document) {
                   final data = document.data();
                   final id = _orderId(data, document.id).toLowerCase();

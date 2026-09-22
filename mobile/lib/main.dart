@@ -10,6 +10,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -261,8 +263,8 @@ class _ShellState extends State<Shell> {
     final pages=[
       ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty),
       const TravelTeaserScreen(),
-      OrdersPage(user:user,onCancel:cancelOrder),
-      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress),
+      const LocalSellersPage(),
+      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder),
     ];
     return Scaffold(
       body:SafeArea(child:Column(children:[
@@ -277,7 +279,7 @@ class _ShellState extends State<Shell> {
       bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:const[
         NavigationDestination(icon:Icon(Icons.shopping_bag_outlined),label:'Shop'),
         NavigationDestination(icon:Icon(Icons.directions_car_outlined),label:'Travel'),
-        NavigationDestination(icon:Icon(Icons.receipt_long_outlined),label:'Orders'),
+        NavigationDestination(icon:Icon(Icons.storefront_outlined),label:'Local sellers'),
         NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile')]),
       floatingActionButton:count==0?null:FloatingActionButton.extended(
         onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(cart:cart,addresses:addresses,onQty:qty,onPlace:placeOrder))),
@@ -434,14 +436,24 @@ class OrdersPage extends StatelessWidget{
       final docs=[...s.data!.docs]..sort((a,b)=>((b.data()['createdAt']??0)as num).compareTo(((a.data()['createdAt']??0)as num)));
       return ListView(padding:const EdgeInsets.all(16),children:[
         const Text('Your Orders',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
-        if(docs.isEmpty)const InfoCard(title:'No orders yet',detail:'Your placed orders will appear here.'),
-        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final canCancel=status=='New Order'||status=='Confirmed';final items=(o['items'] as List? ?? []).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
+        if(docs.isEmpty)Column(children:[
+          const SizedBox(height:35),
+          const Icon(Icons.shopping_bag_outlined,size:78),
+          const SizedBox(height:14),
+          const Text('Your fresh orders will appear here',textAlign:TextAlign.center,style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)),
+          const SizedBox(height:16),
+          FilledButton.icon(onPressed:()=>Navigator.of(c).popUntil((r)=>r.isFirst),icon:const Icon(Icons.shopping_bag_outlined),label:const Text('Start Shopping')),
+          const SizedBox(height:35),
+        ]),
+        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final canCancel=status=='New Order'||status=='Confirmed';final rawItems=(o['items'] as List? ?? []);
           return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(status+' • ₹'+(o['total']??0).toString()),children:[
             Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               StatusView(status:status),
               if((o['eta']??o['estimatedDelivery']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(top:10,bottom:8),child:ListTile(leading:const Icon(Icons.schedule),title:const Text('Estimated delivery',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['eta']??o['estimatedDelivery']).toString(),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)))),
               if((o['customerMessage']??o['statusNote']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(bottom:10),child:ListTile(leading:const Icon(Icons.message_outlined),title:const Text('Message from ALLways',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['customerMessage']??o['statusNote']).toString(),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)))),
-              const SizedBox(height:3),Text(items),Text('Address: '+(o['address']??'').toString()),
+              const SizedBox(height:8),const Text('Items ordered',style:TextStyle(fontSize:16,fontWeight:FontWeight.w800)),
+              ...rawItems.map((x)=>ListTile(contentPadding:EdgeInsets.zero,dense:true,title:Text((x['name']??'Item').toString()),subtitle:Text('Qty: '+(x['qty']??0).toString()),trailing:Text('₹'+(x['price']??0).toString()))),
+              const SizedBox(height:3),Text('Address: '+(o['address']??'').toString()),
               if((o['cancellationReason']??'').toString().isNotEmpty)Padding(padding:const EdgeInsets.only(top:8),child:Text('Cancellation reason: '+o['cancellationReason'].toString())),
               if(canCancel)Padding(padding:const EdgeInsets.only(top:12),child:OutlinedButton.icon(onPressed:()=>_confirmCancel(c,o['id']?.toString()??d.id,onCancel),icon:const Icon(Icons.cancel_outlined),label:const Text('Cancel order')))
             ]))]));})

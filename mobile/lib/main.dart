@@ -472,8 +472,9 @@ class StatusView extends StatelessWidget{final String status;const StatusView({s
 }}
 
 class ProfilePage extends StatelessWidget{
-  final User? user;final List<Map<String,dynamic>> addresses;final VoidCallback onLogin;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;
-  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete});
+  final User? user;final List<Map<String,dynamic>> addresses;final VoidCallback onLogin;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;final Future<void> Function(String) onCancel;
+  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete,required this.onCancel});
+
   Future<void> _checkForUpdate(BuildContext c) async {
     try {
       final r=await http.get(Uri.parse(updateManifestUrl)).timeout(const Duration(seconds:8));
@@ -487,129 +488,90 @@ class ProfilePage extends StatelessWidget{
       }else if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('You are using the latest ALLways version.')));
     }catch(_){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates. Please try again.')));}
   }
+
   Future<void> _downloadAndInstall(BuildContext c,String u) async {
     final controller=ValueNotifier<double>(0);
     try{
-      showDialog(context:c,barrierDismissible:false,builder:(_)=>AlertDialog(
-        title:const Text('Updating ALLways'),
-        content:ValueListenableBuilder<double>(valueListenable:controller,builder:(_,p,__)=>Column(
-          mainAxisSize:MainAxisSize.min,
-          children:[LinearProgressIndicator(value:p>0?p:null),const SizedBox(height:12),
-            Text(p>0?'Downloading '+(p*100).toStringAsFixed(0)+'%':'Starting download…')]
-        )),
-      ));
+      showDialog(context:c,barrierDismissible:false,builder:(_)=>AlertDialog(title:const Text('Updating ALLways'),content:ValueListenableBuilder<double>(valueListenable:controller,builder:(_,p,__)=>Column(mainAxisSize:MainAxisSize.min,children:[LinearProgressIndicator(value:p>0?p:null),const SizedBox(height:12),Text(p>0?'Downloading '+(p*100).toStringAsFixed(0)+'%':'Starting download…')]))));
       final file=File(Directory.systemTemp.path+'/allways_update_'+DateTime.now().millisecondsSinceEpoch.toString()+'.apk');
       final downloadUrl=u+(u.contains('?')?'&':'?')+'cacheBust='+DateTime.now().millisecondsSinceEpoch.toString();
       await Dio().download(downloadUrl,file.path,deleteOnError:true,onReceiveProgress:(received,total){if(total>0)controller.value=received/total;});
       if(c.mounted)Navigator.of(c).pop();
       final result=await const MethodChannel('com.allways.app/apk_installer').invokeMethod<String>('installApk',{'path':file.path});
       if(c.mounted&&result=='permission_required'){
-        try{
-          await const MethodChannel('com.allways.app/apk_installer').invokeMethod('openInstallSettings');
-        }catch(_){}
+        try{await const MethodChannel('com.allways.app/apk_installer').invokeMethod('openInstallSettings');}catch(_){}
         ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Please allow ALLways to install updates, then tap Update again.')));
-      }
-      else if(c.mounted&&result!='started')ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Could not start installation: '+(result??'unknown error'))));
+      }else if(c.mounted&&result!='started')ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Could not start installation: '+(result??'unknown error'))));
     }catch(e){if(c.mounted&&Navigator.of(c).canPop())Navigator.of(c).pop();if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));}
     finally{controller.dispose();}
   }
 
   Future<void> _chooseAppearance(BuildContext c) async {
-    await showDialog<void>(
-      context:c,
-      builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(
-        valueListenable:themeNotifier,
-        builder:(context,mode,_){
-          return AlertDialog(
-            title:const Text('Appearance'),
-            content:Column(
-              mainAxisSize:MainAxisSize.min,
-              children:[
-                RadioListTile<ThemeMode>(
-                  title:const Text('Light'),
-                  value:ThemeMode.light,
-                  groupValue:mode,
-                  onChanged:(value) async {
-                    if(value==null)return;
-                    themeNotifier.value=value;
-                    final prefs=await SharedPreferences.getInstance();
-                    await prefs.setString('allways_theme_mode','light');
-                    if(dialogContext.mounted)Navigator.pop(dialogContext);
-                  },
-                ),
-                RadioListTile<ThemeMode>(
-                  title:const Text('Dark'),
-                  value:ThemeMode.dark,
-                  groupValue:mode,
-                  onChanged:(value) async {
-                    if(value==null)return;
-                    themeNotifier.value=value;
-                    final prefs=await SharedPreferences.getInstance();
-                    await prefs.setString('allways_theme_mode','dark');
-                    if(dialogContext.mounted)Navigator.pop(dialogContext);
-                  },
-                ),
-                RadioListTile<ThemeMode>(
-                  title:const Text('System'),
-                  value:ThemeMode.system,
-                  groupValue:mode,
-                  onChanged:(value) async {
-                    if(value==null)return;
-                    themeNotifier.value=value;
-                    final prefs=await SharedPreferences.getInstance();
-                    await prefs.setString('allways_theme_mode','system');
-                    if(dialogContext.mounted)Navigator.pop(dialogContext);
-                  },
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
+    await showDialog<void>(context:c,builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(context,mode,_){return AlertDialog(title:const Text('Appearance'),content:Column(mainAxisSize:MainAxisSize.min,children:[
+      RadioListTile<ThemeMode>(title:const Text('Light'),value:ThemeMode.light,groupValue:mode,onChanged:(value)async{if(value==null)return;themeNotifier.value=value;final prefs=await SharedPreferences.getInstance();await prefs.setString('allways_theme_mode','light');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+      RadioListTile<ThemeMode>(title:const Text('Dark'),value:ThemeMode.dark,groupValue:mode,onChanged:(value)async{if(value==null)return;themeNotifier.value=value;final prefs=await SharedPreferences.getInstance();await prefs.setString('allways_theme_mode','dark');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+      RadioListTile<ThemeMode>(title:const Text('System'),value:ThemeMode.system,groupValue:mode,onChanged:(value)async{if(value==null)return;themeNotifier.value=value;final prefs=await SharedPreferences.getInstance();await prefs.setString('allways_theme_mode','system');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+    ]));}));
+
+  Widget _action(BuildContext c,{required IconData icon,required String label,required VoidCallback onTap})=>Expanded(child:Card(child:InkWell(onTap:onTap,borderRadius:BorderRadius.circular(12),child:Padding(padding:const EdgeInsets.symmetric(vertical:14,horizontal:8),child:Column(mainAxisSize:MainAxisSize.min,children:[Icon(icon),const SizedBox(height:6),Text(label,textAlign:TextAlign.center,style:const TextStyle(fontWeight:FontWeight.w700))])))));
 
   Widget build(BuildContext c){
     if(user==null)return Center(child:FilledButton(onPressed:onLogin,child:const Text('Sign in / Sign up')));
     return ListView(padding:const EdgeInsets.all(16),children:[
+      const Text('Profile',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
+      Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.person)),title:Text(user!.displayName??'ALLways customer'),subtitle:Text(user!.email??''))),
+      const SizedBox(height:12),
       FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
         future:FirebaseFirestore.instance.collection('customers').doc(user!.uid).get(),
         builder:(context,snapshot){
-          final data=snapshot.data?.data();
-          if(data?['role']!='admin')return const SizedBox.shrink();
-          return Card(
-            child:Padding(
-              padding:const EdgeInsets.all(12),
-              child:FilledButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AdminScreen()),
-                ),
-                icon:const Icon(Icons.admin_panel_settings),
-                label:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),
-              ),
-            ),
-          );
+          final isAdmin=snapshot.data?.data()?['role']=='admin';
+          return Row(children:[
+            _action(c,icon:Icons.receipt_long_outlined,label:'Orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:user,onCancel:onCancel)))),
+            const SizedBox(width:8),
+            _action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(addresses:addresses,onReload:onReload,onDelete:onDelete)))),
+            if(isAdmin)...[
+              const SizedBox(width:8),
+              _action(c,icon:Icons.admin_panel_settings_outlined,label:'Admin',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen()))),
+            ],
+          ]);
         },
       ),
-      const Text('Profile',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
-      Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.person)),title:Text(user!.displayName??'ALLways customer'),subtitle:Text(user!.email??''))),
-      const SizedBox(height:16),Row(children:[const Expanded(child:Text('Saved addresses',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800))),IconButton(onPressed:onReload,icon:const Icon(Icons.refresh))]),
-      if(addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.')
-      else ...addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline))))),
+      const SizedBox(height:18),
       ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share ALLways'),subtitle:const Text('Share ALLways with friends and family'),onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
       ListTile(leading:const Icon(Icons.system_update_outlined),title:const Text('Check for updates'),subtitle:const Text('Check for the latest ALLways version'),onTap:()=>_checkForUpdate(c)),
-      ListTile(
-        leading:const Icon(Icons.brightness_6_outlined),
-        title:const Text('Appearance'),
-        subtitle:const Text('Choose light, dark, or system theme'),
-        onTap:()=>_chooseAppearance(c),
-      ),
+      ListTile(leading:const Icon(Icons.brightness_6_outlined),title:const Text('Appearance'),subtitle:const Text('Choose light, dark, or system theme'),onTap:()=>_chooseAppearance(c)),
       ListTile(leading:const Icon(Icons.notifications_outlined),title:const Text('Notifications'),subtitle:const Text('Order and ALLways alerts'),onTap:()async{final s=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(s.authorizationStatus==AuthorizationStatus.authorized?'Notifications enabled.':'Permission not granted.')));}),
-      ListTile(leading:const Icon(Icons.logout),title:const Text('Log out'),onTap:()=>FirebaseAuth.instance.signOut()),
       const SizedBox(height:20),const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey))
     ]);
   }
+}
+
+class SavedAddressesPage extends StatelessWidget{
+  final List<Map<String,dynamic>> addresses;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;
+  const SavedAddressesPage({super.key,required this.addresses,required this.onReload,required this.onDelete});
+  Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Saved addresses')),body:RefreshIndicator(onRefresh:onReload,child:ListView(padding:const EdgeInsets.all(16),children:[
+    if(addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.')
+    else ...addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline)))))
+  ])));
+}
+
+class LocalSellersPage extends StatelessWidget{
+  const LocalSellersPage({super.key});
+  Widget build(BuildContext c)=>StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+    stream:FirebaseFirestore.instance.collection('localSellers').where('active',isEqualTo:true).snapshots(),
+    builder:(context,snapshot){
+      if(snapshot.hasError)return const InfoCard(title:'Local sellers unavailable',detail:'Please check your connection and try again.');
+      if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
+      final sellers=snapshot.data!.docs;
+      return ListView(padding:const EdgeInsets.fromLTRB(16,16,16,100),children:[
+        const Text('Local sellers',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),
+        const SizedBox(height:6),const Text('Discover sellers near you and contact them directly.',style:TextStyle(color:Colors.grey)),
+        const SizedBox(height:16),
+        if(sellers.isEmpty)const InfoCard(title:'No local sellers yet',detail:'Local sellers will appear here when they are onboarded.')
+        else ...sellers.map((d){final s=d.data();return Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.storefront)),title:Text((s['name']??s['businessName']??'Local seller').toString()),subtitle:Text((s['category']??s['address']??'Local seller').toString()),trailing:const Icon(Icons.chevron_right)));})
+      ]);
+    },
+  );
 }
 
 class AdminScreen extends StatefulWidget{

@@ -316,45 +316,79 @@ class _ShellState extends State<Shell> {
   }
 }
 
-class ShopPage extends StatefulWidget {
-  final List<Product> products; final bool loading; final String? error;
-  final Future<void> Function({bool silent}) onRefresh; final void Function(Product) onAdd;
-  final Map<String,CartItem> cart; final void Function(String,int) onQty;
-  final User? user; final Set<String> wishlistIds; final Future<void> Function(Product) onWishlist;
+class ShopPage extends StatefulWidget{
+  final List<Product> products;final bool loading;final String? error;
+  final Future<void> Function({bool silent}) onRefresh;final void Function(Product) onAdd;
+  final Map<String,CartItem> cart;final void Function(String,int) onQty;
+  final User? user;final Set<String> wishlistIds;final Future<void> Function(Product) onWishlist;
   const ShopPage({super.key,required this.products,required this.loading,required this.error,required this.onRefresh,required this.onAdd,required this.cart,required this.onQty,required this.user,required this.wishlistIds,required this.onWishlist});
   @override State<ShopPage> createState()=>_ShopPageState();
 }
 class _ShopPageState extends State<ShopPage>{
   String cat='All',search='';
+  Widget _productCard(BuildContext c,Product p){
+    final liked=widget.wishlistIds.contains(p.id);
+    Widget cartAction;
+    if(widget.cart.containsKey(p.id)){
+      cartAction=Row(mainAxisSize:MainAxisSize.min,children:[
+        IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),
+        Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
+        IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline)),
+      ]);
+    }else{
+      cartAction=IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart));
+    }
+    return Card(
+      margin:const EdgeInsets.only(bottom:9),
+      child:ListTile(
+        onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),liked:liked,onWishlist:()=>widget.onWishlist(p)))),
+        leading:CircleAvatar(child:Text(p.icon)),
+        title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
+        subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
+        trailing:Row(mainAxisSize:MainAxisSize.min,children:[
+          IconButton(onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border)),
+          cartAction,
+        ]),
+      ),
+    );
+  }
   @override Widget build(BuildContext c){
-    final cats=<String>{'All',...widget.products.map((p)=>p.category)}; final q=search.toLowerCase().trim();
-    final list=widget.products.where((p){final text=(p.name+' '+p.category+' '+p.brand+' '+p.description).toLowerCase();return(cat=='All'||p.category==cat)&&(q.isEmpty||text.contains(q));}).toList();
-    return RefreshIndicator(onRefresh:()=>widget.onRefresh(),child:ListView(padding:const EdgeInsets.fromLTRB(16,12,16,110),children:[
-      const Text('ALLways',style:TextStyle(fontSize:30,fontWeight:FontWeight.w900)),const Text('Closer to You, Always',style:TextStyle(color:Colors.grey)),
-      const SizedBox(height:14),Card(color:Colors.black,child:const Padding(padding:EdgeInsets.all(22),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Priority Delivery',style:TextStyle(color:Colors.white70)),SizedBox(height:7),Text('Everything you need, closer to home.',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w800)),SizedBox(height:7),Text('Shop local essentials. Simple ordering.',style:TextStyle(color:Colors.white70))]))),
-      const SizedBox(height:16),TextField(decoration:const InputDecoration(hintText:'Search items',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>search=v)),
-      const SizedBox(height:10),SizedBox(height:44,child:ListView(scrollDirection:Axis.horizontal,children:cats.map((x)=>Padding(padding:const EdgeInsets.only(right:7),child:ChoiceChip(label:Text(x),selected:cat==x,onSelected:(_)=>setState(()=>cat=x)))).toList())),
-      const SizedBox(height:14),
-      if(widget.loading)const Padding(padding:EdgeInsets.all(40),child:Center(child:CircularProgressIndicator()))
-      else if(widget.error!=null)const InfoCard(title:'Could not load inventory',detail:'Check your connection and pull down to retry.')
-      else if(list.isEmpty)const InfoCard(title:'No items found',detail:'Try another category or search.')
-      else ...list.map((p){
-        final liked=widget.wishlistIds.contains(p.id);
-        return Card(margin:const EdgeInsets.only(bottom:9),child:ListTile(
-          onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),liked:liked,onWishlist:()=>widget.onWishlist(p)))),
-          leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
-          subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
-          trailing:Row(mainAxisSize:MainAxisSize.min,children:[
-            IconButton(onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border)),
-            widget.cart.containsKey(p.id)
-              ? Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove_circle_outline)),Text(widget.cart[p.id]!.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w800)),IconButton(onPressed:p.stock>widget.cart[p.id]!.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add_circle_outline))])
-              : IconButton(onPressed:p.stock>0?()=>widget.onAdd(p):null,icon:const Icon(Icons.add_shopping_cart)),
-          ]),
-        );
-      }),
-    ]));
+    final cats=<String>{'All',...widget.products.map((p)=>p.category)};
+    final q=search.toLowerCase().trim();
+    final list=widget.products.where((p){
+      final text=(p.name+' '+p.category+' '+p.brand+' '+p.description).toLowerCase();
+      return(cat=='All'||p.category==cat)&&(q.isEmpty||text.contains(q));
+    }).toList();
+    return RefreshIndicator(
+      onRefresh:()=>widget.onRefresh(),
+      child:ListView(
+        padding:const EdgeInsets.fromLTRB(16,12,16,110),
+        children:[
+          const Text('ALLways',style:TextStyle(fontSize:30,fontWeight:FontWeight.w900)),
+          const Text('Closer to You, Always',style:TextStyle(color:Colors.grey)),
+          const SizedBox(height:14),
+          Card(color:Colors.black,child:const Padding(padding:EdgeInsets.all(22),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text('Priority Delivery',style:TextStyle(color:Colors.white70)),
+            SizedBox(height:7),
+            Text('Everything you need, closer to home.',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w800)),
+            SizedBox(height:7),
+            Text('Shop local essentials. Simple ordering.',style:TextStyle(color:Colors.white70)),
+          ]))),
+          const SizedBox(height:16),
+          TextField(decoration:const InputDecoration(hintText:'Search items',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>search=v)),
+          const SizedBox(height:10),
+          SizedBox(height:44,child:ListView(scrollDirection:Axis.horizontal,children:cats.map((x)=>Padding(padding:const EdgeInsets.only(right:7),child:ChoiceChip(label:Text(x),selected:cat==x,onSelected:(_)=>setState(()=>cat=x)))).toList())),
+          const SizedBox(height:14),
+          if(widget.loading)const Padding(padding:EdgeInsets.all(40),child:Center(child:CircularProgressIndicator()))
+          else if(widget.error!=null)const InfoCard(title:'Could not load inventory',detail:'Check your connection and pull down to retry.')
+          else if(list.isEmpty)const InfoCard(title:'No items found',detail:'Try another category or search.')
+          else for(final p in list)_productCard(c,p),
+        ],
+      ),
+    );
   }
 }
+
 class ProductScreen extends StatelessWidget{
   final Product product; final VoidCallback onAdd; final bool liked; final VoidCallback onWishlist;
   const ProductScreen({super.key,required this.product,required this.onAdd,required this.liked,required this.onWishlist});
@@ -649,15 +683,18 @@ class _WishlistPageState extends State<WishlistPage>{
               ])
             : ListView(
                 padding:const EdgeInsets.all(16),
-                children:items.map((p)=>Card(
-                  child:ListTile(
-                    leading:CircleAvatar(child:Text(p.icon)),
-                    title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
-                    subtitle:Text('₹'+p.price.toString()+' • '+p.category),
-                    trailing:IconButton(onPressed:()=>remove(p),icon:const Icon(Icons.favorite)),
-                    onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>{},liked:true,onWishlist:()=>remove(p))),
-                  ),
-                )).toList(),
+                children:[
+                  for(final p in items)
+                    Card(
+                      child:ListTile(
+                        leading:CircleAvatar(child:Text(p.icon)),
+                        title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
+                        subtitle:Text('₹'+p.price.toString()+' • '+p.category),
+                        trailing:IconButton(onPressed:()=>remove(p),icon:const Icon(Icons.favorite)),
+                        onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>{},liked:true,onWishlist:()=>remove(p)))),
+                      ),
+                    ),
+                ],
               ),
     ),
   );

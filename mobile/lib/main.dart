@@ -33,8 +33,16 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(bg);
+  final prefs = await SharedPreferences.getInstance();
+  final savedTheme = prefs.getString('allways_theme_mode');
+  if (savedTheme == 'light') {
+    themeNotifier.value = ThemeMode.light;
+  } else if (savedTheme == 'dark') {
+    themeNotifier.value = ThemeMode.dark;
+  } else {
+    themeNotifier.value = ThemeMode.system;
+  }
   runApp(const AllwaysApp());
-}
 
 class AllwaysApp extends StatelessWidget {
   const AllwaysApp({super.key});

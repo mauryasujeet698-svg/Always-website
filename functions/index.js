@@ -16,8 +16,6 @@ exports.onAllwaysOrderUpdated = onDocumentUpdated("orders/{orderId}", async (eve
 
   if (oldStatus === newStatus) return;
 
-  // The current Flutter order model uses customerId; customerUid is
-  // supported as the canonical field for the notification backend.
   const customerUid = String(
     after.customerUid || after.customerId || ""
   ).trim();

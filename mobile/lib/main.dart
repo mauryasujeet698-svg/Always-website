@@ -16,6 +16,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'admin_dashboard_screen.dart';
 import 'firebase_options.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
@@ -544,7 +545,7 @@ class ProfilePage extends StatelessWidget{
             child:Padding(
               padding:const EdgeInsets.all(12),
               child:FilledButton.icon(
-                onPressed:()=>debugPrint('Admin tapped'),
+                onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const AdminDashboardScreen())),
                 icon:const Icon(Icons.admin_panel_settings),
                 label:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),
               ),

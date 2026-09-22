@@ -353,27 +353,39 @@ class _CartScreenState extends State<CartScreen>{
         locationSettings:const LocationSettings(accuracy:LocationAccuracy.high),
       ).timeout(const Duration(seconds:10));
       try{
-        final marks=await placemarkFromCoordinates(pos.latitude,pos.longitude);
-        if(marks.isNotEmpty){
-          final x=marks.first;
-          final parts=[
-            x.street,
-            x.thoroughfare,
-            x.name,
-            x.subLocality,
-            x.locality,
-            x.subAdministrativeArea,
-            x.administrativeArea,
-            x.postalCode,
-          ].whereType<String>()
-           .where((v)=>v.trim().isNotEmpty)
-           .map((v)=>v.trim())
-           .toList();
-          a.text=parts.toSet().join(', ');
+        try{
+          final marks=await placemarkFromCoordinates(pos.latitude,pos.longitude);
+          if(marks.isNotEmpty){
+            final x=marks.first;
+            final parts=[
+              x.street,
+              x.subLocality,
+              x.thoroughfare,
+            ].whereType<String>()
+             .where((v)=>v.trim().isNotEmpty)
+             .map((v)=>v.trim())
+             .toList();
+            if(parts.isEmpty){
+              final fallback=[
+                x.locality,
+                x.subAdministrativeArea,
+                x.administrativeArea,
+                x.postalCode,
+              ].whereType<String>()
+               .where((v)=>v.trim().isNotEmpty)
+               .map((v)=>v.trim())
+               .toList();
+              parts.addAll(fallback);
+            }
+            a.text=parts.toSet().join(', ');
+          }
+        }catch(_){
+          // Geocoding is intentionally isolated from the location lookup.
         }
       }catch(_){}
       if(a.text.trim().isEmpty){
-        a.text='Current location: '+pos.latitude.toStringAsFixed(6)+', '+pos.longitude.toStringAsFixed(6);
+        a.text='Latitude: '+pos.latitude.toString()+
+            ', Longitude: '+pos.longitude.toString();
       }
       msg('Current location added. Please add your house number or landmark if needed.');
     }catch(e){
@@ -546,7 +558,14 @@ class ProfilePage extends StatelessWidget{
             child:Padding(
               padding:const EdgeInsets.all(12),
               child:FilledButton.icon(
-                onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const AdminDashboardScreen())),
+                onPressed:()=>showDialog<void>(
+                  context:context,
+                  builder:(_)=>AlertDialog(
+                    title:const Text('Admin Dashboard'),
+                    content:const Text('Admin Dashboard coming soon'),
+                    actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('OK'))],
+                  ),
+                ),
                 icon:const Icon(Icons.admin_panel_settings),
                 label:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),
               ),

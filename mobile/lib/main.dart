@@ -557,13 +557,9 @@ class ProfilePage extends StatelessWidget{
             child:Padding(
               padding:const EdgeInsets.all(12),
               child:FilledButton.icon(
-                onPressed:()=>showDialog<void>(
-                  context:context,
-                  builder:(_)=>AlertDialog(
-                    title:const Text('Admin Dashboard'),
-                    content:const Text('Admin Dashboard coming soon'),
-                    actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('OK'))],
-                  ),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminScreen()),
                 ),
                 icon:const Icon(Icons.admin_panel_settings),
                 label:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),

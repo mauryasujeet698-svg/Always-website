@@ -1591,8 +1591,17 @@ class AdminRolesPanel extends StatelessWidget {
                 final x = d.data();
                 return Card(
                   child: ListTile(
+                    leading: (role == 'seller' && (x['photoUrl'] ?? '').toString().isNotEmpty)
+                        ? Image.network((x['photoUrl'] ?? '').toString(), width: 64, height: 64, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined))
+                        : const Icon(Icons.person_outline),
                     title: Text((x['fullName'] ?? 'Applicant').toString()),
-                    subtitle: Text((x['shopName'] ?? x['dob'] ?? x['email'] ?? '').toString()),
+                    subtitle: Text([
+                      if ((x['mobileNumber'] ?? '').toString().isNotEmpty) 'Mobile: ' + (x['mobileNumber'] ?? '').toString(),
+                      if ((x['shopName'] ?? '').toString().isNotEmpty) 'Shop: ' + (x['shopName'] ?? '').toString(),
+                      if ((x['dob'] ?? '').toString().isNotEmpty) 'DOB: ' + (x['dob'] ?? '').toString(),
+                      if ((x['email'] ?? '').toString().isNotEmpty) (x['email'] ?? '').toString(),
+                    ].join('\n')),
                     trailing: Wrap(
                       children: [
                         TextButton(onPressed: () => onboard(context, d, role), child: const Text('Onboard')),

@@ -556,19 +556,26 @@ class _ProfilePageState extends State<ProfilePage>{
       const SizedBox(width:8),_action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
       const SizedBox(width:8),_action(c,icon:Icons.favorite_border,label:'Wishlist',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
     ]),
-    const SizedBox(height:8),CarrierOnboardingTile(user:u),const SizedBox(height:8),
     FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(future:FirebaseFirestore.instance.collection('customers').doc(u.uid).get(),builder:(context,snapshot){final role=(snapshot.data?.data()?['role']??'customer').toString();return Column(children:[
       if(role=='admin')Card(child:ListTile(leading:const Icon(Icons.admin_panel_settings_outlined),title:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen())))),
       if(role=='seller')SellerDashboard(user:u),if(role=='carrier')CarrierDashboard(user:u),
     ]);}),
     const SizedBox(height:10),Row(children:[const Expanded(child:Text('Saved addresses',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800))),IconButton(onPressed:widget.onReload,icon:const Icon(Icons.refresh))]),
     if(widget.addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.') else ...widget.addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>widget.onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline))))),
-    ListTile(leading:const Icon(Icons.privacy_tip_outlined),title:const Text('Privacy Policy'),subtitle:const Text('How ALLways handles your information'),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const PrivacyPolicyPage()))),
     ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share ALLways'),subtitle:const Text('Share ALLways with friends and family'),onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
     ListTile(leading:const Icon(Icons.system_update_outlined),title:const Text('Check for updates'),subtitle:const Text('Check for the latest ALLways version'),onTap:()=>_checkForUpdate(c)),
     ListTile(leading:const Icon(Icons.brightness_6_outlined),title:const Text('Appearance'),subtitle:const Text('Choose light, dark, or system theme'),onTap:()=>_chooseAppearance(c)),
     ListTile(leading:const Icon(Icons.notifications_outlined),title:const Text('Notifications'),subtitle:const Text('Order and ALLways alerts'),onTap:()async{final st=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(st.authorizationStatus==AuthorizationStatus.authorized?'Notifications enabled.':'Permission not granted.')));}),
-    ListTile(leading:const Icon(Icons.logout),title:const Text('Log out'),onTap:()=>FirebaseAuth.instance.signOut()),const SizedBox(height:20),const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey)),
+    const SizedBox(height:8),
+    CarrierOnboardingTile(user:u),
+    ListTile(leading:const Icon(Icons.privacy_tip_outlined),title:const Text('Privacy Policy'),subtitle:const Text('How ALLways handles your information'),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const PrivacyPolicyPage()))),
+    ListTile(
+      leading:Icon(Icons.logout,color:Theme.of(c).colorScheme.error),
+      title:Text('Log out',style:TextStyle(color:Theme.of(c).colorScheme.error,fontWeight:FontWeight.w800)),
+      onTap:()=>FirebaseAuth.instance.signOut(),
+    ),
+    const SizedBox(height:20),
+    const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey)),
   ]);}
 }
 
@@ -1287,6 +1294,42 @@ class _AdminScreenState extends State<AdminScreen> {
   final pass = TextEditingController();
   bool busy = false;
   bool loggedIn = false;
+  String selectedOrderStatusFilter = 'pending';
+
+  static const List<Map<String, String>> orderStatusFilters = [
+    {'label': 'New', 'value': 'pending'},
+    {'label': 'Confirmed', 'value': 'confirmed'},
+    {'label': 'Preparing', 'value': 'preparing'},
+    {'label': 'Assigned', 'value': 'assigned'},
+    {'label': 'Out for delivery', 'value': 'out_for_delivery'},
+    {'label': 'Delivered', 'value': 'delivered'},
+    {'label': 'Cancelled', 'value': 'cancelled'},
+  ];
+
+  String normalizeOrderStatus(String raw) {
+    final value = raw.trim().toLowerCase().replaceAll(' ', '_');
+    switch (value) {
+      case 'pending':
+      case 'new':
+      case 'new_order':
+        return 'pending';
+      case 'confirmed':
+        return 'confirmed';
+      case 'preparing':
+        return 'preparing';
+      case 'assigned':
+        return 'assigned';
+      case 'out_for_delivery':
+        return 'out_for_delivery';
+      case 'delivered':
+        return 'delivered';
+      case 'cancelled':
+      case 'canceled':
+        return 'cancelled';
+      default:
+        return value;
+    }
+  }
 
   @override
   void initState() {
@@ -1475,7 +1518,7 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget orderCard(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final order = doc.data();
     final status = (order['status'] ?? 'New Order').toString();
-    const statuses = ['New Order', 'Confirmed', 'Preparing', 'Out for delivery', 'Delivered', 'Cancelled'];
+    const statuses = ['New Order', 'Confirmed', 'Preparing', 'Assigned', 'Out for delivery', 'Delivered', 'Cancelled'];
     final eta = (order['eta'] ?? order['estimatedDelivery'] ?? '').toString();
     final note = (order['customerMessage'] ?? order['statusNote'] ?? '').toString();
 
@@ -1620,15 +1663,54 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           const AdminRolesPanel(),
           bannerManager(),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Order Management', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            ),
+          ),
+          SizedBox(
+            height: 54,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              scrollDirection: Axis.horizontal,
+              itemCount: orderStatusFilters.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final filter = orderStatusFilters[index];
+                final value = filter['value']!;
+                return ChoiceChip(
+                  label: Text(filter['label']!),
+                  selected: selectedOrderStatusFilter == value,
+                  onSelected: (selected) {
+                    if (selected) setState(() => selectedOrderStatusFilter = value);
+                  },
+                );
+              },
+            ),
+          ),
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance.collection('orders').snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Cannot load orders: ' + snapshot.error.toString())));
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                final docs = [...snapshot.data!.docs]..sort((a, b) => ((b.data()['createdAt'] ?? 0) as num).compareTo((a.data()['createdAt'] ?? 0) as num));
-                if (docs.isEmpty) return const Center(child: Text('No orders yet.'));
-                return ListView.builder(padding: const EdgeInsets.all(12), itemCount: docs.length, itemBuilder: (context, index) => orderCard(docs[index]));
+                final docs = [...snapshot.data!.docs]
+                  ..sort((a, b) => ((b.data()['createdAt'] ?? 0) as num).compareTo((a.data()['createdAt'] ?? 0) as num));
+                final filteredDocs = docs.where((doc) {
+                  final rawStatus = (doc.data()['status'] ?? '').toString();
+                  return normalizeOrderStatus(rawStatus) == selectedOrderStatusFilter;
+                }).toList();
+                if (filteredDocs.isEmpty) {
+                  final label = orderStatusFilters.firstWhere((x) => x['value'] == selectedOrderStatusFilter)['label']!;
+                  return Center(child: Text('No ' + label.toLowerCase() + ' orders.'));
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: filteredDocs.length,
+                  itemBuilder: (context, index) => orderCard(filteredDocs[index]),
+                );
               },
             ),
           ),

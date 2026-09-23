@@ -11,7 +11,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,8 +23,50 @@ import 'travel_teaser_screen.dart';
 import 'firebase_options.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
-const allwaysStorageBucket='gs://allways-web.firebasestorage.app';
-final FirebaseStorage allwaysStorage=FirebaseStorage.instanceFor(bucket:allwaysStorageBucket);
+
+const cloudinaryCloudName='YOUR_CLOUD_NAME';
+const cloudinaryUploadPreset='YOUR_UPLOAD_PRESET';
+
+Future<String> uploadImageToCloudinary(XFile image, {String? folder}) async {
+  if (cloudinaryCloudName == 'YOUR_CLOUD_NAME' || cloudinaryUploadPreset == 'YOUR_UPLOAD_PRESET') {
+    throw Exception('Cloudinary is not configured. Set cloudinaryCloudName and cloudinaryUploadPreset.');
+  }
+
+  final endpoint = Uri.parse(
+    'https://api.cloudinary.com/v1_1/' + cloudinaryCloudName + '/image/upload',
+  );
+  final request = http.MultipartRequest('POST', endpoint);
+  request.fields['upload_preset'] = cloudinaryUploadPreset;
+  if (folder != null && folder.isNotEmpty) {
+    request.fields['folder'] = folder;
+  }
+  request.files.add(await http.MultipartFile.fromPath('file', image.path));
+
+  final response = await request.send();
+  final body = await response.stream.bytesToString();
+
+  Map<String, dynamic> data = {};
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map) {
+      data = Map<String, dynamic>.from(decoded);
+    }
+  } catch (_) {}
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    final error = data['error'];
+    final message = error is Map
+        ? (error['message'] ?? 'Unknown Cloudinary error').toString()
+        : body;
+    throw Exception('Cloudinary upload failed [HTTP ${response.statusCode}]: $message');
+  }
+
+  final secureUrl = (data['secure_url'] ?? '').toString();
+  if (secureUrl.isEmpty) {
+    throw Exception('Cloudinary upload succeeded but no secure_url was returned.');
+  }
+  return secureUrl;
+}
 const shareApkUrl='https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/allways-v1.4.7.apk';
 
 const inventoryEndpoint='https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec';
@@ -922,7 +963,7 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
   }
 
   Future<void> pickPhoto() async {
-    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 82);
+    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60, maxWidth: 800);
     if (x != null && mounted) setState(() => photo = x);
   }
 
@@ -935,10 +976,7 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
     }
     setState(() => busy = true);
     try {
-      final path = 'onboarding/' + widget.user.uid + '/' + widget.type + '_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
-      final ref = allwaysStorage.ref().child(path);
-      await ref.putFile(File(photo!.path), SettableMetadata(contentType:'image/jpeg'));
-      final url = await ref.getDownloadURL();
+      final url = await uploadImageToCloudinary(photo!, folder: 'onboarding/' + widget.user.uid);
 
       final data = <String, dynamic>{
         'uid': widget.user.uid,
@@ -1055,10 +1093,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
   }
 
   Future<String> uploadItemImage(XFile image) async {
-    final path = 'sellers/' + widget.user.uid + '/item_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
-    final ref = allwaysStorage.ref().child(path);
-    await ref.putFile(File(image.path), SettableMetadata(contentType:'image/jpeg'));
-    return ref.getDownloadURL();
+    return uploadImageToCloudinary(image, folder: 'sellers/' + widget.user.uid);
   }
 
   Future<void> addItem() async {
@@ -1085,7 +1120,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: () async {
-                  final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 82);
+                  final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60, maxWidth: 800);
                   if (x != null) setDialogState(() => image = x);
                 },
                 icon: const Icon(Icons.image_outlined),
@@ -1825,11 +1860,9 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> addBanner() async {
     try {
-      final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60, maxWidth: 800);
       if (image == null) return;
-      final ref = allwaysStorage.ref().child('banners/banner_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg');
-      await ref.putFile(File(image.path), SettableMetadata(contentType:'image/jpeg'));
-      final url = await ref.getDownloadURL();
+      final url = await uploadImageToCloudinary(image, folder: 'banners');
       final doc = FirebaseFirestore.instance.collection('settings').doc('banners');
       final snap = await doc.get();
       final urls = List<String>.from(snap.data()?['imageUrls'] ?? const []);

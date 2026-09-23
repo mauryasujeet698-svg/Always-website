@@ -24,11 +24,11 @@ import 'firebase_options.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
 
-const cloudinaryCloudName='YOUR_CLOUD_NAME';
-const cloudinaryUploadPreset='YOUR_UPLOAD_PRESET';
+const cloudinaryCloudName='busdtvia';
+const cloudinaryUploadPreset='allways_preset';
 
 Future<String> uploadImageToCloudinary(XFile image, {String? folder}) async {
-  if (cloudinaryCloudName == 'YOUR_CLOUD_NAME' || cloudinaryUploadPreset == 'YOUR_UPLOAD_PRESET') {
+  if (cloudinaryCloudName.isEmpty || cloudinaryUploadPreset.isEmpty) {
     throw Exception('Cloudinary is not configured. Set cloudinaryCloudName and cloudinaryUploadPreset.');
   }
 

@@ -448,6 +448,27 @@ class _ShopPageState extends State<ShopPage>{
             SizedBox(height:7),
             Text('Shop local essentials. Simple ordering.',style:TextStyle(color:Colors.white70)),
           ]))),
+          const SizedBox(height:12),
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError || !snapshot.hasData) return const SizedBox.shrink();
+              final raw = snapshot.data?.data()?['imageUrls'];
+              final urls = raw is List ? raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
+              if (urls.isEmpty) return const SizedBox.shrink();
+              return SizedBox(height: 165, child: PageView.builder(
+                itemCount: urls.length,
+                itemBuilder: (context, index) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(urls[index], fit: BoxFit.cover, width: double.infinity,
+                      errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined))),
+                  ),
+                ),
+              ));
+            },
+          ),
           const SizedBox(height:16),
           TextField(decoration:const InputDecoration(hintText:'Search items',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>search=v)),
           const SizedBox(height:10),
@@ -949,7 +970,9 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
   final fullName = TextEditingController();
   final shopName = TextEditingController();
   final dob = TextEditingController();
+  final mobileNumber = TextEditingController();
   XFile? photo;
+  XFile? bikePhoto;
   bool busy = false;
 
   bool get seller => widget.type == 'seller';
@@ -959,39 +982,47 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
     fullName.dispose();
     shopName.dispose();
     dob.dispose();
+    mobileNumber.dispose();
     super.dispose();
   }
 
   Future<void> pickPhoto() async {
-    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60, maxWidth: 800);
+    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
     if (x != null && mounted) setState(() => photo = x);
   }
 
+  Future<void> pickBikePhoto() async {
+    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+    if (x != null && mounted) setState(() => bikePhoto = x);
+  }
+
   Future<void> submit() async {
-    if (fullName.text.trim().isEmpty || photo == null || (seller && shopName.text.trim().isEmpty) || (!seller && dob.text.trim().isEmpty)) {
+    final mobile = mobileNumber.text.trim().replaceAll(RegExp(r'\D'), '');
+    if (fullName.text.trim().isEmpty || mobile.length != 10 || photo == null ||
+        (seller && shopName.text.trim().isEmpty) || (!seller && (dob.text.trim().isEmpty || bikePhoto == null))) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(seller ? 'Full name, shop name and photo are required.' : 'Full name, DOB and bike/number plate photo are required.')),
+        SnackBar(content: Text(seller
+          ? 'Full name, mobile number, shop name and photo are required.'
+          : 'Full name, mobile number, DOB, bike/number plate photo and a photo with your bike are required.')),
       );
       return;
     }
     setState(() => busy = true);
     try {
       final url = await uploadImageToCloudinary(photo!, folder: 'onboarding/' + widget.user.uid);
-
       final data = <String, dynamic>{
-        'uid': widget.user.uid,
-        'email': widget.user.email ?? '',
-        'type': widget.type,
-        'fullName': fullName.text.trim(),
-        'status': 'pending',
+        'uid': widget.user.uid, 'email': widget.user.email ?? '', 'type': widget.type,
+        'fullName': fullName.text.trim(), 'mobileNumber': mobile, 'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
       };
       if (seller) {
         data['shopName'] = shopName.text.trim();
         data['photoUrl'] = url;
       } else {
+        final bikeUrl = await uploadImageToCloudinary(bikePhoto!, folder: 'onboarding/' + widget.user.uid);
         data['dob'] = dob.text.trim();
-        data['bikePhotoUrl'] = url;
+        data['photoUrl'] = url;
+        data['bikePhotoUrl'] = bikeUrl;
       }
 
       await FirebaseFirestore.instance.collection('onboarding_requests').add(data);
@@ -1025,6 +1056,9 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(controller: fullName, decoration: const InputDecoration(labelText: 'Full name')),
+            const SizedBox(height: 10),
+            TextFormField(controller: mobileNumber, keyboardType: TextInputType.phone, maxLength: 10,
+              decoration: const InputDecoration(labelText: 'Mobile Number', counterText: '')),
             if (seller) ...[
               const SizedBox(height: 10),
               TextField(controller: shopName, decoration: const InputDecoration(labelText: 'Shop name')),
@@ -1039,6 +1073,14 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
               icon: const Icon(Icons.photo_camera),
               label: Text(photo == null ? (seller ? 'Upload shop/photo' : 'Upload bike/number plate photo') : 'Photo selected'),
             ),
+            if (!seller) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: busy ? null : pickBikePhoto,
+                icon: const Icon(Icons.two_wheeler_outlined),
+                label: Text(bikePhoto == null ? 'Upload a photo with your bike' : 'Bike photo selected'),
+              ),
+            ],
           ],
         ),
       ),
@@ -1120,7 +1162,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: () async {
-                  final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60, maxWidth: 800);
+                  final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
                   if (x != null) setDialogState(() => image = x);
                 },
                 icon: const Icon(Icons.image_outlined),
@@ -1409,7 +1451,7 @@ class LocalSellersPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('localSellers').where('active', isEqualTo: true).snapshots(),
+      stream: FirebaseFirestore.instance.collection('sellers').where('status', isEqualTo: 'approved').snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) return const InfoCard(title: 'Local sellers unavailable', detail: 'Please check your connection and try again.');
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -1546,6 +1588,8 @@ class AdminRolesPanel extends StatelessWidget {
           'name': data['fullName'] ?? '',
           'businessName': data['shopName'] ?? '',
           'photoUrl': data['photoUrl'] ?? '',
+          'mobileNumber': data['mobileNumber'] ?? '',
+          'status': 'approved',
         }, SetOptions(merge: true));
       }
 
@@ -1869,7 +1913,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> addBanner() async {
     try {
-      final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60, maxWidth: 800);
+      final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
       if (image == null) return;
       final url = await uploadImageToCloudinary(image, folder: 'banners');
       final doc = FirebaseFirestore.instance.collection('settings').doc('banners');

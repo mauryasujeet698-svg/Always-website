@@ -23,6 +23,8 @@ import 'travel_teaser_screen.dart';
 import 'firebase_options.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
+const allwaysStorageBucket='gs://allways-web.firebasestorage.app';
+final FirebaseStorage allwaysStorage=FirebaseStorage.instanceFor(bucket:allwaysStorageBucket);
 const shareApkUrl='https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/allways-v1.4.7.apk';
 
 const inventoryEndpoint='https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec';
@@ -671,8 +673,8 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
     setState(() => busy = true);
     try {
       final path = 'onboarding/' + widget.user.uid + '/' + widget.type + '_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
-      final ref = FirebaseStorage.instance.ref().child(path);
-      await ref.putFile(File(photo!.path));
+      final ref = allwaysStorage.ref().child(path);
+      await ref.putFile(File(photo!.path), const SettableMetadata(contentType:'image/jpeg'));
       final url = await ref.getDownloadURL();
 
       final data = <String, dynamic>{
@@ -697,6 +699,14 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(seller ? 'Seller request submitted.' : 'Delivery partner request submitted.')),
       );
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        setState(() => busy = false);
+        final detail=e.code=='object-not-found'
+          ? 'Firebase Storage bucket/object was not found. Verify the ALLways Storage bucket exists and matches gs://allways-web.firebasestorage.app.'
+          : 'Firebase error ['+e.code+']: '+(e.message??'Unknown Firebase error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not submit request: '+detail)));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => busy = false);
@@ -783,8 +793,8 @@ class _SellerDashboardState extends State<SellerDashboard> {
 
   Future<String> uploadItemImage(XFile image) async {
     final path = 'sellers/' + widget.user.uid + '/item_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
-    final ref = FirebaseStorage.instance.ref().child(path);
-    await ref.putFile(File(image.path));
+    final ref = allwaysStorage.ref().child(path);
+    await ref.putFile(File(image.path), const SettableMetadata(contentType:'image/jpeg'));
     return ref.getDownloadURL();
   }
 
@@ -1488,8 +1498,8 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
       if (image == null) return;
-      final ref = FirebaseStorage.instance.ref().child('banners/banner_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg');
-      await ref.putFile(File(image.path));
+      final ref = allwaysStorage.ref().child('banners/banner_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg');
+      await ref.putFile(File(image.path), const SettableMetadata(contentType:'image/jpeg'));
       final url = await ref.getDownloadURL();
       final doc = FirebaseFirestore.instance.collection('settings').doc('banners');
       final snap = await doc.get();
@@ -1497,6 +1507,13 @@ class _AdminScreenState extends State<AdminScreen> {
       urls.add(url);
       await doc.set({'imageUrls': urls, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Banner added successfully.')));
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        final detail=e.code=='object-not-found'
+          ? 'Firebase Storage bucket/object was not found. Verify the ALLways Storage bucket exists and matches gs://allways-web.firebasestorage.app.'
+          : 'Firebase Storage error ['+e.code+']: '+(e.message??'Unknown Storage error');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Banner upload failed: '+detail)));
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Banner upload failed: ' + e.toString())));
     }

@@ -103,13 +103,15 @@ class _ShellState extends State<Shell> {
     super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();
     timer=Timer.periodic(const Duration(seconds:30),(_)=>loadInventory(silent:true));
     auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();loadWishlist();}else{addresses=[];wishlistIds.clear();}});
-    messages=FirebaseMessaging.onMessage.listen((m)async{if(!mounted)return;final title=m.notification?.title??'ALLways';final body=m.notification?.body??'New update';try{await const MethodChannel('com.allways.app/apk_installer').invokeMethod('showNotification',{'title':title,'body':body});}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
+    messages=FirebaseMessaging.onMessage.listen((m)async{final title=m.notification?.title??'ALLways';final body=m.notification?.body??'New update';await saveIncomingNotification(title,body);if(!mounted)return;try{await const MethodChannel('com.allways.app/apk_installer').invokeMethod('showNotification',{'title':title,'body':body});}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
     if(user!=null){setupNotifications();loadAddresses();loadWishlist();}
   }
   @override void dispose(){timer?.cancel();auth?.cancel();messages?.cancel();super.dispose();}
 
   Future<void> setupNotifications() async {
     try{
+      final prefs=await SharedPreferences.getInstance();
+      if(prefs.getBool('allways_notifications_enabled')==false)return;
       await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);
       final t=await FirebaseMessaging.instance.getToken();
       Future<void> save(String token) async {
@@ -126,6 +128,30 @@ class _ShellState extends State<Shell> {
       if(t!=null)await save(t);
       FirebaseMessaging.instance.onTokenRefresh.listen((t) async { await save(t); });
     }catch(_){}
+  }
+
+  Future<void> saveIncomingNotification(String title,String body) async {
+    try{
+      final prefs=await SharedPreferences.getInstance();
+      final raw=prefs.getStringList('allways_notifications')??<String>[];
+      raw.insert(0,jsonEncode({'title':title,'body':body,'timestamp':DateTime.now().millisecondsSinceEpoch}));
+      if(raw.length>50)raw.removeRange(50,raw.length);
+      await prefs.setStringList('allways_notifications',raw);
+    }catch(_){}
+  }
+
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    final prefs=await SharedPreferences.getInstance();
+    await prefs.setBool('allways_notifications_enabled',enabled);
+    if(enabled){
+      await setupNotifications();
+    }else{
+      try{await FirebaseMessaging.instance.deleteToken();}catch(_){}
+      if(user!=null){
+        try{await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).delete();}catch(_){}
+      }
+      await prefs.remove('allways_fcm_token');
+    }
   }
 
   Future<void> checkForUpdate() async {
@@ -546,44 +572,277 @@ class ProfilePage extends StatefulWidget{
   @override State<ProfilePage> createState()=>_ProfilePageState();
 }
 class _ProfilePageState extends State<ProfilePage>{
-  Future<void> _checkForUpdate(BuildContext c) async {try{final r=await http.get(Uri.parse(updateManifestUrl)).timeout(const Duration(seconds:8));if(!c.mounted)return;if(r.statusCode==200){final d=jsonDecode(r.body);if(d is Map&&(d['version']??'').toString().isNotEmpty){ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Latest version: '+d['version'].toString())));return;}}ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates.')));}catch(_){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates.')));}}
-  Future<void> _chooseAppearance(BuildContext c) async {await showDialog<void>(context:c,builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(context,mode,_)=>AlertDialog(title:const Text('Appearance'),content:Column(mainAxisSize:MainAxisSize.min,children:[
-    RadioListTile<ThemeMode>(title:const Text('Light'),value:ThemeMode.light,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','light');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-    RadioListTile<ThemeMode>(title:const Text('Dark'),value:ThemeMode.dark,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','dark');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-    RadioListTile<ThemeMode>(title:const Text('System'),value:ThemeMode.system,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','system');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
-  ]))));}
-  Widget _action(BuildContext c,{required IconData icon,required String label,required VoidCallback onTap})=>Expanded(child:Card(child:InkWell(onTap:onTap,borderRadius:BorderRadius.circular(12),child:Padding(padding:const EdgeInsets.symmetric(vertical:14,horizontal:8),child:Column(mainAxisSize:MainAxisSize.min,children:[Icon(icon),const SizedBox(height:6),Text(label,textAlign:TextAlign.center,style:const TextStyle(fontWeight:FontWeight.w700))])))));
-  @override Widget build(BuildContext c){final u=widget.user;if(u==null)return Center(child:FilledButton(onPressed:widget.onLogin,child:const Text('Sign in / Sign up')));return ListView(padding:const EdgeInsets.all(16),children:[
-    const Text('Profile',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
-    Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.person)),title:Text(u.displayName??'ALLways customer'),subtitle:Text(u.email??''))),
-    const SizedBox(height:8),
-    Row(children:[
-      _action(c,icon:Icons.receipt_long_outlined,label:'Orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:u,onCancel:widget.onCancel)))),
-      const SizedBox(width:8),_action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(userId:widget.user?.uid ?? '',addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
-      const SizedBox(width:8),_action(c,icon:Icons.favorite_border,label:'Wishlist',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
-    ]),
-    FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(future:FirebaseFirestore.instance.collection('customers').doc(u.uid).get(),builder:(context,snapshot){final role=(snapshot.data?.data()?['role']??'customer').toString();return Column(children:[
-      if(role=='admin')Card(child:ListTile(leading:const Icon(Icons.admin_panel_settings_outlined),title:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen())))),
-      if(role=='seller')SellerDashboard(user:u),if(role=='carrier')CarrierDashboard(user:u),
-    ]);}),
-    const SizedBox(height:10),Row(children:[const Expanded(child:Text('Saved addresses',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800))),IconButton(onPressed:widget.onReload,icon:const Icon(Icons.refresh))]),
-    if(widget.addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.') else ...widget.addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>widget.onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline))))),
-    ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share ALLways'),subtitle:const Text('Share ALLways with friends and family'),onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
-    ListTile(leading:const Icon(Icons.system_update_outlined),title:const Text('Check for updates'),subtitle:const Text('Check for the latest ALLways version'),onTap:()=>_checkForUpdate(c)),
-    ListTile(leading:const Icon(Icons.brightness_6_outlined),title:const Text('Appearance'),subtitle:const Text('Choose light, dark, or system theme'),onTap:()=>_chooseAppearance(c)),
-    ListTile(leading:const Icon(Icons.notifications_outlined),title:const Text('Notifications'),subtitle:const Text('Order and ALLways alerts'),onTap:()async{final st=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text(st.authorizationStatus==AuthorizationStatus.authorized?'Notifications enabled.':'Permission not granted.')));}),
-    const SizedBox(height:8),
-    CarrierOnboardingTile(user:u),
-    ListTile(leading:const Icon(Icons.privacy_tip_outlined),title:const Text('Privacy Policy'),subtitle:const Text('How ALLways handles your information'),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const PrivacyPolicyPage()))),
-    ListTile(
-      leading:Icon(Icons.logout,color:Theme.of(c).colorScheme.error),
-      title:Text('Log out',style:TextStyle(color:Theme.of(c).colorScheme.error,fontWeight:FontWeight.w800)),
-      onTap:()=>FirebaseAuth.instance.signOut(),
-    ),
-    const SizedBox(height:20),
-    const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey)),
-  ]);}
+  Future<void> _checkForUpdate(BuildContext c) async {
+    try{
+      final r=await http.get(Uri.parse(updateManifestUrl)).timeout(const Duration(seconds:8));
+      if(!c.mounted)return;
+      if(r.statusCode==200){
+        final d=jsonDecode(r.body);
+        if(d is Map&&(d['version']??'').toString().isNotEmpty){
+          ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Latest version: '+d['version'].toString())));
+          return;
+        }
+      }
+      ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates.')));
+    }catch(_){
+      if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not check for updates.')));
+    }
+  }
+
+  Future<void> _chooseAppearance(BuildContext c) async {
+    await showDialog<void>(
+      context:c,
+      builder:(dialogContext)=>ValueListenableBuilder<ThemeMode>(
+        valueListenable:themeNotifier,
+        builder:(context,mode,_)=>AlertDialog(
+          title:const Text('Appearance'),
+          content:Column(mainAxisSize:MainAxisSize.min,children:[
+            RadioListTile<ThemeMode>(title:const Text('Light'),value:ThemeMode.light,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','light');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+            RadioListTile<ThemeMode>(title:const Text('Dark'),value:ThemeMode.dark,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','dark');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+            RadioListTile<ThemeMode>(title:const Text('System'),value:ThemeMode.system,groupValue:mode,onChanged:(v)async{if(v==null)return;themeNotifier.value=v;final p=await SharedPreferences.getInstance();await p.setString('allways_theme_mode','system');if(dialogContext.mounted)Navigator.pop(dialogContext);}),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuCard(BuildContext c,{required IconData icon,required String title,required String subtitle,required VoidCallback onTap,bool danger=false}){
+    final scheme=Theme.of(c).colorScheme;
+    final accent=danger?scheme.error:scheme.primary;
+    return Card(
+      margin:const EdgeInsets.symmetric(horizontal:16,vertical:6),
+      elevation:0,
+      color:scheme.surface,
+      shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)),
+      child:InkWell(
+        onTap:onTap,
+        borderRadius:BorderRadius.circular(16),
+        child:Padding(
+          padding:const EdgeInsets.symmetric(horizontal:14,vertical:14),
+          child:Row(children:[
+            Container(
+              width:48,height:48,
+              decoration:BoxDecoration(color:danger?scheme.errorContainer:scheme.primaryContainer,borderRadius:BorderRadius.circular(14)),
+              child:Icon(icon,color:danger?scheme.onErrorContainer:scheme.onPrimaryContainer),
+            ),
+            const SizedBox(width:14),
+            Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text(title,style:TextStyle(fontSize:16,fontWeight:FontWeight.w800,color:danger?scheme.error:null)),
+              const SizedBox(height:3),
+              Text(subtitle,style:TextStyle(color:scheme.onSurfaceVariant,fontSize:13)),
+            ])),
+            Icon(Icons.chevron_right,color:accent),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openNotifications(BuildContext c) async {
+    await showModalBottomSheet<void>(context:c,isScrollControlled:true,showDragHandle:true,builder:(_)=>const NotificationsPage());
+  }
+
+  @override Widget build(BuildContext c){
+    final u=widget.user;
+    if(u==null)return Center(child:FilledButton(onPressed:widget.onLogin,child:const Text('Sign in / Sign up')));
+    return ListView(
+      padding:const EdgeInsets.only(top:12,bottom:24),
+      children:[
+        const Padding(padding:EdgeInsets.fromLTRB(16,0,16,6),child:Text('Profile',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900))),
+        Card(
+          margin:const EdgeInsets.symmetric(horizontal:16,vertical:6),
+          elevation:0,
+          shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)),
+          child:Padding(padding:const EdgeInsets.all(16),child:Row(children:[
+            CircleAvatar(radius:30,child:Text((u.displayName??'A').trim().isEmpty?'A':(u.displayName??'A').trim()[0].toUpperCase())),
+            const SizedBox(width:14),
+            Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text(u.displayName??'ALLways customer',style:const TextStyle(fontSize:18,fontWeight:FontWeight.w800)),
+              const SizedBox(height:3),
+              Text(u.email??'',style:TextStyle(color:Theme.of(c).colorScheme.onSurfaceVariant)),
+            ])),
+          ])),
+        ),
+        FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+          future:FirebaseFirestore.instance.collection('customers').doc(u.uid).get(),
+          builder:(context,snapshot){
+            final role=(snapshot.data?.data()?['role']??'customer').toString();
+            return Column(children:[
+              if(role=='admin')Card(
+                margin:const EdgeInsets.symmetric(horizontal:16,vertical:6),
+                color:Theme.of(c).colorScheme.primaryContainer,
+                shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)),
+                child:ListTile(
+                  leading:Icon(Icons.admin_panel_settings_outlined,color:Theme.of(c).colorScheme.onPrimaryContainer),
+                  title:const Text('Admin Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),
+                  subtitle:const Text('Manage orders, roles and banners'),
+                  trailing:const Icon(Icons.chevron_right),
+                  onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const AdminScreen())),
+                ),
+              ),
+              if(role=='seller')SellerDashboard(user:u),
+              if(role=='carrier')CarrierDashboard(user:u),
+            ]);
+          },
+        ),
+        _menuCard(c,icon:Icons.receipt_long_outlined,title:'Orders',subtitle:'View and track your ALLways orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:u,onCancel:widget.onCancel)))),
+        _menuCard(c,icon:Icons.location_on_outlined,title:'Saved Addresses',subtitle:'Add, edit or manage your delivery addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(userId:u.uid,addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
+        _menuCard(c,icon:Icons.favorite_border,title:'Wishlist',subtitle:'Your saved products and favourites',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
+        _menuCard(c,icon:Icons.local_shipping_outlined,title:'ALLways Carrier',subtitle:'Become a Seller or Delivery Partner',onTap:()=>_openCarrier(c,u)),
+        _menuCard(c,icon:Icons.notifications_outlined,title:'Notifications',subtitle:'Alerts, order updates and push settings',onTap:()=>_openNotifications(c)),
+        _menuCard(c,icon:Icons.brightness_6_outlined,title:'Appearance',subtitle:'Light, Dark or System theme',onTap:()=>_chooseAppearance(c)),
+        _menuCard(c,icon:Icons.share_outlined,title:'Share ALLways',subtitle:'Share ALLways with friends and family',onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
+        _menuCard(c,icon:Icons.system_update_outlined,title:'Check for Updates',subtitle:'Check for the latest ALLways version',onTap:()=>_checkForUpdate(c)),
+        _menuCard(c,icon:Icons.privacy_tip_outlined,title:'Privacy Policy',subtitle:'How ALLways handles your information',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const PrivacyPolicyPage()))),
+        _menuCard(c,icon:Icons.logout_outlined,title:'Log Out',subtitle:'Sign out of your ALLways account',danger:true,onTap:()=>FirebaseAuth.instance.signOut()),
+        const SizedBox(height:12),
+        const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey)),
+      ],
+    );
+  }
+
+  void _openCarrier(BuildContext c,User u){
+    showModalBottomSheet<void>(
+      context:c,
+      builder:(sheet)=>SafeArea(child:Wrap(children:[
+        ListTile(
+          leading:const Icon(Icons.storefront_outlined),
+          title:const Text('Become a Seller'),
+          subtitle:const Text('Create your ALLways seller profile'),
+          onTap:(){Navigator.pop(sheet);showDialog(context:c,builder:(_)=>CarrierApplicationDialog(user:u,type:'seller'));},
+        ),
+        ListTile(
+          leading:const Icon(Icons.delivery_dining_outlined),
+          title:const Text('Become a Delivery Partner'),
+          subtitle:const Text('Apply to deliver ALLways orders'),
+          onTap:(){Navigator.pop(sheet);showDialog(context:c,builder:(_)=>CarrierApplicationDialog(user:u,type:'delivery_partner'));},
+        ),
+      ])),
+    );
+  }
 }
+
+class NotificationsPage extends StatefulWidget{
+  const NotificationsPage({super.key});
+  @override State<NotificationsPage> createState()=>_NotificationsPageState();
+}
+class _NotificationsPageState extends State<NotificationsPage>{
+  bool enabled=true;
+  bool loading=true;
+  List<Map<String,dynamic>> notifications=[];
+
+  @override void initState(){super.initState();_load();}
+
+  Future<void> _load() async {
+    try{
+      final prefs=await SharedPreferences.getInstance();
+      enabled=prefs.getBool('allways_notifications_enabled')??true;
+      final raw=prefs.getStringList('allways_notifications')??<String>[];
+      notifications=raw.map((x){
+        final d=jsonDecode(x);
+        return d is Map?Map<String,dynamic>.from(d):<String,dynamic>{};
+      }).where((x)=>x.isNotEmpty).toList();
+    }catch(_){}
+    if(mounted)setState(()=>loading=false);
+  }
+
+  Future<void> _toggle(bool value) async {
+    setState(()=>enabled=value);
+    try{
+      final prefs=await SharedPreferences.getInstance();
+      await prefs.setBool('allways_notifications_enabled',value);
+      if(value){
+        final status=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);
+        if(status.authorizationStatus==AuthorizationStatus.denied){
+          if(mounted)setState(()=>enabled=false);
+          await prefs.setBool('allways_notifications_enabled',false);
+          return;
+        }
+        final token=await FirebaseMessaging.instance.getToken();
+        final u=FirebaseAuth.instance.currentUser;
+        if(token!=null&&u!=null){
+          await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({
+            'uid':u.uid,'email':u.email??'','token':token,'updatedAt':FieldValue.serverTimestamp()
+          },SetOptions(merge:true));
+          await prefs.setString('allways_fcm_token',token);
+        }
+      }else{
+        try{await FirebaseMessaging.instance.deleteToken();}catch(_){}
+        final u=FirebaseAuth.instance.currentUser;
+        if(u!=null){
+          try{await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).delete();}catch(_){}
+        }
+        await prefs.remove('allways_fcm_token');
+      }
+    }catch(_){
+      if(mounted)setState(()=>enabled=!value);
+    }
+    if(mounted)setState((){});
+  }
+
+  String _time(dynamic value){
+    final ms=value is num?value.toInt():int.tryParse(value?.toString()??'')??0;
+    if(ms<=0)return'';
+    final d=DateTime.fromMillisecondsSinceEpoch(ms);
+    final diff=DateTime.now().difference(d);
+    if(diff.inMinutes<1)return'Just now';
+    if(diff.inHours<1)return diff.inMinutes.toString()+' min ago';
+    if(diff.inDays<1)return diff.inHours.toString()+' hr ago';
+    return d.day.toString().padLeft(2,'0')+'/'+d.month.toString().padLeft(2,'0')+'/'+d.year.toString();
+  }
+
+  @override Widget build(BuildContext context){
+    return SafeArea(child:Column(children:[
+      Padding(
+        padding:const EdgeInsets.fromLTRB(20,4,20,8),
+        child:Row(children:[
+          const Icon(Icons.notifications_outlined),
+          const SizedBox(width:10),
+          const Expanded(child:Text('Notifications',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900))),
+          IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.close)),
+        ]),
+      ),
+      Card(
+        margin:const EdgeInsets.fromLTRB(16,0,16,10),
+        child:SwitchListTile(
+          title:const Text('Enable Notifications',style:TextStyle(fontWeight:FontWeight.w800)),
+          subtitle:const Text('Receive order, delivery and ALLways alerts'),
+          value:enabled,
+          onChanged:loading?null:_toggle,
+        ),
+      ),
+      const Divider(height:1),
+      Expanded(
+        child:loading?const Center(child:CircularProgressIndicator()):notifications.isEmpty
+          ?const Center(child:Padding(padding:EdgeInsets.all(30),child:Column(mainAxisSize:MainAxisSize.min,children:[
+              Icon(Icons.notifications_none,size:64),
+              SizedBox(height:12),
+              Text('No notifications yet.',style:TextStyle(fontSize:18,fontWeight:FontWeight.w700)),
+            ])))
+          :ListView.separated(
+            padding:const EdgeInsets.fromLTRB(16,12,16,24),
+            itemCount:notifications.length,
+            separatorBuilder:(_,__)=>const SizedBox(height:8),
+            itemBuilder:(context,index){
+              final n=notifications[index];
+              final title=(n['title']??'ALLways').toString();
+              final body=(n['body']??'').toString();
+              final time=_time(n['timestamp']);
+              return Card(margin:EdgeInsets.zero,child:ListTile(
+                leading:const CircleAvatar(child:Icon(Icons.notifications_outlined)),
+                title:Text(title,style:const TextStyle(fontWeight:FontWeight.w800)),
+                subtitle:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(body),
+                  if(time.isNotEmpty)Padding(padding:const EdgeInsets.only(top:4),child:Text(time,style:const TextStyle(fontSize:12,color:Colors.grey))),
+                ]),
+              ));
+            },
+          ),
+      ),
+    ]));
+  }
+}
+
 
 
 class CarrierOnboardingTile extends StatelessWidget {

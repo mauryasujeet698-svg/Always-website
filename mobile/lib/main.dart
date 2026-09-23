@@ -1004,7 +1004,7 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
       if (mounted) {
         setState(() => busy = false);
         final detail=e.code=='object-not-found'
-          ? 'Firebase Storage bucket/object was not found. Verify the ALLways Storage bucket exists and matches gs://allways-web.firebasestorage.app.'
+          ? 'Image upload storage is now handled by Cloudinary.'
           : 'Firebase error ['+e.code+']: '+(e.message??'Unknown Firebase error');
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not submit request: '+detail)));
       }
@@ -1291,7 +1291,7 @@ class PrivacyPolicyPage extends StatelessWidget {
         children: const [
           Text('ALLways Privacy Policy', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
           SizedBox(height: 12),
-          Text('ALLways uses account information to authenticate customers, process orders, provide delivery updates and support seller or delivery-partner onboarding. Delivery addresses and order details are used to fulfill orders. Wishlist and saved-address data are stored under your customer account. Photos submitted for onboarding or seller listings are stored in Firebase Storage.'),
+          Text('ALLways uses account information to authenticate customers, process orders, provide delivery updates and support seller or delivery-partner onboarding. Delivery addresses and order details are used to fulfill orders. Wishlist and saved-address data are stored under your customer account. Photos submitted for onboarding or seller listings are stored in Cloudinary, with their secure URLs saved in Firestore.'),
           SizedBox(height: 14),
           Text('Information sharing', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
           Text('ALLways shares order information with people who need it to fulfill an order, such as authorized delivery partners and administrators. Local sellers receive only the information needed for a customer to contact them.'),
@@ -1872,8 +1872,8 @@ class _AdminScreenState extends State<AdminScreen> {
     } on FirebaseException catch (e) {
       if (mounted) {
         final detail=e.code=='object-not-found'
-          ? 'Firebase Storage bucket/object was not found. Verify the ALLways Storage bucket exists and matches gs://allways-web.firebasestorage.app.'
-          : 'Firebase Storage error ['+e.code+']: '+(e.message??'Unknown Storage error');
+          ? 'Image upload storage is now handled by Cloudinary.'
+          : 'Firebase backend error ['+e.code+']: '+(e.message??'Unknown Storage error');
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Banner upload failed: '+detail)));
       }
     } catch (e) {

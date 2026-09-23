@@ -572,125 +572,1072 @@ class _ProfilePageState extends State<ProfilePage>{
   ]);}
 }
 
-class CarrierOnboardingTile extends StatelessWidget{
-  final User user;const CarrierOnboardingTile({super.key,required this.user});
-  Future<String?> _upload(XFile image,String path) async{final ref=FirebaseStorage.instance.ref().child(path);await ref.putFile(File(image.path));return ref.getDownloadURL();}
-  Future<void> _submitSeller(BuildContext c) async{final name=TextEditingController(),shop=TextEditingController();XFile? photo;bool busy=false;await showDialog(context:c,builder:(dialog)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(title:const Text('Become a Seller'),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(children:[
-    TextField(controller:name,decoration:const InputDecoration(labelText:'Full name')),const SizedBox(height:10),TextField(controller:shop,decoration:const InputDecoration(labelText:'Shop name')),const SizedBox(height:10),
-    OutlinedButton.icon(onPressed:busy?null:()async{final x=await ImagePicker().pickImage(source:ImageSource.gallery,imageQuality:82);if(x!=null)setState(()=>photo=x);},icon:const Icon(Icons.photo_camera),label:Text(photo==null?'Upload shop/photo':'Photo selected')),
-  ]))),actions:[TextButton(onPressed:busy?null:()=>Navigator.pop(dialog),child:const Text('Cancel')),FilledButton(onPressed:busy?null:()async{
-    if(name.text.trim().isEmpty||shop.text.trim().isEmpty||photo==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Full name, shop name and photo are required.')));return;}setState(()=>busy=true);
-    try{final url=await _upload(photo!,'onboarding/\${user.uid}/seller_'+DateTime.now().millisecondsSinceEpoch.toString()+'.jpg');await FirebaseFirestore.instance.collection('onboarding_requests').add({'uid':user.uid,'email':user.email??'','type':'seller','fullName':name.text.trim(),'shopName':shop.text.trim(),'photoUrl':url,'status':'pending','createdAt':FieldValue.serverTimestamp()});if(context.mounted)Navigator.pop(dialog);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Seller request submitted.')));}catch(e){if(context.mounted){setState(()=>busy=false);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not submit request: '+e.toString())));}}},
-    child:Text(busy?'Submitting…':'Submit'))])));name.dispose();shop.dispose();}
-  Future<void> _submitCarrier(BuildContext c) async{final name=TextEditingController(),dob=TextEditingController();XFile? plate;bool busy=false;await showDialog(context:c,builder:(dialog)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(title:const Text('Become a Delivery Partner'),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(children:[
-    TextField(controller:name,decoration:const InputDecoration(labelText:'Full name')),const SizedBox(height:10),TextField(controller:dob,decoration:const InputDecoration(labelText:'Date of birth (DD/MM/YYYY)')),const SizedBox(height:10),
-    OutlinedButton.icon(onPressed:busy?null:()async{final x=await ImagePicker().pickImage(source:ImageSource.gallery,imageQuality:82);if(x!=null)setState(()=>plate=x);},icon:const Icon(Icons.two_wheeler),label:Text(plate==null?'Upload bike/number plate photo':'Photo selected')),
-  ]))),actions:[TextButton(onPressed:busy?null:()=>Navigator.pop(dialog),child:const Text('Cancel')),FilledButton(onPressed:busy?null:()async{
-    if(name.text.trim().isEmpty||dob.text.trim().isEmpty||plate==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Full name, DOB and bike/number plate photo are required.')));return;}setState(()=>busy=true);
-    try{final url=await _upload(plate!,'onboarding/\${user.uid}/carrier_'+DateTime.now().millisecondsSinceEpoch.toString()+'.jpg');await FirebaseFirestore.instance.collection('onboarding_requests').add({'uid':user.uid,'email':user.email??'','type':'delivery_partner','fullName':name.text.trim(),'dob':dob.text.trim(),'bikePhotoUrl':url,'status':'pending','createdAt':FieldValue.serverTimestamp()});if(context.mounted)Navigator.pop(dialog);if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Delivery partner request submitted.')));}catch(e){if(context.mounted){setState(()=>busy=false);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not submit request: '+e.toString())));}}},
-    child:Text(busy?'Submitting…':'Submit'))])));name.dispose();dob.dispose();}
-  @override Widget build(BuildContext c)=>Card(child:ListTile(leading:const Icon(Icons.local_shipping_outlined),title:const Text('ALLways Carrier',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:const Text('Become a seller or delivery partner'),trailing:const Icon(Icons.chevron_right),onTap:()=>showModalBottomSheet(context:c,builder:(sheet)=>SafeArea(child:Wrap(children:[
-    ListTile(leading:const Icon(Icons.storefront_outlined),title:const Text('Become a Seller'),onTap:(){Navigator.pop(sheet);_submitSeller(c);}),
-    ListTile(leading:const Icon(Icons.delivery_dining_outlined),title:const Text('Become a Delivery Partner'),onTap:(){Navigator.pop(sheet);_submitCarrier(c);}),
-  ]))));
+
+class CarrierOnboardingTile extends StatelessWidget {
+  final User user;
+  const CarrierOnboardingTile({super.key, required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.local_shipping_outlined),
+        title: const Text('ALLways Carrier', style: TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: const Text('Become a seller or delivery partner'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          showModalBottomSheet<void>(
+            context: context,
+            builder: (sheet) => SafeArea(
+              child: Wrap(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.storefront_outlined),
+                    title: const Text('Become a Seller'),
+                    onTap: () {
+                      Navigator.pop(sheet);
+                      showDialog(
+                        context: context,
+                        builder: (_) => CarrierApplicationDialog(user: user, type: 'seller'),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.delivery_dining_outlined),
+                    title: const Text('Become a Delivery Partner'),
+                    onTap: () {
+                      Navigator.pop(sheet);
+                      showDialog(
+                        context: context,
+                        builder: (_) => CarrierApplicationDialog(user: user, type: 'delivery_partner'),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
-class SellerDashboard extends StatefulWidget{
-  final User user;const SellerDashboard({super.key,required this.user});@override State<SellerDashboard> createState()=>_SellerDashboardState();
-}
-class _SellerDashboardState extends State<SellerDashboard>{
-  final description=TextEditingController(),offers=TextEditingController();List<Map<String,dynamic>> items=[];bool loading=true,saving=false;
-  @override void initState(){super.initState();_load();}@override void dispose(){description.dispose();offers.dispose();super.dispose();}
-  Future<void> _load() async{try{final d=await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).get();final x=d.data()??{};description.text=(x['description']??'').toString();offers.text=(x['dailyOffers']??'').toString();items=List<Map<String,dynamic>>.from((x['items']??const []).map((e)=>Map<String,dynamic>.from(e as Map)));}catch(_){}if(mounted)setState(()=>loading=false);}
-  Future<String> _upload(XFile image) async{final ref=FirebaseStorage.instance.ref().child('sellers/\${widget.user.uid}/item_'+DateTime.now().millisecondsSinceEpoch.toString()+'.jpg');await ref.putFile(File(image.path));return ref.getDownloadURL();}
-  Future<void> _addItem() async{if(items.length>=10){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('You can list up to 10 items.')));return;}final name=TextEditingController(),price=TextEditingController();XFile? image;
-    await showDialog(context:context,builder:(dialog)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(title:const Text('Add seller item'),content:Column(mainAxisSize:MainAxisSize.min,children:[
-      TextField(controller:name,decoration:const InputDecoration(labelText:'Item name')),const SizedBox(height:8),TextField(controller:price,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Price')),const SizedBox(height:8),
-      OutlinedButton.icon(onPressed:()async{final x=await ImagePicker().pickImage(source:ImageSource.gallery,imageQuality:82);if(x!=null)setState(()=>image=x);},icon:const Icon(Icons.image_outlined),label:Text(image==null?'Choose image':'Image selected')),
-    ]),actions:[TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Cancel')),FilledButton(onPressed:()async{final p=num.tryParse(price.text.trim());if(name.text.trim().isEmpty||p==null||p<0||image==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Name, price and image are required.')));return;}try{final url=await _upload(image!);items.add({'name':name.text.trim(),'price':p,'imageUrl':url});if(mounted)setState((){});if(context.mounted)Navigator.pop(dialog);}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Image upload failed: '+e.toString())));}},child:const Text('Add'))])));name.dispose();price.dispose();}
-  Future<void> _save() async{setState(()=>saving=true);try{await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({'uid':widget.user.uid,'name':widget.user.displayName??'','description':description.text.trim(),'dailyOffers':offers.text.trim(),'items':items,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Seller dashboard saved.')));}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not save seller dashboard: '+e.toString())));}finally{if(mounted)setState(()=>saving=false);}}
-  @override Widget build(BuildContext c)=>Card(child:ExpansionTile(leading:const Icon(Icons.storefront),title:const Text('Seller Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:const Text('Manage your shop, offers and items'),children:[Padding(padding:const EdgeInsets.all(14),child:Column(children:[
-    TextField(controller:description,maxLines:3,decoration:const InputDecoration(labelText:'Shop description')),const SizedBox(height:10),TextField(controller:offers,maxLines:2,decoration:const InputDecoration(labelText:'Daily offers')),const SizedBox(height:12),
-    Align(alignment:Alignment.centerLeft,child:Text('Items ('+items.length.toString()+'/10)',style:const TextStyle(fontWeight:FontWeight.w800))),
-    ...items.asMap().entries.map((e)=>Card(child:ListTile(leading:(e.value['imageUrl']??'').toString().isEmpty?const Icon(Icons.image):Image.network(e.value['imageUrl'].toString(),width:48,height:48,fit:BoxFit.cover),title:Text((e.value['name']??'').toString()),subtitle:Text('₹'+(e.value['price']??0).toString()),trailing:IconButton(onPressed:()=>setState(()=>items.removeAt(e.key)),icon:const Icon(Icons.delete_outline))))),
-    const SizedBox(height:8),OutlinedButton.icon(onPressed:_addItem,icon:const Icon(Icons.add),label:const Text('Add item')),const SizedBox(height:8),SizedBox(width:double.infinity,child:FilledButton(onPressed:saving?null:_save,child:Text(saving?'Saving…':'Save seller profile'))),
-  ]))]));
+class CarrierApplicationDialog extends StatefulWidget {
+  final User user;
+  final String type;
+  const CarrierApplicationDialog({super.key, required this.user, required this.type});
+
+  @override
+  State<CarrierApplicationDialog> createState() => _CarrierApplicationDialogState();
 }
 
-class CarrierDashboard extends StatelessWidget{
-  final User user;const CarrierDashboard({super.key,required this.user});
-  Future<void> _maps(BuildContext c,String address) async{final uri=Uri.parse('https://www.google.com/maps/search/?api=1&query='+Uri.encodeComponent(address));if(!await launchUrl(uri,mode:LaunchMode.externalApplication)&&c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Could not open Google Maps.')));}
-  @override Widget build(BuildContext c)=>Card(child:ExpansionTile(leading:const Icon(Icons.delivery_dining),title:const Text('Carrier Dashboard',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:const Text('Active assigned orders'),children:[
-    StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').where('carrierUid',isEqualTo:user.uid).snapshots(),builder:(context,snapshot){if(snapshot.hasError)return Padding(padding:const EdgeInsets.all(14),child:Text('Could not load assigned orders: '+snapshot.error.toString()));if(!snapshot.hasData)return const Padding(padding:EdgeInsets.all(14),child:CircularProgressIndicator());final docs=snapshot.data!.docs.where((d){final s=(d.data()['status']??'').toString();return s!='Delivered'&&s!='Cancelled';}).toList();if(docs.isEmpty)return const Padding(padding:EdgeInsets.all(16),child:Text('No active assigned orders.'));return Column(children:docs.map((d){final o=d.data();final items=(o['items'] as List? ?? const []).map((x)=>x is Map?(x['name'].toString()+' × '+x['qty'].toString()):x.toString()).join(', ');return Card(child:ListTile(title:Text('#'+(o['id']??d.id).toString()),subtitle:Text((o['phone']??'').toString()+'\\n'+items),isThreeLine:true,trailing:IconButton(onPressed:()=>_maps(context,(o['address']??'').toString()),icon:const Icon(Icons.map_outlined))));}).toList());})
-  ]));
+class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
+  final fullName = TextEditingController();
+  final shopName = TextEditingController();
+  final dob = TextEditingController();
+  XFile? photo;
+  bool busy = false;
+
+  bool get seller => widget.type == 'seller';
+
+  @override
+  void dispose() {
+    fullName.dispose();
+    shopName.dispose();
+    dob.dispose();
+    super.dispose();
+  }
+
+  Future<void> pickPhoto() async {
+    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 82);
+    if (x != null && mounted) setState(() => photo = x);
+  }
+
+  Future<void> submit() async {
+    if (fullName.text.trim().isEmpty || photo == null || (seller && shopName.text.trim().isEmpty) || (!seller && dob.text.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(seller ? 'Full name, shop name and photo are required.' : 'Full name, DOB and bike/number plate photo are required.')),
+      );
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      final path = 'onboarding/' + widget.user.uid + '/' + widget.type + '_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
+      final ref = FirebaseStorage.instance.ref().child(path);
+      await ref.putFile(File(photo!.path));
+      final url = await ref.getDownloadURL();
+
+      final data = <String, dynamic>{
+        'uid': widget.user.uid,
+        'email': widget.user.email ?? '',
+        'type': widget.type,
+        'fullName': fullName.text.trim(),
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      if (seller) {
+        data['shopName'] = shopName.text.trim();
+        data['photoUrl'] = url;
+      } else {
+        data['dob'] = dob.text.trim();
+        data['bikePhotoUrl'] = url;
+      }
+
+      await FirebaseFirestore.instance.collection('onboarding_requests').add(data);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(seller ? 'Seller request submitted.' : 'Delivery partner request submitted.')),
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not submit request: ' + e.toString())));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(seller ? 'Become a Seller' : 'Become a Delivery Partner'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: fullName, decoration: const InputDecoration(labelText: 'Full name')),
+            if (seller) ...[
+              const SizedBox(height: 10),
+              TextField(controller: shopName, decoration: const InputDecoration(labelText: 'Shop name')),
+            ],
+            if (!seller) ...[
+              const SizedBox(height: 10),
+              TextField(controller: dob, decoration: const InputDecoration(labelText: 'Date of birth (DD/MM/YYYY)')),
+            ],
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: busy ? null : pickPhoto,
+              icon: const Icon(Icons.photo_camera),
+              label: Text(photo == null ? (seller ? 'Upload shop/photo' : 'Upload bike/number plate photo') : 'Photo selected'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: busy ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: busy ? null : submit, child: Text(busy ? 'Submitting…' : 'Submit')),
+      ],
+    );
+  }
 }
 
-class PrivacyPolicyPage extends StatelessWidget{
+class SellerDashboard extends StatefulWidget {
+  final User user;
+  const SellerDashboard({super.key, required this.user});
+
+  @override
+  State<SellerDashboard> createState() => _SellerDashboardState();
+}
+
+class _SellerDashboardState extends State<SellerDashboard> {
+  final description = TextEditingController();
+  final offers = TextEditingController();
+  List<Map<String, dynamic>> items = [];
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    loadSeller();
+  }
+
+  @override
+  void dispose() {
+    description.dispose();
+    offers.dispose();
+    super.dispose();
+  }
+
+  Future<void> loadSeller() async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).get();
+      final data = snap.data() ?? {};
+      description.text = (data['description'] ?? '').toString();
+      offers.text = (data['dailyOffers'] ?? '').toString();
+      final raw = data['items'];
+      if (raw is List) {
+        items = raw.whereType<Map>().map((x) => Map<String, dynamic>.from(x)).toList();
+        if (items.length > 10) items = items.take(10).toList();
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
+
+  Future<String> uploadItemImage(XFile image) async {
+    final path = 'sellers/' + widget.user.uid + '/item_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
+    final ref = FirebaseStorage.instance.ref().child(path);
+    await ref.putFile(File(image.path));
+    return ref.getDownloadURL();
+  }
+
+  Future<void> addItem() async {
+    if (items.length >= 10) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You can list up to 10 items.')));
+      return;
+    }
+
+    final name = TextEditingController();
+    final price = TextEditingController();
+    XFile? image;
+
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add seller item'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: name, decoration: const InputDecoration(labelText: 'Item name')),
+              const SizedBox(height: 10),
+              TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Price')),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 82);
+                  if (x != null) setDialogState(() => image = x);
+                },
+                icon: const Icon(Icons.image_outlined),
+                label: Text(image == null ? 'Choose image' : 'Image selected'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () async {
+                final parsed = num.tryParse(price.text.trim());
+                if (name.text.trim().isEmpty || parsed == null || parsed < 0 || image == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name, price and image are required.')));
+                  return;
+                }
+                try {
+                  final url = await uploadItemImage(image!);
+                  if (!mounted) return;
+                  setState(() => items.add({'name': name.text.trim(), 'price': parsed, 'imageUrl': url}));
+                  Navigator.pop(dialog, true);
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Image upload failed: ' + e.toString())));
+                  }
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+    name.dispose();
+    price.dispose();
+    if (added == true && mounted) setState(() {});
+  }
+
+  Future<void> saveSeller() async {
+    setState(() => saving = true);
+    try {
+      await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({
+        'uid': widget.user.uid,
+        'name': widget.user.displayName ?? '',
+        'description': description.text.trim(),
+        'dailyOffers': offers.text.trim(),
+        'items': items,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seller dashboard saved.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save seller dashboard: ' + e.toString())));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.storefront),
+        title: const Text('Seller Dashboard', style: TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: const Text('Manage your shop, offers and up to 10 items'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                TextField(controller: description, maxLines: 3, decoration: const InputDecoration(labelText: 'Shop description')),
+                const SizedBox(height: 10),
+                TextField(controller: offers, maxLines: 2, decoration: const InputDecoration(labelText: 'Daily offers')),
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerLeft, child: Text('Items (' + items.length.toString() + '/10)', style: const TextStyle(fontWeight: FontWeight.w800))),
+                ...items.asMap().entries.map(
+                  (entry) => Card(
+                    child: ListTile(
+                      leading: (entry.value['imageUrl'] ?? '').toString().isEmpty
+                          ? const Icon(Icons.image)
+                          : Image.network(entry.value['imageUrl'].toString(), width: 48, height: 48, fit: BoxFit.cover),
+                      title: Text((entry.value['name'] ?? '').toString()),
+                      subtitle: Text('₹' + (entry.value['price'] ?? 0).toString()),
+                      trailing: IconButton(onPressed: () => setState(() => items.removeAt(entry.key)), icon: const Icon(Icons.delete_outline)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(onPressed: addItem, icon: const Icon(Icons.add), label: const Text('Add item')),
+                const SizedBox(height: 8),
+                SizedBox(width: double.infinity, child: FilledButton(onPressed: saving ? null : saveSeller, child: Text(saving ? 'Saving…' : 'Save seller profile'))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CarrierDashboard extends StatelessWidget {
+  final User user;
+  const CarrierDashboard({super.key, required this.user});
+
+  Future<void> openMaps(BuildContext context, String address) async {
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=' + Uri.encodeComponent(address));
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open Google Maps.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.delivery_dining),
+        title: const Text('Carrier Dashboard', style: TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: const Text('Active assigned orders'),
+        children: [
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('orders').where('carrierUid', isEqualTo: user.uid).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) return Padding(padding: const EdgeInsets.all(14), child: Text('Could not load assigned orders: ' + snapshot.error.toString()));
+              if (!snapshot.hasData) return const Padding(padding: EdgeInsets.all(14), child: CircularProgressIndicator());
+
+              final docs = snapshot.data!.docs.where((d) {
+                final status = (d.data()['status'] ?? '').toString();
+                return status != 'Delivered' && status != 'Cancelled';
+              }).toList();
+
+              if (docs.isEmpty) return const Padding(padding: EdgeInsets.all(16), child: Text('No active assigned orders.'));
+
+              return Column(
+                children: docs.map((d) {
+                  final order = d.data();
+                  final rawItems = order['items'];
+                  final itemText = rawItems is List
+                      ? rawItems.map((x) => x is Map ? (x['name'].toString() + ' × ' + x['qty'].toString()) : x.toString()).join(', ')
+                      : '';
+                  return Card(
+                    child: ListTile(
+                      title: Text('#' + (order['id'] ?? d.id).toString()),
+                      subtitle: Text((order['phone'] ?? '').toString() + '\n' + itemText),
+                      isThreeLine: true,
+                      trailing: IconButton(
+                        onPressed: () => openMaps(context, (order['address'] ?? '').toString()),
+                        icon: const Icon(Icons.map_outlined),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PrivacyPolicyPage extends StatelessWidget {
   const PrivacyPolicyPage({super.key});
-  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Privacy Policy')),body:ListView(padding:const EdgeInsets.all(18),children:[
-    const Text('ALLways Privacy Policy',style:TextStyle(fontSize:26,fontWeight:FontWeight.w900)),const SizedBox(height:12),
-    const Text('ALLways uses account information to authenticate customers, process orders, provide delivery updates and support seller or delivery-partner onboarding. Delivery addresses and order details are used to fulfill orders. Wishlist and saved-address data are stored under your customer account. Photos submitted for onboarding or seller listings are stored in Firebase Storage.'),
-    const SizedBox(height:14),const Text('Information sharing',style:TextStyle(fontSize:19,fontWeight:FontWeight.w800)),const Text('ALLways shares order information with people who need it to fulfill an order, such as authorized delivery partners and administrators. Local sellers receive only the information needed for a customer to contact them.'),
-    const SizedBox(height:14),const Text('Your choices',style:TextStyle(fontSize:19,fontWeight:FontWeight.w800)),const Text('You can manage saved addresses and wishlist items in the app, and you can request account-related changes through ALLways support.'),
-  ]));
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Privacy Policy')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: const [
+          Text('ALLways Privacy Policy', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
+          SizedBox(height: 12),
+          Text('ALLways uses account information to authenticate customers, process orders, provide delivery updates and support seller or delivery-partner onboarding. Delivery addresses and order details are used to fulfill orders. Wishlist and saved-address data are stored under your customer account. Photos submitted for onboarding or seller listings are stored in Firebase Storage.'),
+          SizedBox(height: 14),
+          Text('Information sharing', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+          Text('ALLways shares order information with people who need it to fulfill an order, such as authorized delivery partners and administrators. Local sellers receive only the information needed for a customer to contact them.'),
+          SizedBox(height: 14),
+          Text('Your choices', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+          Text('You can manage saved addresses and wishlist items in the app, and you can request account-related changes through ALLways support.'),
+        ],
+      ),
+    );
+  }
 }
 
-class SavedAddressesPage extends StatelessWidget{
-  final List<Map<String,dynamic>> addresses;final Future<void> Function() onReload;final Future<void> Function(String) onDelete;
-  const SavedAddressesPage({super.key,required this.addresses,required this.onReload,required this.onDelete});
-  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Saved addresses')),body:RefreshIndicator(onRefresh:onReload,child:ListView(padding:const EdgeInsets.all(16),children:[
-    if(addresses.isEmpty)const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.') else ...addresses.map((x)=>Card(child:ListTile(title:Text((x['name']??'').toString()),subtitle:Text((x['address']??'').toString()),trailing:IconButton(onPressed:()=>onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline)))))
-  ])));
+class SavedAddressesPage extends StatelessWidget {
+  final List<Map<String, dynamic>> addresses;
+  final Future<void> Function() onReload;
+  final Future<void> Function(String) onDelete;
+  const SavedAddressesPage({super.key, required this.addresses, required this.onReload, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Saved addresses')),
+      body: RefreshIndicator(
+        onRefresh: onReload,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (addresses.isEmpty)
+              const InfoCard(title: 'No saved addresses', detail: 'An address is saved after a successful order.')
+            else
+              ...addresses.map(
+                (x) => Card(
+                  child: ListTile(
+                    title: Text((x['name'] ?? '').toString()),
+                    subtitle: Text((x['address'] ?? '').toString()),
+                    trailing: IconButton(onPressed: () => onDelete(x['id'].toString()), icon: const Icon(Icons.delete_outline)),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
-class LocalSellersPage extends StatelessWidget{
+
+class LocalSellersPage extends StatelessWidget {
   const LocalSellersPage({super.key});
-  @override Widget build(BuildContext c)=>StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('localSellers').where('active',isEqualTo:true).snapshots(),builder:(context,snapshot){if(snapshot.hasError)return const InfoCard(title:'Local sellers unavailable',detail:'Please check your connection and try again.');if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());final sellers=snapshot.data!.docs;return ListView(padding:const EdgeInsets.fromLTRB(16,16,16,100),children:[const Text('Local sellers',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:6),const Text('Discover sellers near you and contact them directly.',style:TextStyle(color:Colors.grey)),const SizedBox(height:16),if(sellers.isEmpty)const InfoCard(title:'No local sellers yet',detail:'Local sellers will appear here when they are onboarded.') else ...sellers.map((d){final x=d.data();return Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.storefront)),title:Text((x['name']??x['businessName']??'Local seller').toString()),subtitle:Text((x['category']??x['address']??'Local seller').toString()),trailing:const Icon(Icons.chevron_right)));})]);});
-}
-class WishlistPage extends StatefulWidget{const WishlistPage({super.key});@override State<WishlistPage> createState()=>_WishlistPageState();}
-class _WishlistPageState extends State<WishlistPage>{
-  bool loading=true;String? error;List<Product> items=[];
-  @override void initState(){super.initState();load();}
-  Future<void> load() async{final u=FirebaseAuth.instance.currentUser;if(u==null){if(mounted)setState(()=>loading=false);return;}try{final snap=await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('wishlist').orderBy('addedAt',descending:true).get();final list=snap.docs.map((d)=>Product.fromJson(d.data())).toList();if(mounted)setState((){items=list;loading=false;error=null;});}catch(_){if(mounted)setState((){loading=false;error='Could not load wishlist.';});}}
-  Future<void> remove(Product p) async{final u=FirebaseAuth.instance.currentUser;if(u==null)return;try{await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('wishlist').doc(p.id).delete();if(mounted)setState(()=>items.removeWhere((x)=>x.id==p.id));}catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Could not remove item.')));}}
-  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Wishlist')),body:RefreshIndicator(onRefresh:load,child:loading?const Center(child:CircularProgressIndicator()):error!=null?Center(child:Text(error!)):items.isEmpty?ListView(children:[const SizedBox(height:80),const Icon(Icons.favorite_border,size:72),const SizedBox(height:12),const Center(child:Text('Your wishlist is empty',style:TextStyle(fontSize:20,fontWeight:FontWeight.w800)))]:ListView(padding:const EdgeInsets.all(16),children:[for(final p in items)Card(child:ListTile(leading:CircleAvatar(child:Text(p.icon)),title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('₹'+p.price.toString()+' • '+p.category),trailing:IconButton(onPressed:()=>remove(p),icon:const Icon(Icons.favorite)),onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>{},liked:true,onWishlist:()=>remove(p))))) ])));
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('localSellers').where('active', isEqualTo: true).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return const InfoCard(title: 'Local sellers unavailable', detail: 'Please check your connection and try again.');
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final sellers = snapshot.data!.docs;
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            const Text('Local sellers', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text('Discover sellers near you and contact them directly.', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 16),
+            if (sellers.isEmpty)
+              const InfoCard(title: 'No local sellers yet', detail: 'Local sellers will appear here when they are onboarded.')
+            else
+              ...sellers.map(
+                (d) {
+                  final x = d.data();
+                  return Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(child: Icon(Icons.storefront)),
+                      title: Text((x['name'] ?? x['businessName'] ?? 'Local seller').toString()),
+                      subtitle: Text((x['category'] ?? x['address'] ?? 'Local seller').toString()),
+                    ),
+                  );
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
 }
 
-class AdminRolesPanel extends StatelessWidget{
+class WishlistPage extends StatefulWidget {
+  const WishlistPage({super.key});
+  @override State<WishlistPage> createState() => _WishlistPageState();
+}
+
+class _WishlistPageState extends State<WishlistPage> {
+  bool loading = true;
+  String? error;
+  List<Product> items = [];
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) {
+      if (mounted) setState(() => loading = false);
+      return;
+    }
+    try {
+      final snap = await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('wishlist').orderBy('addedAt', descending: true).get();
+      final list = snap.docs.map((d) => Product.fromJson(d.data())).toList();
+      if (mounted) setState(() { items = list; loading = false; error = null; });
+    } catch (_) {
+      if (mounted) setState(() { loading = false; error = 'Could not load wishlist.'; });
+    }
+  }
+
+  Future<void> remove(Product product) async {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) return;
+    try {
+      await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('wishlist').doc(product.id).delete();
+      if (mounted) setState(() => items.removeWhere((x) => x.id == product.id));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not remove item.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget body;
+    if (loading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (error != null) {
+      body = Center(child: Text(error!));
+    } else if (items.isEmpty) {
+      body = ListView(
+        children: const [
+          SizedBox(height: 80),
+          Icon(Icons.favorite_border, size: 72),
+          SizedBox(height: 12),
+          Center(child: Text('Your wishlist is empty', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
+        ],
+      );
+    } else {
+      body = ListView(
+        padding: const EdgeInsets.all(16),
+        children: items.map(
+          (p) => Card(
+            child: ListTile(
+              leading: CircleAvatar(child: Text(p.icon)),
+              title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text('₹' + p.price.toString() + ' • ' + p.category),
+              trailing: IconButton(onPressed: () => remove(p), icon: const Icon(Icons.favorite)),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ProductScreen(product: p, onAdd: () {}, liked: true, onWishlist: () => remove(p))),
+              ),
+            ),
+          ),
+        ).toList(),
+      );
+    }
+    return Scaffold(appBar: AppBar(title: const Text('Wishlist')), body: RefreshIndicator(onRefresh: load, child: body));
+  }
+}
+
+class AdminRolesPanel extends StatelessWidget {
   const AdminRolesPanel({super.key});
-  Future<void> _setRole(BuildContext c,String uid,String role,Map<String,dynamic> request) async{try{await FirebaseFirestore.instance.collection('customers').doc(uid).set({'uid':uid,'email':request['email']??'','displayName':request['fullName']??'','role':role,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));if(role=='seller')await FirebaseFirestore.instance.collection('sellers').doc(uid).set({'uid':uid,'name':request['fullName']??'','businessName':request['shopName']??'','photoUrl':request['photoUrl']??''},SetOptions(merge:true));await FirebaseFirestore.instance.collection('onboarding_requests').where('uid',isEqualTo:uid).where('status',isEqualTo:'pending').get().then((s)async{for(final d in s.docs){await d.reference.update({'status':'approved','approvedRole':role,'reviewedAt':FieldValue.serverTimestamp()});}});if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Role updated to '+role+'.')));}catch(e){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Role update failed: '+e.toString())));}}
-  Future<void> _reject(BuildContext c,String id) async{try{await FirebaseFirestore.instance.collection('onboarding_requests').doc(id).update({'status':'rejected','reviewedAt':FieldValue.serverTimestamp()});}catch(e){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Reject failed: '+e.toString())));}}
-  Future<void> _remove(BuildContext c,String uid) async{try{await FirebaseFirestore.instance.collection('customers').doc(uid).set({'role':'customer','updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content:Text('Role removed.')));}catch(e){if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Remove failed: '+e.toString())));}}
-  Widget _requests(BuildContext c,String type,String role)=>StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('onboarding_requests').where('type',isEqualTo:type).where('status',isEqualTo:'pending').snapshots(),builder:(context,snapshot){if(snapshot.hasError)return Padding(padding:const EdgeInsets.all(12),child:Text('Could not load requests: '+snapshot.error.toString()));if(!snapshot.hasData)return const Padding(padding:EdgeInsets.all(16),child:CircularProgressIndicator());final docs=snapshot.data!.docs;return Column(children:[const Align(alignment:Alignment.centerLeft,child:Text('Pending requests',style:TextStyle(fontWeight:FontWeight.w800))),if(docs.isEmpty)const ListTile(title:Text('No pending requests.')),...docs.map((d){final x=d.data();return Card(child:ListTile(title:Text((x['fullName']??'Applicant').toString()),subtitle:Text((x['shopName']??x['dob']??x['email']??'').toString()),trailing:Wrap(children:[TextButton(onPressed:()=>_setRole(c,(x['uid']??'').toString(),role,x),child:const Text('Onboard')),TextButton(onPressed:()=>_reject(c,d.id),child:const Text('Reject'))]));}),const Divider(),const Align(alignment:Alignment.centerLeft,child:Text('Active roles',style:TextStyle(fontWeight:FontWeight.w800))),StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('customers').where('role',isEqualTo:role).snapshots(),builder:(context,active){if(!active.hasData)return const Padding(padding:EdgeInsets.all(12),child:CircularProgressIndicator());final users=active.data!.docs;return Column(children:[if(users.isEmpty)const ListTile(title:Text('No active users.')),...users.map((d){final x=d.data();return ListTile(leading:const Icon(Icons.person_outline),title:Text((x['displayName']??x['email']??d.id).toString()),subtitle:Text((x['email']??'').toString()),trailing:TextButton(onPressed:()=>_remove(c,d.id),child:const Text('Remove')));})]);})]);});
-  @override Widget build(BuildContext c)=>Card(child:ExpansionTile(leading:const Icon(Icons.manage_accounts_outlined),title:const Text('Manage Roles',style:TextStyle(fontWeight:FontWeight.w800)),children:[DefaultTabController(length:2,child:SizedBox(height:420,child:Column(children:[const TabBar(tabs:[Tab(text:'Manage Sellers'),Tab(text:'Manage Delivery Partners')]),Expanded(child:TabBarView(children:[Padding(padding:const EdgeInsets.all(14),child:_requests(c,'seller','seller')),Padding(padding:const EdgeInsets.all(14),child:_requests(c,'delivery_partner','carrier'))]))]))) ]));
+
+  Future<void> onboard(BuildContext context, QueryDocumentSnapshot<Map<String, dynamic>> doc, String role) async {
+    final data = doc.data();
+    final uid = (data['uid'] ?? '').toString();
+    if (uid.isEmpty) return;
+    try {
+      await FirebaseFirestore.instance.collection('customers').doc(uid).set({
+        'uid': uid,
+        'email': data['email'] ?? '',
+        'displayName': data['fullName'] ?? '',
+        'role': role,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (role == 'seller') {
+        await FirebaseFirestore.instance.collection('sellers').doc(uid).set({
+          'uid': uid,
+          'name': data['fullName'] ?? '',
+          'businessName': data['shopName'] ?? '',
+          'photoUrl': data['photoUrl'] ?? '',
+        }, SetOptions(merge: true));
+      }
+
+      await doc.reference.update({'status': 'approved', 'approvedRole': role, 'reviewedAt': FieldValue.serverTimestamp()});
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Onboarded as ' + role + '.')));
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Onboard failed: ' + e.toString())));
+    }
+  }
+
+  Future<void> reject(BuildContext context, String id) async {
+    try {
+      await FirebaseFirestore.instance.collection('onboarding_requests').doc(id).update({'status': 'rejected', 'reviewedAt': FieldValue.serverTimestamp()});
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reject failed: ' + e.toString())));
+    }
+  }
+
+  Future<void> remove(BuildContext context, String uid) async {
+    try {
+      await FirebaseFirestore.instance.collection('customers').doc(uid).set({'role': 'customer', 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Role removed.')));
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Remove failed: ' + e.toString())));
+    }
+  }
+
+  Widget roleTab(BuildContext context, String type, String role) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('onboarding_requests').where('type', isEqualTo: type).where('status', isEqualTo: 'pending').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return Padding(padding: const EdgeInsets.all(12), child: Text('Could not load requests: ' + snapshot.error.toString()));
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
+        final requests = snapshot.data!.docs;
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            const Text('Pending requests', style: TextStyle(fontWeight: FontWeight.w800)),
+            if (requests.isEmpty) const ListTile(title: Text('No pending requests.')),
+            ...requests.map(
+              (d) {
+                final x = d.data();
+                return Card(
+                  child: ListTile(
+                    title: Text((x['fullName'] ?? 'Applicant').toString()),
+                    subtitle: Text((x['shopName'] ?? x['dob'] ?? x['email'] ?? '').toString()),
+                    trailing: Wrap(
+                      children: [
+                        TextButton(onPressed: () => onboard(context, d, role), child: const Text('Onboard')),
+                        TextButton(onPressed: () => reject(context, d.id), child: const Text('Reject')),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const Divider(),
+            const Text('Active roles', style: TextStyle(fontWeight: FontWeight.w800)),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('customers').where('role', isEqualTo: role).snapshots(),
+              builder: (context, active) {
+                if (active.hasError) return Text('Could not load active roles: ' + active.error.toString());
+                if (!active.hasData) return const Center(child: CircularProgressIndicator());
+                final users = active.data!.docs;
+                if (users.isEmpty) return const ListTile(title: Text('No active users.'));
+                return Column(
+                  children: users.map(
+                    (d) {
+                      final x = d.data();
+                      return ListTile(
+                        leading: const Icon(Icons.person_outline),
+                        title: Text((x['displayName'] ?? x['email'] ?? d.id).toString()),
+                        subtitle: Text((x['email'] ?? '').toString()),
+                        trailing: TextButton(onPressed: () => remove(context, d.id), child: const Text('Remove')),
+                      );
+                    },
+                  ).toList(),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.manage_accounts_outlined),
+        title: const Text('Manage Roles', style: TextStyle(fontWeight: FontWeight.w800)),
+        children: [
+          DefaultTabController(
+            length: 2,
+            child: SizedBox(
+              height: 420,
+              child: Column(
+                children: [
+                  const TabBar(tabs: [Tab(text: 'Manage Sellers'), Tab(text: 'Manage Delivery Partners')]),
+                  Expanded(child: TabBarView(children: [roleTab(context, 'seller', 'seller'), roleTab(context, 'delivery_partner', 'carrier')])),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class AdminScreen extends StatefulWidget{const AdminScreen({super.key});@override State<AdminScreen> createState()=>_AdminScreenState();}
-class _AdminScreenState extends State<AdminScreen>{
-  final email=TextEditingController(text:adminEmail);final pass=TextEditingController();bool busy=false,loggedIn=false;
-  @override void initState(){super.initState();final u=FirebaseAuth.instance.currentUser;loggedIn=u?.email?.toLowerCase()==adminEmail.toLowerCase();}@override void dispose(){email.dispose();pass.dispose();super.dispose();}
-  String authError(Object e){if(e is FirebaseAuthException){if(e.code=='wrong-password'||e.code=='invalid-credential')return'Wrong Firebase admin password.';if(e.code=='user-not-found')return'Admin email is not registered in Firebase Authentication.';if(e.code=='operation-not-allowed')return'Email/password sign-in is disabled in Firebase.';return e.message??'Admin login failed.';}return'Admin login failed.';}
-  Future<void> login() async{final e=email.text.trim();if(e.toLowerCase()!=adminEmail.toLowerCase()){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Use the configured ALLways admin email.')));return;}if(pass.text.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter the Firebase admin password.')));return;}setState(()=>busy=true);try{final cred=await FirebaseAuth.instance.signInWithEmailAndPassword(email:e,password:pass.text);if(cred.user?.email?.toLowerCase()!=adminEmail.toLowerCase()){await FirebaseAuth.instance.signOut();throw Exception('This account is not the ALLways admin account.');}if(mounted)setState(()=>loggedIn=true);}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(authError(e))));}finally{if(mounted)setState(()=>busy=false);}}
-  Future<void> updateOrder(String id,Map<String,dynamic> data) async{try{await FirebaseFirestore.instance.collection('orders').doc(id).update({...data,'updatedAt':DateTime.now().millisecondsSinceEpoch});}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));}}
-  Future<String?> _pickQuickOption(BuildContext c,{required String title,required List<String> options,required String current}) async{final preset=options.contains(current)?current:'Other';final controller=TextEditingController(text:preset=='Other'&&current.isNotEmpty?current:'');String selected=preset;try{return await showModalBottomSheet<String>(context:c,isScrollControlled:true,builder:(sheetContext)=>StatefulBuilder(builder:(context,setSheetState){final other=selected=='Other';return Padding(padding:EdgeInsets.fromLTRB(16,16,16,16+MediaQuery.of(context).viewInsets.bottom),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:12),Wrap(spacing:8,runSpacing:8,children:options.map((option)=>ChoiceChip(label:Text(option),selected:selected==option,onSelected:(_)=>setSheetState(()=>selected=option))).toList()),if(other)const SizedBox(height:12),if(other)TextField(controller:controller,autofocus:true,maxLines:title.toLowerCase().contains('message')?3:1,decoration:InputDecoration(labelText:title.toLowerCase().contains('eta')?'Enter ETA':'Enter customer message',border:const OutlineInputBorder())),const SizedBox(height:14),SizedBox(width:double.infinity,child:FilledButton(onPressed:(){final result=selected=='Other'?controller.text.trim():selected;if(result.isEmpty)return;Navigator.of(sheetContext).pop(result);},child:const Text('Apply')))]));}))}finally{controller.dispose();}}
-  Future<void> _updateEta(QueryDocumentSnapshot<Map<String,dynamic>> d,String current) async{final value=await _pickQuickOption(context,title:'Update ETA',options:const ['5 mins','10 mins','15 mins','Delayed','Other'],current:current);if(value==null)return;FirebaseFirestore.instance.collection('orders').doc(d.id).update({'eta':value,'estimatedDelivery':value,'updatedAt':DateTime.now().millisecondsSinceEpoch}).then((_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('ETA updated successfully')));}).catchError((e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('ETA update failed: '+e.toString())));});}
-  Future<void> _updateCustomerMessage(QueryDocumentSnapshot<Map<String,dynamic>> d,String current) async{final value=await _pickQuickOption(context,title:'Update customer message',options:const ['Preparing your order','Out for delivery','Arriving in 2 mins','Item out of stock','Other'],current:current);if(value==null)return;FirebaseFirestore.instance.collection('orders').doc(d.id).update({'customerMessage':value,'statusNote':value,'updatedAt':DateTime.now().millisecondsSinceEpoch}).then((_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Customer message updated successfully')));}).catchError((e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Customer message update failed: '+e.toString())));});}
-  Widget _bannerManager(BuildContext c)=>Card(child:ExpansionTile(leading:const Icon(Icons.view_carousel_outlined),title:const Text('Manage Banners',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:const Text('Add or remove customer home banners'),children:[StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),builder:(context,snapshot){if(snapshot.hasError)return const Padding(padding:EdgeInsets.all(16),child:Text('Could not load banners.'));final data=snapshot.data?.data()??{};final urls=List<String>.from(data['imageUrls']??const []);return Padding(padding:const EdgeInsets.fromLTRB(16,0,16,16),child:Column(children:[if(urls.isEmpty)const Padding(padding:EdgeInsets.all(16),child:Text('No banners uploaded yet.')) else ...urls.asMap().entries.map((e)=>Card(child:ListTile(leading:SizedBox(width:72,height:48,child:Image.network(e.value,fit:BoxFit.cover,errorBuilder:(_,__,___)=>const Icon(Icons.broken_image))),title:Text('Banner '+(e.key+1).toString()),trailing:IconButton(onPressed:()=>_removeBanner(e.value),icon:const Icon(Icons.delete_outline))))),const SizedBox(height:8),SizedBox(width:double.infinity,child:FilledButton.icon(onPressed:_addBanner,icon:const Icon(Icons.add_photo_alternate_outlined),label:const Text('Add Banner'))]));})]));
-  Future<void> _addBanner() async{try{final image=await ImagePicker().pickImage(source:ImageSource.gallery,imageQuality:85);if(image==null)return;final ref=FirebaseStorage.instance.ref().child('banners/banner_'+DateTime.now().millisecondsSinceEpoch.toString()+'.jpg');await ref.putFile(File(image.path));final url=await ref.getDownloadURL();final doc=FirebaseFirestore.instance.collection('settings').doc('banners');final snap=await doc.get();final data=snap.data()??{};final urls=List<String>.from(data['imageUrls']??const [])..add(url);await doc.set({'imageUrls':urls,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner added successfully.')));}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Banner upload failed: '+e.toString())));}}
-  Future<void> _removeBanner(String url) async{try{final doc=FirebaseFirestore.instance.collection('settings').doc('banners');final snap=await doc.get();final data=snap.data()??{};final urls=List<String>.from(data['imageUrls']??const [])..remove(url);await doc.set({'imageUrls':urls,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Banner removed.')));}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not remove banner: '+e.toString())));}}
-  Widget orderCard(QueryDocumentSnapshot<Map<String,dynamic>> d){final o=d.data(),status=(o['status']??'New Order').toString();const statuses=['New Order','Confirmed','Preparing','Out for delivery','Delivered','Cancelled'];final eta=(o['eta']??o['estimatedDelivery']??'').toString();final note=(o['customerMessage']??o['statusNote']??'').toString();return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['name']??'Customer').toString()+' • '+status+' • ₹'+(o['total']??0).toString()),children:[Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-    Text((o['email']??'').toString()),Text((o['phone']??'').toString()),Text((o['address']??'').toString()),const SizedBox(height:8),
-    DropdownButtonFormField<String>(value:statuses.contains(status)?status:'New Order',items:statuses.map((x)=>DropdownMenuItem<String>(value:x,child:Text(x))).toList(),onChanged:(v){if(v==null)return;final n=v=='Confirmed'?'Order confirmed':v=='Preparing'?'Your order is being prepared':v=='Out for delivery'?'Your order is on the way':v=='Delivered'?'Order delivered':v=='Cancelled'?'Order cancelled':'Order received';updateOrder(d.id,{'status':v,'statusNote':n,'customerMessage':n});}),
-    const SizedBox(height:8),ListTile(contentPadding:EdgeInsets.zero,title:const Text('ETA',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(eta.isEmpty?'Not set':eta),trailing:const Icon(Icons.schedule),onTap:()=>_updateEta(d,eta)),
-    const Divider(),ListTile(contentPadding:EdgeInsets.zero,title:const Text('Customer message',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(note.isEmpty?'Not set':note),trailing:const Icon(Icons.message_outlined),onTap:()=>_updateCustomerMessage(d,note)),
-    const Divider(),const Text('Customer last 3 past orders',style:TextStyle(fontWeight:FontWeight.w800)),
-    FutureBuilder<QuerySnapshot<Map<String,dynamic>>>(future:FirebaseFirestore.instance.collection('orders').where('customerId',isEqualTo:(o['customerId']??'').toString()).get(),builder:(context,snap){if(snap.connectionState==ConnectionState.waiting)return const Padding(padding:EdgeInsets.all(8),child:CircularProgressIndicator());if(snap.hasError)return const Text('Past orders unavailable.');final docs=[...snap.data?.docs??const []]..sort((a,b)=>((b.data()['createdAt']??0)as num).compareTo(((a.data()['createdAt']??0)as num)));final currentId=d.id;final past=docs.where((x)=>x.id!=currentId).take(3).toList();if(past.isEmpty)return const Padding(padding:EdgeInsets.symmetric(vertical:8),child:Text('No previous orders.'));return Column(children:past.map((p){final x=p.data();final its=(x['items'] as List? ?? const []).map((i)=>i is Map?(i['name'].toString()+' × '+i['qty'].toString()+' • ₹'+i['price'].toString()):i.toString()).join(', ');return ListTile(contentPadding:EdgeInsets.zero,title:Text('#'+(x['id']??p.id).toString()),subtitle:Text((x['status']??'').toString()+' • ₹'+(x['total']??0).toString()+'\\n'+its),isThreeLine:true);}).toList());}),
-  ]))]));}
-  @override Widget build(BuildContext c){if(!loggedIn)return Scaffold(appBar:AppBar(title:const Text('ALLways Admin Login')),body:ListView(padding:const EdgeInsets.all(20),children:[const Icon(Icons.admin_panel_settings,size:64),const SizedBox(height:12),const Text('ALLways Admin',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:6),const Text('Use the Firebase password for the admin account. This is separate from your Gmail password.'),const SizedBox(height:20),TextField(controller:email,readOnly:true,decoration:const InputDecoration(labelText:'Admin email')),const SizedBox(height:12),TextField(controller:pass,obscureText:true,decoration:const InputDecoration(labelText:'Firebase admin password')),const SizedBox(height:18),FilledButton(onPressed:busy?null:login,child:Text(busy?'Signing in…':'Sign in to Admin'))]);return Scaffold(appBar:AppBar(title:const Text('ALLways Admin Dashboard'),actions:[IconButton(onPressed:()async{await FirebaseAuth.instance.signOut();if(mounted)setState(()=>loggedIn=false);},icon:const Icon(Icons.logout))]),body:Column(children:[
-    StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').snapshots(),builder:(context,snapshot){final pending=snapshot.data?.docs.where((d){final s=(d.data()['status']??'').toString();return s!='Delivered'&&s!='Cancelled';}).length??0;return Padding(padding:const EdgeInsets.fromLTRB(12,12,12,4),child:Align(alignment:Alignment.centerLeft,child:Text('Pending Orders: '+pending.toString(),style:const TextStyle(fontSize:17,fontWeight:FontWeight.w800))));}),
-    AdminRolesPanel(),_bannerManager(c),
-    Expanded(child:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').snapshots(),builder:(c,s){if(s.hasError)return Center(child:Padding(padding:const EdgeInsets.all(20),child:Text('Cannot load orders: '+s.error.toString())));if(!s.hasData)return const Center(child:CircularProgressIndicator());final docs=[...s.data!.docs]..sort((a,b)=>((b.data()['createdAt']??0)as num).compareTo(((a.data()['createdAt']??0)as num)));if(docs.isEmpty)return const Center(child:Text('No orders yet.'));return ListView.builder(padding:const EdgeInsets.all(12),itemCount:docs.length,itemBuilder:(c,i)=>orderCard(docs[i]));}))
-  ]));
+class AdminScreen extends StatefulWidget {
+  const AdminScreen({super.key});
+  @override State<AdminScreen> createState() => _AdminScreenState();
 }
+
+class _AdminScreenState extends State<AdminScreen> {
+  final email = TextEditingController(text: adminEmail);
+  final pass = TextEditingController();
+  bool busy = false;
+  bool loggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final u = FirebaseAuth.instance.currentUser;
+    loggedIn = u?.email?.toLowerCase() == adminEmail.toLowerCase();
+  }
+
+  @override
+  void dispose() {
+    email.dispose();
+    pass.dispose();
+    super.dispose();
+  }
+
+  String authError(Object e) {
+    if (e is FirebaseAuthException) {
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') return 'Wrong Firebase admin password.';
+      if (e.code == 'user-not-found') return 'Admin email is not registered in Firebase Authentication.';
+      if (e.code == 'operation-not-allowed') return 'Email/password sign-in is disabled in Firebase.';
+      return e.message ?? 'Admin login failed.';
+    }
+    return 'Admin login failed.';
+  }
+
+  Future<void> login() async {
+    final e = email.text.trim();
+    if (e.toLowerCase() != adminEmail.toLowerCase()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Use the configured ALLways admin email.')));
+      return;
+    }
+    if (pass.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter the Firebase admin password.')));
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: e, password: pass.text);
+      if (cred.user?.email?.toLowerCase() != adminEmail.toLowerCase()) {
+        await FirebaseAuth.instance.signOut();
+        throw Exception('This account is not the ALLways admin account.');
+      }
+      if (mounted) setState(() => loggedIn = true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(authError(e))));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<String?> pickQuickOption(BuildContext context, {required String title, required List<String> options, required String current}) async {
+    final preset = options.contains(current) ? current : 'Other';
+    final controller = TextEditingController(text: preset == 'Other' && current.isNotEmpty ? current : '');
+    String selected = preset;
+    final value = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: options.map((option) => ChoiceChip(label: Text(option), selected: selected == option, onSelected: (_) => setSheetState(() => selected = option))).toList(),
+              ),
+              if (selected == 'Other') ...[
+                const SizedBox(height: 12),
+                TextField(controller: controller, maxLines: title.toLowerCase().contains('message') ? 3 : 1, decoration: InputDecoration(labelText: title.toLowerCase().contains('eta') ? 'Enter ETA' : 'Enter customer message')),
+              ],
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () {
+                    final result = selected == 'Other' ? controller.text.trim() : selected;
+                    if (result.isNotEmpty) Navigator.pop(sheet, result);
+                  },
+                  child: const Text('Apply'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+    return value;
+  }
+
+  Future<void> updateEta(QueryDocumentSnapshot<Map<String, dynamic>> doc, String current) async {
+    final value = await pickQuickOption(context, title: 'Update ETA', options: const ['5 mins', '10 mins', '15 mins', 'Delayed', 'Other'], current: current);
+    if (value == null) return;
+    try {
+      await doc.reference.update({'eta': value, 'estimatedDelivery': value, 'updatedAt': DateTime.now().millisecondsSinceEpoch});
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ETA updated successfully.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ETA update failed: ' + e.toString())));
+    }
+  }
+
+  Future<void> updateCustomerMessage(QueryDocumentSnapshot<Map<String, dynamic>> doc, String current) async {
+    final value = await pickQuickOption(context, title: 'Update customer message', options: const ['Preparing your order', 'Out for delivery', 'Arriving in 2 mins', 'Item out of stock', 'Other'], current: current);
+    if (value == null) return;
+    try {
+      await doc.reference.update({'customerMessage': value, 'statusNote': value, 'updatedAt': DateTime.now().millisecondsSinceEpoch});
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Customer message updated successfully.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Customer message update failed: ' + e.toString())));
+    }
+  }
+
+  Widget bannerManager() {
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.view_carousel_outlined),
+        title: const Text('Manage Banners', style: TextStyle(fontWeight: FontWeight.w800)),
+        children: [
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) return const Padding(padding: EdgeInsets.all(16), child: Text('Could not load banners.'));
+              final urls = List<String>.from(snapshot.data?.data()?['imageUrls'] ?? const []);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  children: [
+                    if (urls.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('No banners uploaded yet.')),
+                    ...urls.asMap().entries.map(
+                      (entry) => Card(
+                        child: ListTile(
+                          leading: SizedBox(width: 72, height: 48, child: Image.network(entry.value, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image))),
+                          title: Text('Banner ' + (entry.key + 1).toString()),
+                          trailing: IconButton(onPressed: () => removeBanner(entry.value), icon: const Icon(Icons.delete_outline)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: addBanner, icon: const Icon(Icons.add_photo_alternate_outlined), label: const Text('Add Banner'))),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> addBanner() async {
+    try {
+      final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (image == null) return;
+      final ref = FirebaseStorage.instance.ref().child('banners/banner_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg');
+      await ref.putFile(File(image.path));
+      final url = await ref.getDownloadURL();
+      final doc = FirebaseFirestore.instance.collection('settings').doc('banners');
+      final snap = await doc.get();
+      final urls = List<String>.from(snap.data()?['imageUrls'] ?? const []);
+      urls.add(url);
+      await doc.set({'imageUrls': urls, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Banner added successfully.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Banner upload failed: ' + e.toString())));
+    }
+  }
+
+  Future<void> removeBanner(String url) async {
+    try {
+      final doc = FirebaseFirestore.instance.collection('settings').doc('banners');
+      final snap = await doc.get();
+      final urls = List<String>.from(snap.data()?['imageUrls'] ?? const []);
+      urls.remove(url);
+      await doc.set({'imageUrls': urls, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Banner removed.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not remove banner: ' + e.toString())));
+    }
+  }
+
+  Widget orderCard(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final order = doc.data();
+    final status = (order['status'] ?? 'New Order').toString();
+    const statuses = ['New Order', 'Confirmed', 'Preparing', 'Out for delivery', 'Delivered', 'Cancelled'];
+    final eta = (order['eta'] ?? order['estimatedDelivery'] ?? '').toString();
+    final note = (order['customerMessage'] ?? order['statusNote'] ?? '').toString();
+
+    return Card(
+      child: ExpansionTile(
+        title: Text('#' + (order['id'] ?? doc.id).toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text((order['name'] ?? 'Customer').toString() + ' • ' + status + ' • ₹' + (order['total'] ?? 0).toString()),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text((order['email'] ?? '').toString()),
+                Text((order['phone'] ?? '').toString()),
+                Text((order['address'] ?? '').toString()),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: statuses.contains(status) ? status : 'New Order',
+                  items: statuses.map((x) => DropdownMenuItem<String>(value: x, child: Text(x))).toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    final message = value == 'Confirmed'
+                        ? 'Order confirmed'
+                        : value == 'Preparing'
+                            ? 'Your order is being prepared'
+                            : value == 'Out for delivery'
+                                ? 'Your order is on the way'
+                                : value == 'Delivered'
+                                    ? 'Order delivered'
+                                    : value == 'Cancelled'
+                                        ? 'Order cancelled'
+                                        : 'Order received';
+                    doc.reference.update({'status': value, 'statusNote': message, 'customerMessage': message, 'updatedAt': DateTime.now().millisecondsSinceEpoch});
+                  },
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('ETA', style: TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text(eta.isEmpty ? 'Not set' : eta),
+                  trailing: const Icon(Icons.schedule),
+                  onTap: () => updateEta(doc, eta),
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Customer message', style: TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text(note.isEmpty ? 'Not set' : note),
+                  trailing: const Icon(Icons.message_outlined),
+                  onTap: () => updateCustomerMessage(doc, note),
+                ),
+                const Divider(),
+                const Text('Customer last 3 past orders', style: TextStyle(fontWeight: FontWeight.w800)),
+                FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  future: FirebaseFirestore.instance.collection('orders').where('customerId', isEqualTo: (order['customerId'] ?? '').toString()).get(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) return const Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator());
+                    if (snapshot.hasError) return const Text('Past orders unavailable.');
+                    final past = [...snapshot.data?.docs ?? const []]
+                      ..sort((a, b) => ((b.data()['createdAt'] ?? 0) as num).compareTo((a.data()['createdAt'] ?? 0) as num));
+                    final previous = past.where((x) => x.id != doc.id).take(3).toList();
+                    if (previous.isEmpty) return const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('No previous orders.'));
+                    return Column(
+                      children: previous.map(
+                        (pastDoc) {
+                          final x = pastDoc.data();
+                          final rawItems = x['items'];
+                          final itemText = rawItems is List
+                              ? rawItems.map((i) => i is Map ? (i['name'].toString() + ' × ' + i['qty'].toString() + ' • ₹' + i['price'].toString()) : i.toString()).join(', ')
+                              : '';
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text('#' + (x['id'] ?? pastDoc.id).toString()),
+                            subtitle: Text((x['status'] ?? '').toString() + ' • ₹' + (x['total'] ?? 0).toString() + '\n' + itemText),
+                            isThreeLine: true,
+                          );
+                        },
+                      ).toList(),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!loggedIn) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('ALLways Admin Login')),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Icon(Icons.admin_panel_settings, size: 64),
+            const SizedBox(height: 12),
+            const Text('ALLways Admin', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text('Use the Firebase password for the admin account. This is separate from your Gmail password.'),
+            const SizedBox(height: 20),
+            TextField(controller: email, readOnly: true, decoration: const InputDecoration(labelText: 'Admin email')),
+            const SizedBox(height: 12),
+            TextField(controller: pass, obscureText: true, decoration: const InputDecoration(labelText: 'Firebase admin password')),
+            const SizedBox(height: 18),
+            FilledButton(onPressed: busy ? null : login, child: Text(busy ? 'Signing in…' : 'Sign in to Admin')),
+          ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ALLways Admin Dashboard'),
+        actions: [
+          IconButton(
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              if (mounted) setState(() => loggedIn = false);
+            },
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('orders').snapshots(),
+            builder: (context, snapshot) {
+              final pending = snapshot.data?.docs.where((d) {
+                final s = (d.data()['status'] ?? '').toString();
+                return s != 'Delivered' && s != 'Cancelled';
+              }).length ?? 0;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                child: Align(alignment: Alignment.centerLeft, child: Text('Pending Orders: ' + pending.toString(), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
+              );
+            },
+          ),
+          const AdminRolesPanel(),
+          bannerManager(),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('orders').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Cannot load orders: ' + snapshot.error.toString())));
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                final docs = [...snapshot.data!.docs]..sort((a, b) => ((b.data()['createdAt'] ?? 0) as num).compareTo((a.data()['createdAt'] ?? 0) as num));
+                if (docs.isEmpty) return const Center(child: Text('No orders yet.'));
+                return ListView.builder(padding: const EdgeInsets.all(12), itemCount: docs.length, itemBuilder: (context, index) => orderCard(docs[index]));
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AuthScreen extends StatefulWidget{const AuthScreen({super.key});State<AuthScreen> createState()=>_AuthState();}
 class _AuthState extends State<AuthScreen>{
   final email=TextEditingController(),pass=TextEditingController(),name=TextEditingController();bool signup=false,busy=false,hide=true;

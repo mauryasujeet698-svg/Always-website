@@ -25,18 +25,6 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "showNotification" -> result.success("shown")
                     "installApk" -> installApk(call.argument<String>("path"), result)
-                    "openInstallSettings" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                data = Uri.parse("package:$packageName")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            startActivity(intent)
-                            result.success(true)
-                        } else {
-                            result.success(false)
-                        }
-                    }
                     else -> result.notImplemented()
                 }
             }

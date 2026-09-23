@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -62,11 +63,14 @@ class AllwaysApp extends StatelessWidget {
         theme:ThemeData(
           useMaterial3:true,
           colorScheme:ColorScheme.fromSeed(seedColor:Colors.black),
+          textTheme:GoogleFonts.interTextTheme(),
           inputDecorationTheme:const InputDecorationTheme(
             border:OutlineInputBorder(),
           ),
         ),
-        darkTheme:ThemeData.dark(useMaterial3:true),
+        darkTheme:ThemeData.dark(useMaterial3:true).copyWith(
+          textTheme:GoogleFonts.interTextTheme(ThemeData.dark(useMaterial3:true).textTheme),
+        ),
         themeMode:mode,
         home:const Shell(),
       ),
@@ -555,7 +559,7 @@ class _ProfilePageState extends State<ProfilePage>{
     const SizedBox(height:8),
     Row(children:[
       _action(c,icon:Icons.receipt_long_outlined,label:'Orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:u,onCancel:widget.onCancel)))),
-      const SizedBox(width:8),_action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
+      const SizedBox(width:8),_action(c,icon:Icons.location_on_outlined,label:'Saved addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(userId:widget.user?.uid ?? '',addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
       const SizedBox(width:8),_action(c,icon:Icons.favorite_border,label:'Wishlist',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
     ]),
     FutureBuilder<DocumentSnapshot<Map<String,dynamic>>>(future:FirebaseFirestore.instance.collection('customers').doc(u.uid).get(),builder:(context,snapshot){final role=(snapshot.data?.data()?['role']??'customer').toString();return Column(children:[
@@ -1006,33 +1010,99 @@ class PrivacyPolicyPage extends StatelessWidget {
   }
 }
 
-class SavedAddressesPage extends StatelessWidget {
+class SavedAddressesPage extends StatefulWidget {
+  final String userId;
   final List<Map<String, dynamic>> addresses;
   final Future<void> Function() onReload;
   final Future<void> Function(String) onDelete;
-  const SavedAddressesPage({super.key, required this.addresses, required this.onReload, required this.onDelete});
+  const SavedAddressesPage({super.key, required this.userId, required this.addresses, required this.onReload, required this.onDelete});
+
+  @override
+  State<SavedAddressesPage> createState() => _SavedAddressesPageState();
+}
+
+class _SavedAddressesPageState extends State<SavedAddressesPage> {
+  bool saving=false;
+
+  Future<void> _editAddress(Map<String,dynamic> item) async {
+    final name=TextEditingController(text:(item['name']??'').toString());
+    final phone=TextEditingController(text:(item['phone']??'').toString());
+    final address=TextEditingController(text:(item['address']??'').toString());
+    final formKey=GlobalKey<FormState>();
+    final id=(item['id']??'').toString();
+    if(widget.userId.isEmpty || id.isEmpty){
+      name.dispose();phone.dispose();address.dispose();
+      return;
+    }
+    try{
+      final save=await showDialog<bool>(
+        context:context,
+        builder:(dialogContext)=>AlertDialog(
+          title:const Text('Edit address'),
+          content:Form(
+            key:formKey,
+            child:SingleChildScrollView(
+              child:Column(
+                mainAxisSize:MainAxisSize.min,
+                children:[
+                  TextFormField(controller:name,decoration:const InputDecoration(labelText:'Name'),validator:(v)=>v==null||v.trim().isEmpty?'Enter a name':null),
+                  const SizedBox(height:10),
+                  TextFormField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Phone'),validator:(v)=>v==null||!RegExp(r'^\d{10}$').hasMatch(v.replaceAll(RegExp(r'\D'),'').trim())?'Enter a valid 10-digit phone':null),
+                  const SizedBox(height:10),
+                  TextFormField(controller:address,maxLines:3,decoration:const InputDecoration(labelText:'Address'),validator:(v)=>v==null||v.trim().isEmpty?'Enter an address':null),
+                ],
+              ),
+            ),
+          ),
+          actions:[
+            TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('Cancel')),
+            FilledButton(onPressed:(){if(formKey.currentState?.validate()??false)Navigator.pop(dialogContext,true);},child:const Text('Save changes')),
+          ],
+        ),
+      );
+      if(save!=true)return;
+      setState(()=>saving=true);
+      final cleanPhone=phone.text.replaceAll(RegExp(r'\D'),'').trim();
+      await FirebaseFirestore.instance.collection('customers').doc(widget.userId).collection('addresses').doc(id).update({
+        'name':name.text.trim(),
+        'phone':cleanPhone,
+        'address':address.text.trim(),
+      });
+      await widget.onReload();
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Address updated.')));
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not update address: '+e.toString())));
+    }finally{
+      name.dispose();phone.dispose();address.dispose();
+      if(mounted)setState(()=>saving=false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Saved addresses')),
-      body: RefreshIndicator(
-        onRefresh: onReload,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (addresses.isEmpty)
-              const InfoCard(title: 'No saved addresses', detail: 'An address is saved after a successful order.')
+      appBar:AppBar(title:const Text('Saved addresses')),
+      body:RefreshIndicator(
+        onRefresh:widget.onReload,
+        child:ListView(
+          padding:const EdgeInsets.all(16),
+          children:[
+            if(widget.addresses.isEmpty)
+              const InfoCard(title:'No saved addresses',detail:'An address is saved after a successful order.')
             else
-              ...addresses.map(
-                (x) => Card(
-                  child: ListTile(
-                    title: Text((x['name'] ?? '').toString()),
-                    subtitle: Text((x['address'] ?? '').toString()),
-                    trailing: IconButton(onPressed: () => onDelete(x['id'].toString()), icon: const Icon(Icons.delete_outline)),
+              ...widget.addresses.map((x)=>Card(
+                child:ListTile(
+                  title:Text((x['name']??'').toString()),
+                  subtitle:Text((x['address']??'').toString()),
+                  trailing:Row(
+                    mainAxisSize:MainAxisSize.min,
+                    children:[
+                      IconButton(tooltip:'Edit',onPressed:saving?null:()=>_editAddress(x),icon:const Icon(Icons.edit)),
+                      IconButton(tooltip:'Delete',onPressed:saving?null:()=>widget.onDelete(x['id'].toString()),icon:const Icon(Icons.delete_outline)),
+                    ],
                   ),
                 ),
-              ),
+              )),
           ],
         ),
       ),

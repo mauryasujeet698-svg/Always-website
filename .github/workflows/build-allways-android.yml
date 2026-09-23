@@ -564,6 +564,11 @@ jobs:
           if ! gh release view allways-latest >/dev/null 2>&1; then
             gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"
           fi
-          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.7.apk --clobber --repo "$GITHUB_REPOSITORY"
-          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --clobber --repo "$GITHUB_REPOSITORY"
+          # Replace existing release assets explicitly. This avoids the GitHub
+          # Releases API 404 that can occur when --clobber targets a stale asset id.
+          for asset in allways-v1.4.7.apk app-release.apk; do
+            gh release delete-asset allways-latest "$asset" --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          done
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.7.apk --repo "$GITHUB_REPOSITORY"
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --repo "$GITHUB_REPOSITORY"
 

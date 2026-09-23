@@ -6,37 +6,64 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow create: if signedIn() && request.resource.data.customerId == request.auth.uid;
-      allow read: if signedIn() && (resource.data.customerId == request.auth.uid || isAdmin());
+      allow read: if signedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.carrierUid == request.auth.uid ||
+        isAdmin()
+      );
+
       allow update: if isAdmin()
         || (signedIn() && resource.data.customerId == request.auth.uid
           && resource.data.status in ['New Order', 'Confirmed']
           && request.resource.data.customerId == resource.data.customerId
           && request.resource.data.status == 'Cancelled'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusNote', 'cancellationReason', 'updatedAt']));
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusNote', 'cancellationReason', 'updatedAt']))
+        || (signedIn() && resource.data.carrierUid == request.auth.uid
+          && request.resource.data.customerId == resource.data.customerId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'carrierUid','carrierName','carrierPhone','carrierAccepted','assignmentRejected',
+            'assignmentAttempts','status','statusNote','customerMessage','carrierLat',
+            'carrierLng','carrierLocationUpdatedAt','deliveryOtpVerified','updatedAt'
+          ])
+          && (!('carrierUid' in request.resource.data) || request.resource.data.carrierUid == request.auth.uid)
+          && request.resource.data.status in ['Assigned','Confirmed','Picked up','Out for delivery','Delivered']);
+
       allow delete: if false;
     }
+
     match /fcmTokens/{uid} {
-      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow create, update, delete: if signedIn() && request.auth.uid == uid;
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
     }
+
     match /customers/{uid}/addresses/{addressId} {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
+
     match /customers/{uid}/wishlist/{itemId} {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
+
     match /settings/banners {
       allow read: if true;
-      allow write: if signedIn();
+      allow write: if isAdmin();
     }
+
+    match /settings/deliveryAssignment {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
     match /onboarding_requests/{requestId} {
       allow create: if signedIn();
       allow read, update, delete: if signedIn();
     }
+
     match /sellers/{uid} {
       allow read: if true;
       allow write: if (signedIn() && request.auth.uid == uid) || isAdmin();
     }
+
     match /customers/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow create, update: if signedIn() && (request.auth.uid == uid || isAdmin());

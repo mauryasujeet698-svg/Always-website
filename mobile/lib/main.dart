@@ -1891,13 +1891,19 @@ class _AdminScreenState extends State<AdminScreen> {
                         ? 'Order confirmed'
                         : value == 'Preparing'
                             ? 'Your order is being prepared'
-                            : value == 'Out for delivery'
-                                ? 'Your order is on the way'
-                                : value == 'Delivered'
-                                    ? 'Order delivered'
-                                    : value == 'Cancelled'
-                                        ? 'Order cancelled'
-                                        : 'Order received';
+                            : value == 'Ready for pickup'
+                                ? 'Your order is ready for pickup'
+                                : value == 'Assigned'
+                                    ? 'Delivery partner assigned'
+                                    : value == 'Picked up'
+                                        ? 'Your order has been picked up'
+                                        : value == 'Out for delivery'
+                                            ? 'Your order is on the way'
+                                            : value == 'Delivered'
+                                                ? 'Order delivered'
+                                                : value == 'Cancelled'
+                                                    ? 'Order cancelled'
+                                                    : 'Order received';
                     doc.reference.update({'status': value, 'statusNote': message, 'customerMessage': message, 'updatedAt': DateTime.now().millisecondsSinceEpoch});
                   },
                 ),

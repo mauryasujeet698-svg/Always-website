@@ -674,7 +674,7 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
     try {
       final path = 'onboarding/' + widget.user.uid + '/' + widget.type + '_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
       final ref = allwaysStorage.ref().child(path);
-      await ref.putFile(File(photo!.path), const SettableMetadata(contentType:'image/jpeg'));
+      await ref.putFile(File(photo!.path), SettableMetadata(contentType:'image/jpeg'));
       final url = await ref.getDownloadURL();
 
       final data = <String, dynamic>{
@@ -794,7 +794,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
   Future<String> uploadItemImage(XFile image) async {
     final path = 'sellers/' + widget.user.uid + '/item_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
     final ref = allwaysStorage.ref().child(path);
-    await ref.putFile(File(image.path), const SettableMetadata(contentType:'image/jpeg'));
+    await ref.putFile(File(image.path), SettableMetadata(contentType:'image/jpeg'));
     return ref.getDownloadURL();
   }
 
@@ -1499,7 +1499,7 @@ class _AdminScreenState extends State<AdminScreen> {
       final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
       if (image == null) return;
       final ref = allwaysStorage.ref().child('banners/banner_' + DateTime.now().millisecondsSinceEpoch.toString() + '.jpg');
-      await ref.putFile(File(image.path), const SettableMetadata(contentType:'image/jpeg'));
+      await ref.putFile(File(image.path), SettableMetadata(contentType:'image/jpeg'));
       final url = await ref.getDownloadURL();
       final doc = FirebaseFirestore.instance.collection('settings').doc('banners');
       final snap = await doc.get();

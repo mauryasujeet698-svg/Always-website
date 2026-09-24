@@ -477,7 +477,7 @@ class _ShellState extends State<Shell> {
 
   Widget build(BuildContext c){
     final pages=[
-      ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty,user:user,wishlistIds:wishlistIds,onWishlist:toggleWishlist,addresses:addresses),
+      ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty,user:user,wishlistIds:wishlistIds,onWishlist:toggleWishlist,onOpenCart:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(cart:cart,addresses:addresses,onQty:qty,onPlace:placeOrder))),addresses:addresses),
       const TravelPage(),
       const LocalSellersPage(),
       ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder),
@@ -515,6 +515,7 @@ class ShopPage extends StatefulWidget{
   final User? user;
   final Set<String> wishlistIds;
   final Future<void> Function(Product) onWishlist;
+  final VoidCallback onOpenCart;
   final List<Map<String,dynamic>> addresses;
 
   const ShopPage({
@@ -529,6 +530,7 @@ class ShopPage extends StatefulWidget{
     required this.user,
     required this.wishlistIds,
     required this.onWishlist,
+    required this.onOpenCart,
     required this.addresses,
   });
 
@@ -780,9 +782,7 @@ class _ShopPageState extends State<ShopPage>{
               ),
               IconButton(
                 tooltip:'Cart',
-                onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>CartScreen(
-                  cart:widget.cart,addresses:widget.addresses,onQty:widget.onQty,onPlace:(_)=>Future.value(),
-                ))),
+                onPressed:widget.onOpenCart,
                 icon:Badge(
                   isLabelVisible:widget.cart.isNotEmpty,
                   label:Text(widget.cart.length.toString()),

@@ -24,6 +24,16 @@ import 'firebase_options.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
 
+const sellerCategories = <String>[
+  'Grocery','Dairy','Bakery','Snacks','Fruits & Vegetables','Meat & Poultry','Fish & Seafood','Sweets & Desserts','Beverages',
+  'Restaurant & Food','Fast Food','Tiffin & Home Food','Pharmacy & Wellness','Cosmetics & Beauty','Clothing','Footwear',
+  'Jewellery & Accessories','Electronics','Mobile & Accessories','Home Appliances','Furniture','Home Decor','Kitchen & Dining',
+  'Hardware','Electrical','Plumbing','Paint & Tools','Stationery & Books','Toys & Games','Sports & Fitness','Auto Parts & Accessories',
+  'Bike & Car Services','Fuel & Lubricants','Agriculture & Seeds','Fertilizers & Pesticides','Dairy Farming Supplies','Pet Supplies',
+  'Flowers & Plants','Gifts & Handicrafts','Tailoring & Boutique','Laundry & Dry Cleaning','Repair Services','Photocopy & Printing',
+  'Travel & Transport','Local Services','Construction Materials','Solar & Inverter','Water & Gas Services','Wholesale & Distribution','Other',
+];
+
 const cloudinaryCloudName='busdtvia';
 const cloudinaryUploadPreset='allways_preset';
 
@@ -456,17 +466,7 @@ class _ShopPageState extends State<ShopPage>{
               final raw = snapshot.data?.data()?['imageUrls'];
               final urls = raw is List ? raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
               if (urls.isEmpty) return const SizedBox.shrink();
-              return SizedBox(height: 165, child: PageView.builder(
-                itemCount: urls.length,
-                itemBuilder: (context, index) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.network(urls[index], fit: BoxFit.cover, width: double.infinity,
-                      errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined))),
-                  ),
-                ),
-              ));
+              return _AutoBannerCarousel(urls: urls);
             },
           ),
           const SizedBox(height:16),
@@ -484,10 +484,92 @@ class _ShopPageState extends State<ShopPage>{
   }
 }
 
+class _AutoBannerCarousel extends StatefulWidget {
+  final List<String> urls;
+  const _AutoBannerCarousel({required this.urls});
+  @override State<_AutoBannerCarousel> createState() => _AutoBannerCarouselState();
+}
+
+class _AutoBannerCarouselState extends State<_AutoBannerCarousel> {
+  late final PageController controller;
+  Timer? timer;
+  int index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = PageController();
+    _restartTimer();
+  }
+
+  void _restartTimer() {
+    timer?.cancel();
+    if (widget.urls.length > 1) {
+      timer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!mounted || !controller.hasClients) return;
+        final next = (index + 1) % widget.urls.length;
+        controller.animateToPage(next, duration: const Duration(milliseconds: 450), curve: Curves.easeInOut);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutoBannerCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.urls.length != oldWidget.urls.length) _restartTimer();
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      SizedBox(
+        height: 165,
+        child: PageView.builder(
+          controller: controller,
+          itemCount: widget.urls.length,
+          onPageChanged: (v) => setState(() => index = v),
+          itemBuilder: (context, i) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(widget.urls[i], fit: BoxFit.cover, width: double.infinity,
+                errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined))),
+            ),
+          ),
+        ),
+      ),
+      if (widget.urls.length > 1)
+        Padding(
+          padding: const EdgeInsets.only(top: 7),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(widget.urls.length, (i) => AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: i == index ? 18 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: i == index ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outlineVariant,
+              ),
+            )),
+          ),
+        ),
+    ]);
+  }
+}
+
 class ProductScreen extends StatelessWidget{
   final Product product; final VoidCallback onAdd; final bool liked; final VoidCallback onWishlist;
   const ProductScreen({super.key,required this.product,required this.onAdd,required this.liked,required this.onWishlist});
-  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:Text(product.name),actions:[IconButton(onPressed:onWishlist,icon:Icon(liked?Icons.favorite:Icons.favorite_border))]),body:ListView(padding:const EdgeInsets.all(20),children:[
+  @override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:Text(product.name),actions:[IconButton(onPressed:onWishlist,icon:Icon(liked?Icons.favorite:Icons.favorite_border,color:Colors.red))]),body:ListView(padding:const EdgeInsets.all(20),children:[
     CircleAvatar(radius:54,child:Text(product.icon,style:const TextStyle(fontSize:44))),const SizedBox(height:20),
     Text(product.name,style:const TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:8),Text(product.category,style:const TextStyle(color:Colors.grey)),
     if(product.brand.isNotEmpty)Text(product.brand,style:const TextStyle(color:Colors.grey)),const SizedBox(height:14),
@@ -961,9 +1043,7 @@ class CarrierApplicationDialog extends StatefulWidget {
   final User user;
   final String type;
   const CarrierApplicationDialog({super.key, required this.user, required this.type});
-
-  @override
-  State<CarrierApplicationDialog> createState() => _CarrierApplicationDialogState();
+  @override State<CarrierApplicationDialog> createState() => _CarrierApplicationDialogState();
 }
 
 class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
@@ -971,19 +1051,18 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
   final shopName = TextEditingController();
   final dob = TextEditingController();
   final mobileNumber = TextEditingController();
+  final locationAddress = TextEditingController();
   XFile? photo;
   XFile? bikePhoto;
   bool busy = false;
-
+  bool locating = false;
+  String? category;
+  double? latitude;
+  double? longitude;
   bool get seller => widget.type == 'seller';
 
-  @override
-  void dispose() {
-    fullName.dispose();
-    shopName.dispose();
-    dob.dispose();
-    mobileNumber.dispose();
-    super.dispose();
+  @override void dispose() {
+    fullName.dispose(); shopName.dispose(); dob.dispose(); mobileNumber.dispose(); locationAddress.dispose(); super.dispose();
   }
 
   Future<void> pickPhoto() async {
@@ -996,15 +1075,39 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
     if (x != null && mounted) setState(() => bikePhoto = x);
   }
 
+  Future<void> useCurrentLocation() async {
+    setState(() => locating = true);
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) throw Exception('Location permission was not granted.');
+      final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
+      latitude = position.latitude;
+      longitude = position.longitude;
+      try {
+        final marks = await placemarkFromCoordinates(position.latitude, position.longitude);
+        if (marks.isNotEmpty) {
+          final p = marks.first;
+          locationAddress.text = [p.name, p.subLocality, p.locality, p.subAdministrativeArea, p.administrativeArea, p.postalCode]
+              .where((x) => x != null && x.trim().isNotEmpty).join(', ');
+        }
+      } catch (_) {}
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not get current location: ' + e.toString())));
+    } finally {
+      if (mounted) setState(() => locating = false);
+    }
+  }
+
   Future<void> submit() async {
     final mobile = mobileNumber.text.trim().replaceAll(RegExp(r'\D'), '');
     if (fullName.text.trim().isEmpty || mobile.length != 10 || photo == null ||
-        (seller && shopName.text.trim().isEmpty) || (!seller && (dob.text.trim().isEmpty || bikePhoto == null))) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(seller
-          ? 'Full name, mobile number, shop name and photo are required.'
-          : 'Full name, mobile number, DOB, bike/number plate photo and a photo with your bike are required.')),
-      );
+        (seller && (shopName.text.trim().isEmpty || category == null || locationAddress.text.trim().isEmpty || latitude == null || longitude == null)) ||
+        (!seller && (dob.text.trim().isEmpty || bikePhoto == null))) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(seller
+        ? 'Full name, mobile, shop name, category, current location and shop photo are required.'
+        : 'Full name, mobile number, DOB, bike/number plate photo and a photo with your bike are required.')));
       return;
     }
     setState(() => busy = true);
@@ -1017,28 +1120,21 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
       };
       if (seller) {
         data['shopName'] = shopName.text.trim();
+        data['category'] = category!;
         data['photoUrl'] = url;
+        data['locationAddress'] = locationAddress.text.trim();
+        data['latitude'] = latitude;
+        data['longitude'] = longitude;
       } else {
         final bikeUrl = await uploadImageToCloudinary(bikePhoto!, folder: 'onboarding/' + widget.user.uid);
         data['dob'] = dob.text.trim();
         data['photoUrl'] = url;
         data['bikePhotoUrl'] = bikeUrl;
       }
-
       await FirebaseFirestore.instance.collection('onboarding_requests').add(data);
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(seller ? 'Seller request submitted.' : 'Delivery partner request submitted.')),
-      );
-    } on FirebaseException catch (e) {
-      if (mounted) {
-        setState(() => busy = false);
-        final detail=e.code=='object-not-found'
-          ? 'Image upload storage is now handled by Cloudinary.'
-          : 'Firebase error ['+e.code+']: '+(e.message??'Unknown Firebase error');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not submit request: '+detail)));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(seller ? 'Seller request submitted.' : 'Delivery partner request submitted.')));
     } catch (e) {
       if (mounted) {
         setState(() => busy = false);
@@ -1052,37 +1148,42 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
     return AlertDialog(
       title: Text(seller ? 'Become a Seller' : 'Become a Delivery Partner'),
       content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: fullName, decoration: const InputDecoration(labelText: 'Full name')),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: fullName, decoration: const InputDecoration(labelText: 'Full name')),
+          const SizedBox(height: 10),
+          TextFormField(controller: mobileNumber, keyboardType: TextInputType.phone, maxLength: 10, decoration: const InputDecoration(labelText: 'Mobile Number', counterText: '')),
+          if (seller) ...[
             const SizedBox(height: 10),
-            TextFormField(controller: mobileNumber, keyboardType: TextInputType.phone, maxLength: 10,
-              decoration: const InputDecoration(labelText: 'Mobile Number', counterText: '')),
-            if (seller) ...[
-              const SizedBox(height: 10),
-              TextField(controller: shopName, decoration: const InputDecoration(labelText: 'Shop name')),
-            ],
-            if (!seller) ...[
-              const SizedBox(height: 10),
-              TextField(controller: dob, decoration: const InputDecoration(labelText: 'Date of birth (DD/MM/YYYY)')),
-            ],
+            TextField(controller: shopName, decoration: const InputDecoration(labelText: 'Shop name')),
             const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: busy ? null : pickPhoto,
-              icon: const Icon(Icons.photo_camera),
-              label: Text(photo == null ? (seller ? 'Upload shop/photo' : 'Upload bike/number plate photo') : 'Photo selected'),
+            DropdownButtonFormField<String>(
+              initialValue: category,
+              decoration: const InputDecoration(labelText: 'Shop category'),
+              items: sellerCategories.map((x) => DropdownMenuItem(value: x, child: Text(x))).toList(),
+              onChanged: busy ? null : (v) => setState(() => category = v),
             ),
-            if (!seller) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: busy ? null : pickBikePhoto,
-                icon: const Icon(Icons.two_wheeler_outlined),
-                label: Text(bikePhoto == null ? 'Upload a photo with your bike' : 'Bike photo selected'),
-              ),
-            ],
+            const SizedBox(height: 10),
+            TextField(controller: locationAddress, maxLines: 2, decoration: const InputDecoration(labelText: 'Shop location')),
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: OutlinedButton.icon(
+              onPressed: busy || locating ? null : useCurrentLocation,
+              icon: locating ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.my_location),
+              label: Text(locating ? 'Getting exact location…' : 'Use current location'),
+            )),
+            if (latitude != null && longitude != null)
+              Align(alignment: Alignment.centerLeft, child: Text('Exact GPS saved: ' + latitude!.toStringAsFixed(6) + ', ' + longitude!.toStringAsFixed(6), style: const TextStyle(fontSize: 12, color: Colors.grey))),
           ],
-        ),
+          if (!seller) ...[
+            const SizedBox(height: 10),
+            TextField(controller: dob, decoration: const InputDecoration(labelText: 'Date of birth (DD/MM/YYYY)')),
+          ],
+          const SizedBox(height: 10),
+          OutlinedButton.icon(onPressed: busy ? null : pickPhoto, icon: const Icon(Icons.photo_camera), label: Text(photo == null ? (seller ? 'Upload shop photo' : 'Upload bike/number plate photo') : 'Photo selected')),
+          if (!seller) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(onPressed: busy ? null : pickBikePhoto, icon: const Icon(Icons.two_wheeler_outlined), label: Text(bikePhoto == null ? 'Upload a photo with your bike' : 'Bike photo selected')),
+          ],
+        ]),
       ),
       actions: [
         TextButton(onPressed: busy ? null : () => Navigator.pop(context), child: const Text('Cancel')),
@@ -1092,31 +1193,30 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
   }
 }
 
+
 class SellerDashboard extends StatefulWidget {
   final User user;
   const SellerDashboard({super.key, required this.user});
-
-  @override
-  State<SellerDashboard> createState() => _SellerDashboardState();
+  @override State<SellerDashboard> createState() => _SellerDashboardState();
 }
 
 class _SellerDashboardState extends State<SellerDashboard> {
   final description = TextEditingController();
+  final about = TextEditingController();
   final offers = TextEditingController();
+  final openingHours = TextEditingController();
   List<Map<String, dynamic>> items = [];
   bool saving = false;
+  String photoUrl = '';
+  String businessName = '';
+  String mobileNumber = '';
+  String locationAddress = '';
+  bool? isOpen;
 
-  @override
-  void initState() {
-    super.initState();
-    loadSeller();
-  }
+  @override void initState() { super.initState(); loadSeller(); }
 
-  @override
-  void dispose() {
-    description.dispose();
-    offers.dispose();
-    super.dispose();
+  @override void dispose() {
+    description.dispose(); about.dispose(); offers.dispose(); openingHours.dispose(); super.dispose();
   }
 
   Future<void> loadSeller() async {
@@ -1124,41 +1224,55 @@ class _SellerDashboardState extends State<SellerDashboard> {
       final snap = await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).get();
       final data = snap.data() ?? {};
       description.text = (data['description'] ?? '').toString();
+      about.text = (data['about'] ?? '').toString();
       offers.text = (data['dailyOffers'] ?? '').toString();
+      openingHours.text = (data['openingHours'] ?? '').toString();
+      photoUrl = (data['photoUrl'] ?? '').toString();
+      businessName = (data['businessName'] ?? data['name'] ?? widget.user.displayName ?? 'My Shop').toString();
+      mobileNumber = (data['mobileNumber'] ?? '').toString();
+      locationAddress = (data['locationAddress'] ?? '').toString();
+      isOpen = data['isOpen'] is bool ? data['isOpen'] as bool : null;
       final raw = data['items'];
-      if (raw is List) {
-        items = raw.whereType<Map>().map((x) => Map<String, dynamic>.from(x)).toList();
-        if (items.length > 10) items = items.take(10).toList();
-      }
+      if (raw is List) items = raw.whereType<Map>().map((x) => Map<String, dynamic>.from(x)).take(50).toList();
       if (mounted) setState(() {});
     } catch (_) {}
   }
 
-  Future<String> uploadItemImage(XFile image) async {
-    return uploadImageToCloudinary(image, folder: 'sellers/' + widget.user.uid);
-  }
+  Future<String> uploadItemImage(XFile image) async => uploadImageToCloudinary(image, folder: 'sellers/' + widget.user.uid);
 
   Future<void> addItem() async {
-    if (items.length >= 10) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You can list up to 10 items.')));
+    if (items.length >= 50) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You can list up to 50 items.')));
       return;
     }
-
     final name = TextEditingController();
     final price = TextEditingController();
+    final itemDescription = TextEditingController();
+    final itemAbout = TextEditingController();
+    String? category;
     XFile? image;
 
     final added = await showDialog<bool>(
       context: context,
       builder: (dialog) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Add seller item'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          title: const Text('Add catalogue item'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
               TextField(controller: name, decoration: const InputDecoration(labelText: 'Item name')),
               const SizedBox(height: 10),
-              TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Price')),
+              TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Price (optional)')),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: category,
+                decoration: const InputDecoration(labelText: 'Category'),
+                items: sellerCategories.map((x) => DropdownMenuItem(value: x, child: Text(x))).toList(),
+                onChanged: (v) => setDialogState(() => category = v),
+              ),
+              const SizedBox(height: 10),
+              TextField(controller: itemDescription, maxLines: 3, decoration: const InputDecoration(labelText: 'Product description')),
+              const SizedBox(height: 10),
+              TextField(controller: itemAbout, maxLines: 3, decoration: const InputDecoration(labelText: 'About this product')),
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: () async {
@@ -1166,38 +1280,35 @@ class _SellerDashboardState extends State<SellerDashboard> {
                   if (x != null) setDialogState(() => image = x);
                 },
                 icon: const Icon(Icons.image_outlined),
-                label: Text(image == null ? 'Choose image' : 'Image selected'),
+                label: Text(image == null ? 'Choose product image' : 'Image selected'),
               ),
-            ],
+            ]),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
             FilledButton(
               onPressed: () async {
-                final parsed = num.tryParse(price.text.trim());
-                if (name.text.trim().isEmpty || parsed == null || parsed < 0 || image == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name, price and image are required.')));
+                final parsed = price.text.trim().isEmpty ? null : num.tryParse(price.text.trim());
+                if (name.text.trim().isEmpty || image == null || (price.text.trim().isNotEmpty && (parsed == null || parsed < 0))) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item name and image are required.')));
                   return;
                 }
                 try {
                   final url = await uploadItemImage(image!);
                   if (!mounted) return;
-                  setState(() => items.add({'name': name.text.trim(), 'price': parsed, 'imageUrl': url}));
+                  setState(() => items.add({'name': name.text.trim(), 'price': parsed, 'category': category ?? 'Other', 'description': itemDescription.text.trim(), 'about': itemAbout.text.trim(), 'imageUrl': url}));
                   Navigator.pop(dialog, true);
                 } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Image upload failed: ' + e.toString())));
-                  }
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Image upload failed: ' + e.toString())));
                 }
               },
-              child: const Text('Add'),
+              child: const Text('Add item'),
             ),
           ],
         ),
       ),
     );
-    name.dispose();
-    price.dispose();
+    name.dispose(); price.dispose(); itemDescription.dispose(); itemAbout.dispose();
     if (added == true && mounted) setState(() {});
   }
 
@@ -1205,16 +1316,15 @@ class _SellerDashboardState extends State<SellerDashboard> {
     setState(() => saving = true);
     try {
       await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({
-        'uid': widget.user.uid,
-        'name': widget.user.displayName ?? '',
-        'description': description.text.trim(),
-        'dailyOffers': offers.text.trim(),
-        'items': items,
+        'uid': widget.user.uid, 'name': widget.user.displayName ?? '', 'businessName': businessName,
+        'photoUrl': photoUrl, 'mobileNumber': mobileNumber, 'locationAddress': locationAddress,
+        'description': description.text.trim(), 'about': about.text.trim(), 'dailyOffers': offers.text.trim(),
+        'openingHours': openingHours.text.trim(), 'isOpen': isOpen, 'items': items.take(50).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seller dashboard saved.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seller profile saved.')));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save seller dashboard: ' + e.toString())));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save seller profile: ' + e.toString())));
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -1223,44 +1333,58 @@ class _SellerDashboardState extends State<SellerDashboard> {
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ExpansionTile(
-        leading: const Icon(Icons.storefront),
-        title: const Text('Seller Dashboard', style: TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: const Text('Manage your shop, offers and up to 10 items'),
+        leading: CircleAvatar(backgroundImage: photoUrl.isEmpty ? null : NetworkImage(photoUrl), child: photoUrl.isEmpty ? const Icon(Icons.storefront) : null),
+        title: Text(businessName.isEmpty ? 'Seller Dashboard' : businessName, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text('✓ Verified seller • ' + items.length.toString() + '/50 catalogue items'),
         children: [
           Padding(
             padding: const EdgeInsets.all(14),
-            child: Column(
-              children: [
-                TextField(controller: description, maxLines: 3, decoration: const InputDecoration(labelText: 'Shop description')),
-                const SizedBox(height: 10),
-                TextField(controller: offers, maxLines: 2, decoration: const InputDecoration(labelText: 'Daily offers')),
-                const SizedBox(height: 12),
-                Align(alignment: Alignment.centerLeft, child: Text('Items (' + items.length.toString() + '/10)', style: const TextStyle(fontWeight: FontWeight.w800))),
-                ...items.asMap().entries.map(
-                  (entry) => Card(
-                    child: ListTile(
-                      leading: (entry.value['imageUrl'] ?? '').toString().isEmpty
-                          ? const Icon(Icons.image)
-                          : Image.network(entry.value['imageUrl'].toString(), width: 48, height: 48, fit: BoxFit.cover),
-                      title: Text((entry.value['name'] ?? '').toString()),
-                      subtitle: Text('₹' + (entry.value['price'] ?? 0).toString()),
-                      trailing: IconButton(onPressed: () => setState(() => items.removeAt(entry.key)), icon: const Icon(Icons.delete_outline)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(onPressed: addItem, icon: const Icon(Icons.add), label: const Text('Add item')),
-                const SizedBox(height: 8),
-                SizedBox(width: double.infinity, child: FilledButton(onPressed: saving ? null : saveSeller, child: Text(saving ? 'Saving…' : 'Save seller profile'))),
-              ],
-            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (photoUrl.isNotEmpty) ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(photoUrl, height: 170, width: double.infinity, fit: BoxFit.cover)),
+              const SizedBox(height: 12),
+              TextField(controller: description, maxLines: 3, decoration: const InputDecoration(labelText: 'Shop description')),
+              const SizedBox(height: 10),
+              TextField(controller: about, maxLines: 3, decoration: const InputDecoration(labelText: 'About your shop')),
+              const SizedBox(height: 10),
+              TextField(controller: offers, maxLines: 2, decoration: const InputDecoration(labelText: 'Daily offers')),
+              const SizedBox(height: 10),
+              TextField(controller: openingHours, decoration: const InputDecoration(labelText: 'Opening hours')),
+              const SizedBox(height: 6),
+              SegmentedButton<bool?>(
+                segments: const [ButtonSegment<bool?>(value: true, label: Text('Open')), ButtonSegment<bool?>(value: false, label: Text('Closed'))],
+                selected: isOpen == null ? <bool?>{} : <bool?>{isOpen},
+                onSelectionChanged: (v) => setState(() => isOpen = v.isEmpty ? null : v.first),
+              ),
+              if (locationAddress.isNotEmpty) ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.location_on_outlined), title: const Text('Shop location'), subtitle: Text(locationAddress)),
+              const SizedBox(height: 12),
+              Text('Catalogue (' + items.length.toString() + '/50)', style: const TextStyle(fontWeight: FontWeight.w800)),
+              ...items.asMap().entries.map((entry) {
+                final item = entry.value;
+                return Card(child: ListTile(
+                  leading: (item['imageUrl'] ?? '').toString().isEmpty ? const Icon(Icons.inventory_2_outlined) : Image.network(item['imageUrl'].toString(), width: 48, height: 48, fit: BoxFit.cover),
+                  title: Text((item['name'] ?? '').toString()),
+                  subtitle: Text([
+                    if ((item['category'] ?? '').toString().isNotEmpty) item['category'].toString(),
+                    if (item['price'] != null) '₹' + item['price'].toString(),
+                    if ((item['description'] ?? '').toString().isNotEmpty) item['description'].toString(),
+                  ].join(' • ')),
+                  trailing: IconButton(onPressed: () => setState(() => items.removeAt(entry.key)), icon: const Icon(Icons.delete_outline)),
+                ));
+              }),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(onPressed: items.length >= 50 ? null : addItem, icon: const Icon(Icons.add), label: const Text('Add catalogue item')),
+              const SizedBox(height: 8),
+              SizedBox(width: double.infinity, child: FilledButton(onPressed: saving ? null : saveSeller, child: Text(saving ? 'Saving…' : 'Save seller profile'))),
+            ]),
           ),
         ],
       ),
     );
   }
 }
+
 
 class CarrierDashboard extends StatelessWidget {
   final User user;
@@ -1446,8 +1570,15 @@ class _SavedAddressesPageState extends State<SavedAddressesPage> {
   }
 }
 
-class LocalSellersPage extends StatelessWidget {
+class LocalSellersPage extends StatefulWidget {
   const LocalSellersPage({super.key});
+  @override State<LocalSellersPage> createState() => _LocalSellersPageState();
+}
+
+class _LocalSellersPageState extends State<LocalSellersPage> {
+  String category = 'All';
+  String search = '';
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -1455,30 +1586,189 @@ class LocalSellersPage extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) return const InfoCard(title: 'Local sellers unavailable', detail: 'Please check your connection and try again.');
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final sellers = snapshot.data!.docs;
+        final q = search.trim().toLowerCase();
+        final sellers = snapshot.data!.docs.where((d) {
+          final x = d.data();
+          final text = [x['businessName'], x['name'], x['category'], x['description'], x['locationAddress']]
+              .map((v) => (v ?? '').toString()).join(' ').toLowerCase();
+          return (category == 'All' || (x['category'] ?? 'Other').toString() == category) && (q.isEmpty || text.contains(q));
+        }).toList();
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           children: [
             const Text('Local sellers', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
-            const Text('Discover sellers near you and contact them directly.', style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 16),
-            if (sellers.isEmpty)
-              const InfoCard(title: 'No local sellers yet', detail: 'Local sellers will appear here when they are onboarded.')
-            else
-              ...sellers.map(
-                (d) {
-                  final x = d.data();
-                  return Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.storefront)),
-                      title: Text((x['name'] ?? x['businessName'] ?? 'Local seller').toString()),
-                      subtitle: Text((x['category'] ?? x['address'] ?? 'Local seller').toString()),
-                    ),
-                  );
-                },
+            const Text('Discover approved local businesses and contact them directly.', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 14),
+            TextField(decoration: const InputDecoration(hintText: 'Search shops or products', prefixIcon: Icon(Icons.search)), onChanged: (v) => setState(() => search = v)),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: ['All', ...sellerCategories].map((x) => Padding(
+                  padding: const EdgeInsets.only(right: 7),
+                  child: ChoiceChip(label: Text(x), selected: category == x, onSelected: (_) => setState(() => category = x)),
+                )).toList(),
               ),
+            ),
+            const SizedBox(height: 14),
+            if (sellers.isEmpty)
+              const InfoCard(title: 'No local sellers found', detail: 'Try another category or search.')
+            else
+              ...sellers.map((d) {
+                final x = d.data();
+                final image = (x['photoUrl'] ?? '').toString();
+                final shop = (x['businessName'] ?? x['name'] ?? 'Local seller').toString();
+                final cat = (x['category'] ?? 'Other').toString();
+                final rating = x['rating'];
+                final ratingText = rating == null ? 'New' : '⭐ ' + rating.toString();
+                final open = x['isOpen'];
+                final statusText = open == true ? 'Open now' : open == false ? 'Closed' : 'Hours not set';
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(10),
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: image.isEmpty
+                          ? const SizedBox(width: 64, height: 64, child: Icon(Icons.storefront_outlined, size: 32))
+                          : Image.network(image, width: 64, height: 64, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const SizedBox(width: 64, height: 64, child: Icon(Icons.broken_image_outlined))),
+                    ),
+                    title: Row(children: [
+                      Expanded(child: Text(shop, style: const TextStyle(fontWeight: FontWeight.w800))),
+                      const Icon(Icons.verified, size: 18),
+                    ]),
+                    subtitle: Text('$cat • $ratingText • $statusText'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SellerProfilePage(sellerId: d.id))),
+                  ),
+                );
+              }),
           ],
+        );
+      },
+    );
+  }
+}
+
+class SellerProfilePage extends StatefulWidget {
+  final String sellerId;
+  const SellerProfilePage({super.key, required this.sellerId});
+  @override State<SellerProfilePage> createState() => _SellerProfilePageState();
+}
+
+class _SellerProfilePageState extends State<SellerProfilePage> {
+  bool favourite = false;
+
+  Future<void> callSeller(String phone) async {
+    if (phone.isEmpty) return;
+    await launchUrl(Uri.parse('tel:$phone'));
+  }
+
+  Future<void> openLocation(Map<String, dynamic> data) async {
+    final lat = (data['latitude'] as num?)?.toDouble();
+    final lng = (data['longitude'] as num?)?.toDouble();
+    final address = (data['locationAddress'] ?? data['address'] ?? '').toString();
+    final query = lat != null && lng != null ? '$lat,$lng' : address;
+    if (query.isEmpty) return;
+    await launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=' + Uri.encodeComponent(query)), mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('sellers').doc(widget.sellerId).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return Scaffold(appBar: AppBar(title: const Text('Seller')), body: const InfoCard(title: 'Seller unavailable', detail: 'Please try again.'));
+        if (!snapshot.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        final data = snapshot.data!.data() ?? {};
+        final image = (data['photoUrl'] ?? '').toString();
+        final shop = (data['businessName'] ?? data['name'] ?? 'Local seller').toString();
+        final category = (data['category'] ?? 'Other').toString();
+        final description = (data['description'] ?? '').toString();
+        final about = (data['about'] ?? '').toString();
+        final phone = (data['mobileNumber'] ?? '').toString();
+        final location = (data['locationAddress'] ?? '').toString();
+        final open = data['isOpen'];
+        final hours = (data['openingHours'] ?? '').toString();
+        final rawItems = data['items'];
+        final items = rawItems is List ? rawItems.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Local Seller'),
+            actions: [IconButton(onPressed: () => setState(() => favourite = !favourite), icon: Icon(favourite ? Icons.favorite : Icons.favorite_border, color: Colors.red))],
+          ),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: image.isEmpty
+                    ? Container(height: 210, alignment: Alignment.center, child: const Icon(Icons.storefront_outlined, size: 72))
+                    : Image.network(image, height: 210, width: double.infinity, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(height: 210, alignment: Alignment.center, child: const Icon(Icons.broken_image_outlined, size: 48))),
+              ),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(child: Text(shop, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900))),
+                const Icon(Icons.verified, size: 22),
+              ]),
+              const SizedBox(height: 6),
+              Text(category, style: const TextStyle(color: Colors.grey)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                Chip(label: Text(data['rating'] == null ? 'New seller' : '⭐ ' + data['rating'].toString())),
+                Chip(label: Text(open == true ? '🟢 Open now' : open == false ? '🔴 Closed' : 'Hours not set')),
+                if (hours.isNotEmpty) Chip(label: Text(hours)),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: FilledButton.icon(onPressed: phone.isEmpty ? null : () => callSeller(phone), icon: const Icon(Icons.call), label: const Text('Call'))),
+                const SizedBox(width: 8),
+                Expanded(child: OutlinedButton.icon(onPressed: () => openLocation(data), icon: const Icon(Icons.location_on_outlined), label: const Text('Directions'))),
+              ]),
+              if (location.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Card(child: ListTile(leading: const Icon(Icons.location_on_outlined), title: const Text('Location'), subtitle: Text(location))),
+              ],
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('About the shop', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(description),
+              ],
+              if (about.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('About', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(about),
+              ],
+              const SizedBox(height: 18),
+              const Text('Products & services', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              if (items.isEmpty)
+                const InfoCard(title: 'Catalogue coming soon', detail: 'Contact the seller directly for current products, prices and availability.')
+              else
+                ...items.map((item) => Card(
+                  child: ListTile(
+                    leading: (item['imageUrl'] ?? '').toString().isEmpty ? const Icon(Icons.inventory_2_outlined) : Image.network(item['imageUrl'].toString(), width: 54, height: 54, fit: BoxFit.cover),
+                    title: Text((item['name'] ?? 'Item').toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: Text([
+                      if ((item['category'] ?? '').toString().isNotEmpty) item['category'].toString(),
+                      if ((item['description'] ?? '').toString().isNotEmpty) item['description'].toString(),
+                      if ((item['about'] ?? '').toString().isNotEmpty) item['about'].toString(),
+                      if (item['price'] != null) '₹' + item['price'].toString(),
+                    ].join(' • ')),
+                  ),
+                )),
+              const SizedBox(height: 8),
+              const Text('Local Seller model: Discover → View → Contact. ALLways does not provide cart or checkout for local sellers.', style: TextStyle(color: Colors.grey)),
+            ],
+          ),
         );
       },
     );
@@ -1589,6 +1879,10 @@ class AdminRolesPanel extends StatelessWidget {
           'businessName': data['shopName'] ?? '',
           'photoUrl': data['photoUrl'] ?? '',
           'mobileNumber': data['mobileNumber'] ?? '',
+          'category': data['category'] ?? 'Other',
+          'locationAddress': data['locationAddress'] ?? '',
+          'latitude': data['latitude'],
+          'longitude': data['longitude'],
           'status': 'approved',
         }, SetOptions(merge: true));
       }
@@ -1635,14 +1929,20 @@ class AdminRolesPanel extends StatelessWidget {
                 final x = d.data();
                 return Card(
                   child: ListTile(
-                    leading: (role == 'seller' && (x['photoUrl'] ?? '').toString().isNotEmpty)
-                        ? Image.network((x['photoUrl'] ?? '').toString(), width: 64, height: 64, fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined))
+                    leading: (x['photoUrl'] ?? '').toString().isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network((x['photoUrl'] ?? '').toString(), width: 64, height: 64, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
+                          )
                         : const Icon(Icons.person_outline),
                     title: Text((x['fullName'] ?? 'Applicant').toString()),
                     subtitle: Text([
                       if ((x['mobileNumber'] ?? '').toString().isNotEmpty) 'Mobile: ' + (x['mobileNumber'] ?? '').toString(),
                       if ((x['shopName'] ?? '').toString().isNotEmpty) 'Shop: ' + (x['shopName'] ?? '').toString(),
+                      if ((x['category'] ?? '').toString().isNotEmpty) 'Category: ' + (x['category'] ?? '').toString(),
+                      if ((x['locationAddress'] ?? '').toString().isNotEmpty) 'Location: ' + (x['locationAddress'] ?? '').toString(),
+                      if ((x['bikePhotoUrl'] ?? '').toString().isNotEmpty) 'Bike photo uploaded',
                       if ((x['dob'] ?? '').toString().isNotEmpty) 'DOB: ' + (x['dob'] ?? '').toString(),
                       if ((x['email'] ?? '').toString().isNotEmpty) (x['email'] ?? '').toString(),
                     ].join('\n')),

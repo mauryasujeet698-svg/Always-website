@@ -557,8 +557,10 @@ jobs:
               if dep not in s:
                   if "dependencies {" in s:
                       s = s.replace("dependencies {", "dependencies {\\n" + dep, 1)
+                  elif "android {" in s:
+                      s = s.replace("android {", "dependencies {\\n" + dep + "\\n}\\n\\nandroid {", 1)
                   else:
-                      raise SystemExit("dependencies block missing in android/app/build.gradle.kts")
+                      raise SystemExit("No insertion point found in android/app/build.gradle.kts")
                   p.write_text(s)
           else:
               raise SystemExit("No Android app Gradle build file found")

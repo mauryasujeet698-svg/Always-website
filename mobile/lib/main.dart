@@ -19,7 +19,6 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'travel_teaser_screen.dart';
 import 'firebase_options.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
@@ -83,6 +82,7 @@ const inventoryEndpoint='https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYh
 const updateManifestUrl='https://raw.githubusercontent.com/mauryasujeet698-svg/Always-website/allways-android-app/mobile/update.json';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
+final ValueNotifier<bool> unreadNotificationNotifier = ValueNotifier(false);
 
 @pragma('vm:entry-point')
 Future<void> bg(RemoteMessage m) async { await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); }
@@ -92,6 +92,8 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(bg);
   final prefs = await SharedPreferences.getInstance();
+  final savedNotifications = prefs.getStringList('allways_notifications') ?? <String>[];
+  unreadNotificationNotifier.value = savedNotifications.isNotEmpty;
   final savedTheme = prefs.getString('allways_theme_mode');
   if (savedTheme == 'light') {
     themeNotifier.value = ThemeMode.light;
@@ -185,7 +187,8 @@ class _ShellState extends State<Shell> {
     try{
       final prefs=await SharedPreferences.getInstance();
       final raw=prefs.getStringList('allways_notifications')??<String>[];
-      raw.insert(0,jsonEncode({'title':title,'body':body,'timestamp':DateTime.now().millisecondsSinceEpoch}));
+      raw.insert(0,jsonEncode({'title':title,'body':body,'timestamp':DateTime.now().millisecondsSinceEpoch,'read':false}));
+      unreadNotificationNotifier.value = true;
       if(raw.length>50)raw.removeRange(50,raw.length);
       await prefs.setStringList('allways_notifications',raw);
     }catch(_){}
@@ -374,7 +377,7 @@ class _ShellState extends State<Shell> {
   Widget build(BuildContext c){
     final pages=[
       ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty,user:user,wishlistIds:wishlistIds,onWishlist:toggleWishlist),
-      const TravelTeaserScreen(),
+      const TravelPage(),
       const LocalSellersPage(),
       ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder),
     ];
@@ -828,6 +831,22 @@ class StatusView extends StatelessWidget{final String status;const StatusView({s
 }}
 
 
+class TravelPage extends StatelessWidget {
+  const TravelPage({super.key});
+  Widget _actionCard(BuildContext context,{required IconData icon,required String title,required String subtitle,required VoidCallback onTap})=>Card(margin:const EdgeInsets.only(bottom:12),clipBehavior:Clip.antiAlias,child:InkWell(onTap:onTap,child:Padding(padding:const EdgeInsets.all(18),child:Row(children:[Container(width:54,height:54,decoration:BoxDecoration(color:Theme.of(context).colorScheme.primaryContainer,borderRadius:BorderRadius.circular(16)),child:Icon(icon,color:Theme.of(context).colorScheme.onPrimaryContainer)),const SizedBox(width:14),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:5),Text(subtitle,style:TextStyle(color:Theme.of(context).colorScheme.onSurfaceVariant,height:1.35))])),const Icon(Icons.chevron_right)]))));
+  @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.fromLTRB(16,18,16,110),children:[
+    const Text('Travel',style:TextStyle(fontSize:30,fontWeight:FontWeight.w900)),
+    const SizedBox(height:4),
+    const Text('Book vehicles and connect with a two-wheeler ride partner.',style:TextStyle(color:Colors.grey)),
+    const SizedBox(height:18),
+    Container(padding:const EdgeInsets.all(20),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFF311B92),Color(0xFFE91E63)],begin:Alignment.topLeft,end:Alignment.bottomRight),borderRadius:BorderRadius.circular(22)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(Icons.travel_explore,color:Colors.white,size:38),SizedBox(height:12),Text('ALLways Mobility',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w900)),SizedBox(height:6),Text('Local vehicle booking and two-wheeler ride sharing. No commission during the trial.',style:TextStyle(color:Colors.white70,height:1.4))])),
+    const SizedBox(height:18),
+    _actionCard(context,icon:Icons.directions_car_outlined,title:'Book vehicle',subtitle:'Choose from 25 vehicle categories. Owners set their own price, with Book or Book & negotiate.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage()))),
+    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a ride partner',subtitle:'Two-wheeler only. Select seats, destination and kilometres. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),
+    Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.info_outline),const SizedBox(width:10),Expanded(child:Text('Trial service: verify the partner and vehicle before travelling. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants.',style:TextStyle(color:Colors.grey,height:1.35)))]))),
+  ]);
+}
+
 class ProfilePage extends StatefulWidget{
   final User? user; final List<Map<String,dynamic>> addresses; final VoidCallback onLogin;
   final Future<void> Function() onReload; final Future<void> Function(String) onDelete; final Future<void> Function(String) onCancel;
@@ -869,7 +888,7 @@ class _ProfilePageState extends State<ProfilePage>{
     );
   }
 
-  Widget _menuCard(BuildContext c,{required IconData icon,required String title,required String subtitle,required VoidCallback onTap,bool danger=false}){
+  Widget _menuCard(BuildContext c,{required IconData icon,required String title,required String subtitle,required VoidCallback onTap,bool danger=false,bool showDot=false}){
     final scheme=Theme.of(c).colorScheme;
     final accent=danger?scheme.error:scheme.primary;
     return Card(
@@ -886,7 +905,10 @@ class _ProfilePageState extends State<ProfilePage>{
             Container(
               width:48,height:48,
               decoration:BoxDecoration(color:danger?scheme.errorContainer:scheme.primaryContainer,borderRadius:BorderRadius.circular(14)),
-              child:Icon(icon,color:danger?scheme.onErrorContainer:scheme.onPrimaryContainer),
+              child: Stack(clipBehavior: Clip.none, children: [
+                Icon(icon,color:danger?scheme.onErrorContainer:scheme.onPrimaryContainer),
+                if(showDot) Positioned(right:-3,top:-3,child:Container(width:10,height:10,decoration:BoxDecoration(color:Colors.green,shape:BoxShape.circle,border:Border.all(color:scheme.surface,width:2)))),
+              ]),
             ),
             const SizedBox(width:14),
             Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
@@ -928,6 +950,8 @@ class _ProfilePageState extends State<ProfilePage>{
   }
 
   Future<void> _openNotifications(BuildContext c) async {
+    await markNotificationsRead();
+    if(!c.mounted)return;
     await showModalBottomSheet<void>(context:c,isScrollControlled:true,showDragHandle:true,builder:(_)=>const NotificationsPage());
   }
 
@@ -978,7 +1002,7 @@ class _ProfilePageState extends State<ProfilePage>{
         _menuCard(c,icon:Icons.location_on_outlined,title:'Saved Addresses',subtitle:'Add, edit or manage your delivery addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(userId:u.uid,addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
         _menuCard(c,icon:Icons.favorite_border,title:'Wishlist',subtitle:'Your saved products and favourites',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
         _menuCard(c,icon:Icons.local_shipping_outlined,title:'ALLways Carrier',subtitle:'Become a Seller or Delivery Partner',onTap:()=>_openCarrier(c,u)),
-        _menuCard(c,icon:Icons.notifications_outlined,title:'Notifications',subtitle:'Alerts, order updates and push settings',onTap:()=>_openNotifications(c)),
+        ValueListenableBuilder<bool>(valueListenable:unreadNotificationNotifier,builder:(_,unread,__)=>_menuCard(c,icon:Icons.notifications_outlined,title:'Notifications',subtitle:'Alerts, order updates and push settings',showDot:unread,onTap:()=>_openNotifications(c))),
         _menuCard(c,icon:Icons.brightness_6_outlined,title:'Appearance',subtitle:'Light, Dark or System theme',onTap:()=>_chooseAppearance(c)),
         _menuCard(c,icon:Icons.language_outlined,title:'Language',subtitle:'Choose your preferred app language',onTap:()=>_chooseLanguage(c)),
         _menuCard(c,icon:Icons.share_outlined,title:'Share ALLways',subtitle:'Share ALLways with friends and family',onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
@@ -1010,6 +1034,26 @@ class _ProfilePageState extends State<ProfilePage>{
       ])),
     );
   }
+}
+
+Future<void> markNotificationsRead() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList('allways_notifications') ?? <String>[];
+    final updated = raw.map((entry) {
+      try {
+        final decoded = jsonDecode(entry);
+        if (decoded is Map) {
+          final item = Map<String,dynamic>.from(decoded);
+          item['read'] = true;
+          return jsonEncode(item);
+        }
+      } catch (_) {}
+      return entry;
+    }).toList();
+    await prefs.setStringList('allways_notifications', updated);
+  } catch (_) {}
+  unreadNotificationNotifier.value = false;
 }
 
 class NotificationsPage extends StatefulWidget{
@@ -1349,6 +1393,7 @@ class SellerDashboard extends StatefulWidget {
 class _SellerDashboardState extends State<SellerDashboard> {
   final description = TextEditingController();
   final about = TextEditingController();
+  String ownerName = '';
   final offers = TextEditingController();
   final openingHours = TextEditingController();
   List<Map<String, dynamic>> items = [];
@@ -1369,6 +1414,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
     try {
       final snap = await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).get();
       final data = snap.data() ?? {};
+      ownerName = (data['name'] ?? widget.user.displayName ?? '').toString();
       description.text = (data['description'] ?? '').toString();
       about.text = (data['about'] ?? '').toString();
       offers.text = (data['dailyOffers'] ?? '').toString();
@@ -1386,6 +1432,58 @@ class _SellerDashboardState extends State<SellerDashboard> {
 
   Future<String> uploadItemImage(XFile image) async => uploadImageToCloudinary(image, folder: 'sellers/' + widget.user.uid);
 
+  Future<void> editSellerProfile() async {
+    final owner = TextEditingController(text: ownerName);
+    final shop = TextEditingController(text: businessName);
+    XFile? selectedImage;
+    bool uploading = false;
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Edit seller profile'),
+            content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(controller: owner, decoration: const InputDecoration(labelText: 'Your name')),
+              const SizedBox(height: 10),
+              TextField(controller: shop, decoration: const InputDecoration(labelText: 'Shop name')),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(onPressed: uploading ? null : () async {
+                final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                if (image != null) setDialogState(() => selectedImage = image);
+              }, icon: const Icon(Icons.storefront_outlined), label: Text(selectedImage == null ? 'Change shop image' : 'New shop image selected')),
+              const SizedBox(height: 6),
+              const Align(alignment: Alignment.centerLeft, child: Text('Update your name, shop name and the shop image customers see.', style: TextStyle(color: Colors.grey, fontSize: 12))),
+            ])),
+            actions: [
+              TextButton(onPressed: uploading ? null : () => Navigator.pop(dialog, false), child: const Text('Cancel')),
+              FilledButton(onPressed: uploading ? null : () async {
+                if (owner.text.trim().isEmpty || shop.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter your name and shop name.')));
+                  return;
+                }
+                setDialogState(() => uploading = true);
+                try {
+                  var newPhoto = photoUrl;
+                  if (selectedImage != null) newPhoto = await uploadImageToCloudinary(selectedImage!, folder: 'sellers/' + widget.user.uid);
+                  await widget.user.updateDisplayName(owner.text.trim());
+                  await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({'uid':widget.user.uid,'name':owner.text.trim(),'businessName':shop.text.trim(),'photoUrl':newPhoto,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+                  ownerName = owner.text.trim(); businessName = shop.text.trim(); photoUrl = newPhoto;
+                  if (mounted) setState(() {});
+                  if (dialog.mounted) Navigator.pop(dialog, true);
+                } catch (e) {
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update seller profile: ' + e.toString())));
+                  if (dialog.mounted) setDialogState(() => uploading = false);
+                }
+              }, child: Text(uploading ? 'Saving…' : 'Save changes')),
+            ],
+          ),
+        ),
+      );
+      if (saved == true && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seller profile updated.')));
+    } finally { owner.dispose(); shop.dispose(); }
+  }
+
   Future<void> pickServiceHours() async {
     final start = TimeOfDay(hour: 9, minute: 0);
     final end = TimeOfDay(hour: 21, minute: 0);
@@ -1401,7 +1499,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
   Future<void> saveSellerRealtime() async {
     try {
       await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({
-        'uid': widget.user.uid, 'businessName': businessName, 'description': description.text.trim(),
+        'uid': widget.user.uid, 'name': ownerName, 'businessName': businessName, 'description': description.text.trim(),
         'about': about.text.trim(), 'dailyOffers': offers.text.trim(), 'openingHours': openingHours.text.trim(),
         'isOpen': isOpen, 'items': items.take(50).toList(), 'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -1512,6 +1610,8 @@ class _SellerDashboardState extends State<SellerDashboard> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (photoUrl.isNotEmpty) ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(photoUrl, height: 170, width: double.infinity, fit: BoxFit.cover)),
               const SizedBox(height: 12),
+              OutlinedButton.icon(onPressed: saving ? null : editSellerProfile, icon: const Icon(Icons.edit_outlined), label: const Text('Edit seller profile, name & shop image')),
+              const SizedBox(height: 8),
               TextField(controller: description, maxLines: 3, decoration: const InputDecoration(labelText: 'Shop description')),
               const SizedBox(height: 10),
               TextField(controller: about, maxLines: 3, decoration: const InputDecoration(labelText: 'About your shop')),
@@ -2476,6 +2576,40 @@ class AdminRolesPanel extends StatelessWidget {
     }
   }
 
+  Future<void> reviewRoleDetails(BuildContext context,String uid,String role,{DocumentSnapshot<Map<String,dynamic>>? request}) async {
+    try {
+      Map<String,dynamic> data={};
+      if(role=='seller') {
+        final snap=await FirebaseFirestore.instance.collection('sellers').doc(uid).get(); data=snap.data()??{};
+      } else {
+        QueryDocumentSnapshot<Map<String,dynamic>>? found;
+        if(request is QueryDocumentSnapshot<Map<String,dynamic>>) found=request;
+        if(found==null){ final q=await FirebaseFirestore.instance.collection('onboarding_requests').where('uid',isEqualTo:uid).where('type',isEqualTo:'carrier').limit(1).get(); if(q.docs.isNotEmpty) found=q.docs.first; }
+        data=found?.data()??{};
+      }
+      if(!context.mounted)return;
+      final photo=(data['photoUrl']??'').toString(), bike=(data['bikePhotoUrl']??'').toString();
+      final title=role=='seller'?(data['businessName']??data['name']??'Seller').toString():(data['fullName']??data['name']??'Delivery partner').toString();
+      await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:Text(role=='seller'?'Seller details':'Delivery partner details'),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        if(photo.isNotEmpty)ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(photo,height:160,width:double.infinity,fit:BoxFit.cover)),
+        if(bike.isNotEmpty)...[const SizedBox(height:10),ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(bike,height:150,width:double.infinity,fit:BoxFit.cover))],
+        const SizedBox(height:12),Text(title,style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:8),
+        Text([
+          if((data['email']??'').toString().isNotEmpty)'Email: '+data['email'].toString(),
+          if((data['mobileNumber']??'').toString().isNotEmpty)'Mobile: '+data['mobileNumber'].toString(),
+          if((data['shopName']??'').toString().isNotEmpty)'Shop: '+data['shopName'].toString(),
+          if((data['businessName']??'').toString().isNotEmpty&&role=='seller')'Shop name: '+data['businessName'].toString(),
+          if((data['category']??'').toString().isNotEmpty)'Category: '+data['category'].toString(),
+          if((data['locationAddress']??'').toString().isNotEmpty)'Location: '+data['locationAddress'].toString(),
+          if((data['dob']??'').toString().isNotEmpty)'DOB: '+data['dob'].toString(),
+          if((data['gender']??'').toString().isNotEmpty)'Gender: '+data['gender'].toString(),
+          if((data['openingHours']??'').toString().isNotEmpty)'Service hours: '+data['openingHours'].toString(),
+          if((data['description']??'').toString().isNotEmpty)'Description: '+data['description'].toString(),
+        ].join('\n')),
+      ]))),actions:[TextButton(onPressed:()=>Navigator.pop(dialog),child:const Text('Close'))]));
+    }catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not load details: '+e.toString())));}
+  }
+
   Widget roleTab(BuildContext context, String type, String role) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('onboarding_requests').where('type', isEqualTo: type).where('status', isEqualTo: 'pending').snapshots(),
@@ -2530,6 +2664,7 @@ class AdminRolesPanel extends StatelessWidget {
                     ].join('\n')),
                     trailing: Wrap(
                       children: [
+                        TextButton(onPressed: () => reviewRoleDetails(context, (x['uid'] ?? '').toString(), role, request: d), child: const Text('Review')),
                         TextButton(onPressed: () => onboard(context, d, role), child: const Text('Onboard')),
                         TextButton(onPressed: () => reject(context, d.id), child: const Text('Reject')),
                       ],
@@ -2555,7 +2690,7 @@ class AdminRolesPanel extends StatelessWidget {
                         leading: const Icon(Icons.person_outline),
                         title: Text((x['displayName'] ?? x['email'] ?? d.id).toString()),
                         subtitle: Text((x['email'] ?? '').toString()),
-                        trailing: TextButton(onPressed: () => remove(context, d.id), child: const Text('Remove')),
+                        trailing: Wrap(spacing:4,children:[TextButton(onPressed:()=>reviewRoleDetails(context,d.id,role),child:const Text('Review')),TextButton(onPressed:()=>remove(context,d.id),child:const Text('Remove'))]),
                       );
                     },
                   ).toList(),
@@ -2990,25 +3125,36 @@ class _AdminScreenState extends State<AdminScreen> {
               child: Text('Order Management', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
             ),
           ),
-          SizedBox(
-            height: 54,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              scrollDirection: Axis.horizontal,
-              itemCount: orderStatusFilters.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final filter = orderStatusFilters[index];
-                final value = filter['value']!;
-                return ChoiceChip(
-                  label: Text(filter['label']!),
-                  selected: selectedOrderStatusFilter == value,
-                  onSelected: (selected) {
-                    if (selected) setState(() => selectedOrderStatusFilter = value);
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('orders').snapshots(),
+            builder: (context, countSnapshot) {
+              final counts = <String,int>{for (final f in orderStatusFilters) f['value']!: 0};
+              for (final doc in countSnapshot.data?.docs ?? const <QueryDocumentSnapshot<Map<String,dynamic>>>[]) {
+                final key = normalizeOrderStatus((doc.data()['status'] ?? '').toString());
+                if (counts.containsKey(key)) counts[key] = counts[key]! + 1;
+              }
+              return SizedBox(
+                height: 54,
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: orderStatusFilters.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final filter = orderStatusFilters[index];
+                    final value = filter['value']!;
+                    final count = counts[value] ?? 0;
+                    return ChoiceChip(
+                      label: Text(filter['label']! + ' (' + count.toString() + ')'),
+                      selected: selectedOrderStatusFilter == value,
+                      onSelected: (selected) {
+                        if (selected) setState(() => selectedOrderStatusFilter = value);
+                      },
+                    );
                   },
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -3022,15 +3168,16 @@ class _AdminScreenState extends State<AdminScreen> {
                   final rawStatus = (doc.data()['status'] ?? '').toString();
                   return normalizeOrderStatus(rawStatus) == selectedOrderStatusFilter;
                 }).toList();
-                if (filteredDocs.isEmpty) {
-                  final label = orderStatusFilters.firstWhere((x) => x['value'] == selectedOrderStatusFilter)['label']!;
-                  return Center(child: Text('No ' + label.toLowerCase() + ' orders.'));
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: filteredDocs.length,
-                  itemBuilder: (context, index) => orderCard(filteredDocs[index]),
-                );
+                final label = orderStatusFilters.firstWhere((x) => x['value'] == selectedOrderStatusFilter)['label']!;
+                if (filteredDocs.isEmpty) return Center(child: Text('No ' + label.toLowerCase() + ' orders.'));
+                return Column(children: [
+                  Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 4), child: Align(alignment: Alignment.centerLeft, child: Text(label + ' Orders: ' + filteredDocs.length.toString(), style: const TextStyle(fontWeight: FontWeight.w800)))),
+                  Expanded(child: ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: filteredDocs.length,
+                    itemBuilder: (context, index) => orderCard(filteredDocs[index]),
+                  )),
+                ]);
               },
             ),
           ),

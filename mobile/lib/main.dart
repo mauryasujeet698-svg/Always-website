@@ -48,12 +48,13 @@ String cloudinaryImageUrl(String url, {required double width, required double he
   final after = markerIndex + uploadMarker.length;
   // Avoid stacking another ALLways-generated transformation if the URL was
   // already formatted for a previous display container.
-  final rest = value.substring(after);
-  if (rest.startsWith('w_') && rest.contains('/')) {
+  var rest = value.substring(after);
+  if (rest.contains('/')) {
     final firstSegment = rest.substring(0, rest.indexOf('/'));
-    if (firstSegment.contains('w_') && firstSegment.contains('h_') && firstSegment.contains('c_fill')) {
-      return value;
-    }
+    final isTransformation = firstSegment.contains('w_') || firstSegment.contains('h_') ||
+        firstSegment.contains('c_fill') || firstSegment.contains('g_auto') ||
+        firstSegment.contains('f_auto') || firstSegment.contains('q_auto');
+    if (isTransformation) rest = rest.substring(rest.indexOf('/') + 1);
   }
   return value.substring(0, after) + transform + '/' + rest;
 }
@@ -606,8 +607,13 @@ class _AutoBannerCarouselState extends State<_AutoBannerCarousel> {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: Image.network(widget.urls[i], fit: BoxFit.cover, width: double.infinity,
-                errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined))),
+              child: LayoutBuilder(
+                builder: (context, constraints) => Image.network(
+                  cloudinaryImageUrl(widget.urls[i], width: constraints.maxWidth, height: widget.height),
+                  fit: BoxFit.cover, width: double.infinity,
+                  errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined)),
+                ),
+              ),
             ),
           ),
         ),
@@ -1700,14 +1706,14 @@ class _SellerDashboardState extends State<SellerDashboard> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ExpansionTile(
-        leading: CircleAvatar(backgroundImage: photoUrl.isEmpty ? null : NetworkImage(photoUrl), child: photoUrl.isEmpty ? const Icon(Icons.storefront) : null),
+        leading: CircleAvatar(backgroundImage: photoUrl.isEmpty ? null : NetworkImage(cloudinaryImageUrl(photoUrl, width: 56, height: 56)), child: photoUrl.isEmpty ? const Icon(Icons.storefront) : null),
         title: Text(businessName.isEmpty ? 'Seller Dashboard' : businessName, style: const TextStyle(fontWeight: FontWeight.w800)),
         subtitle: Text('✓ Verified seller • ' + items.length.toString() + '/50 catalogue items'),
         children: [
           Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (photoUrl.isNotEmpty) ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(photoUrl, height: 170, width: double.infinity, fit: BoxFit.cover)),
+              if (photoUrl.isNotEmpty) ClipRRect(borderRadius: BorderRadius.circular(16), child: LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(photoUrl, width: constraints.maxWidth, height: 170), height: 170, width: double.infinity, fit: BoxFit.cover))),
               const SizedBox(height: 12),
               OutlinedButton.icon(onPressed: saving ? null : editSellerProfile, icon: const Icon(Icons.edit_outlined), label: const Text('Edit seller profile, name & shop image')),
               const SizedBox(height: 8),
@@ -1730,7 +1736,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
               ...items.asMap().entries.map((entry) {
                 final item = entry.value;
                 return Card(child: ListTile(
-                  leading: (item['imageUrl'] ?? '').toString().isEmpty ? const Icon(Icons.inventory_2_outlined) : Image.network(item['imageUrl'].toString(), width: 48, height: 48, fit: BoxFit.cover),
+                  leading: (item['imageUrl'] ?? '').toString().isEmpty ? const Icon(Icons.inventory_2_outlined) : Image.network(cloudinaryImageUrl(item['imageUrl'].toString(), width: 48, height: 48), width: 48, height: 48, fit: BoxFit.cover),
                   title: Text((item['name'] ?? '').toString()),
                   subtitle: Text([
                     if ((item['category'] ?? '').toString().isNotEmpty) item['category'].toString(),
@@ -2387,7 +2393,7 @@ class _LocalSellersPageState extends State<LocalSellersPage> {
                       borderRadius: BorderRadius.circular(12),
                       child: image.isEmpty
                           ? const SizedBox(width: 64, height: 64, child: Icon(Icons.storefront_outlined, size: 32))
-                          : Image.network(image, width: 64, height: 64, fit: BoxFit.cover,
+                          : Image.network(cloudinaryImageUrl(image, width: 64, height: 64), width: 64, height: 64, fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => const SizedBox(width: 64, height: 64, child: Icon(Icons.broken_image_outlined))),
                     ),
                     title: Row(children: [
@@ -2500,7 +2506,7 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
                 borderRadius: BorderRadius.circular(20),
                 child: image.isEmpty
                     ? Container(height: 210, alignment: Alignment.center, child: const Icon(Icons.storefront_outlined, size: 72))
-                    : Image.network(image, height: 210, width: double.infinity, fit: BoxFit.cover,
+                    : LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(image, width: constraints.maxWidth, height: 210), height: 210, width: double.infinity, fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => Container(height: 210, alignment: Alignment.center, child: const Icon(Icons.broken_image_outlined, size: 48))),
               ),
               const SizedBox(height: 16),
@@ -2546,7 +2552,7 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
               else
                 ...items.map((item) => Card(
                   child: ListTile(
-                    leading: (item['imageUrl'] ?? '').toString().isEmpty ? const Icon(Icons.inventory_2_outlined) : Image.network(item['imageUrl'].toString(), width: 54, height: 54, fit: BoxFit.cover),
+                    leading: (item['imageUrl'] ?? '').toString().isEmpty ? const Icon(Icons.inventory_2_outlined) : Image.network(cloudinaryImageUrl(item['imageUrl'].toString(), width: 54, height: 54), width: 54, height: 54, fit: BoxFit.cover),
                     title: Text((item['name'] ?? 'Item').toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text([
                       if ((item['category'] ?? '').toString().isNotEmpty) item['category'].toString(),
@@ -2579,7 +2585,7 @@ class LocalSellerProductPage extends StatelessWidget {
     final desc=(item['description']??'').toString();
     final about=(item['about']??'').toString();
     return Scaffold(appBar:AppBar(title:const Text('Product details')),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
-      ClipRRect(borderRadius:BorderRadius.circular(18),child:image.isEmpty?Container(height:240,alignment:Alignment.center,child:const Icon(Icons.inventory_2_outlined,size:80)):Image.network(image,height:240,width:double.infinity,fit:BoxFit.cover)),
+      ClipRRect(borderRadius:BorderRadius.circular(18),child:image.isEmpty?Container(height:240,alignment:Alignment.center,child:const Icon(Icons.inventory_2_outlined,size:80)):LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(image, width: constraints.maxWidth, height: 240),height:240,width:double.infinity,fit:BoxFit.cover))),
       const SizedBox(height:16),
       Text(name,style:const TextStyle(fontSize:26,fontWeight:FontWeight.w900)),
       if(price!=null) Padding(padding:const EdgeInsets.only(top:8),child:Text('₹$price',style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800))),
@@ -2742,8 +2748,8 @@ class AdminRolesPanel extends StatelessWidget {
       final photo=(data['photoUrl']??'').toString(), bike=(data['bikePhotoUrl']??'').toString();
       final title=role=='seller'?(data['businessName']??data['name']??'Seller').toString():(data['fullName']??data['name']??'Delivery partner').toString();
       await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:Text(role=='seller'?'Seller details':'Delivery partner details'),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        if(photo.isNotEmpty)ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(photo,height:160,width:double.infinity,fit:BoxFit.cover)),
-        if(bike.isNotEmpty)...[const SizedBox(height:10),ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(bike,height:150,width:double.infinity,fit:BoxFit.cover))],
+        if(photo.isNotEmpty)ClipRRect(borderRadius:BorderRadius.circular(12),child:LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(photo, width: constraints.maxWidth, height: 160),height:160,width:double.infinity,fit:BoxFit.cover))),
+        if(bike.isNotEmpty)...[const SizedBox(height:10),ClipRRect(borderRadius:BorderRadius.circular(12),child:LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(bike, width: constraints.maxWidth, height: 150),height:150,width:double.infinity,fit:BoxFit.cover)))],
         const SizedBox(height:12),Text(title,style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:8),
         Text([
           if((data['email']??'').toString().isNotEmpty)'Email: '+data['email'].toString(),
@@ -2787,7 +2793,7 @@ class AdminRolesPanel extends StatelessWidget {
                           if ((x['photoUrl'] ?? '').toString().isNotEmpty)
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: Image.network((x['photoUrl'] ?? '').toString(), width: 64, height: 64, fit: BoxFit.cover,
+                              child: Image.network(cloudinaryImageUrl((x['photoUrl'] ?? '').toString(), width: 64, height: 64), width: 64, height: 64, fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
                             )
                           else
@@ -2796,7 +2802,7 @@ class AdminRolesPanel extends StatelessWidget {
                             const SizedBox(width: 8),
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: Image.network((x['bikePhotoUrl'] ?? '').toString(), width: 40, height: 64, fit: BoxFit.cover,
+                              child: Image.network(cloudinaryImageUrl((x['bikePhotoUrl'] ?? '').toString(), width: 40, height: 64), width: 40, height: 64, fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
                             ),
                           ],
@@ -3061,7 +3067,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     ...urls.asMap().entries.map(
                       (entry) => Card(
                         child: ListTile(
-                          leading: SizedBox(width: 72, height: 48, child: Image.network(entry.value, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image))),
+                          leading: SizedBox(width: 72, height: 48, child: Image.network(cloudinaryImageUrl(entry.value, width: 72, height: 48), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image))),
                           title: Text('Banner ' + (entry.key + 1).toString()),
                           trailing: IconButton(onPressed: () => removeBanner(entry.value), icon: const Icon(Icons.delete_outline)),
                         ),

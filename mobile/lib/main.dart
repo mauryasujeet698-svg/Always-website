@@ -36,6 +36,40 @@ const sellerCategories = <String>[
 const cloudinaryCloudName='busdtvia';
 const cloudinaryUploadPreset='allways_preset';
 
+String cloudinaryImageUrl(String url, {required double width, required double height}) {
+  final value = url.trim();
+  if (value.isEmpty || !value.contains('res.cloudinary.com/')) return value;
+  final safeW = width.isFinite && width > 0 ? width.round() : 1;
+  final safeH = height.isFinite && height > 0 ? height.round() : 1;
+  final uploadMarker = '/image/upload/';
+  final markerIndex = value.indexOf(uploadMarker);
+  if (markerIndex < 0) return value;
+  final transform = 'w_$safeW,h_$safeH,c_fill,g_auto';
+  final after = markerIndex + uploadMarker.length;
+  // Avoid stacking another ALLways-generated transformation if the URL was
+  // already formatted for a previous display container.
+  final rest = value.substring(after);
+  if (rest.startsWith('w_') && rest.contains('/')) {
+    final firstSegment = rest.substring(0, rest.indexOf('/'));
+    if (firstSegment.contains('w_') && firstSegment.contains('h_') && firstSegment.contains('c_fill')) {
+      return value;
+    }
+  }
+  return value.substring(0, after) + transform + '/' + rest;
+}
+
+String cloudinarySmartCropUrl(String url) {
+  final value = url.trim();
+  if (value.isEmpty || !value.contains('res.cloudinary.com/')) return value;
+  const uploadMarker = '/image/upload/';
+  final markerIndex = value.indexOf(uploadMarker);
+  if (markerIndex < 0) return value;
+  final after = markerIndex + uploadMarker.length;
+  final rest = value.substring(after);
+  if (rest.startsWith('c_fill,g_auto/')) return value;
+  return value.substring(0, after) + 'c_fill,g_auto/' + rest;
+}
+
 Future<String> uploadImageToCloudinary(XFile image, {String? folder}) async {
   if (cloudinaryCloudName.isEmpty || cloudinaryUploadPreset.isEmpty) {
     throw Exception('Cloudinary is not configured. Set cloudinaryCloudName and cloudinaryUploadPreset.');
@@ -1437,6 +1471,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
   String photoUrl = '';
   String businessName = '';
   String mobileNumber = '';
+  String alternateMobileNumber = '';
   String locationAddress = '';
   bool? isOpen;
 
@@ -1458,6 +1493,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
       photoUrl = (data['photoUrl'] ?? '').toString();
       businessName = (data['businessName'] ?? data['name'] ?? widget.user.displayName ?? 'My Shop').toString();
       mobileNumber = (data['mobileNumber'] ?? '').toString();
+      alternateMobileNumber = (data['alternateMobileNumber'] ?? '').toString();
       locationAddress = (data['locationAddress'] ?? '').toString();
       isOpen = data['isOpen'] is bool ? data['isOpen'] as bool : null;
       final raw = data['items'];
@@ -1471,6 +1507,8 @@ class _SellerDashboardState extends State<SellerDashboard> {
   Future<void> editSellerProfile() async {
     final owner = TextEditingController(text: ownerName);
     final shop = TextEditingController(text: businessName);
+    final mobile = TextEditingController(text: mobileNumber);
+    final alternateMobile = TextEditingController(text: '');
     XFile? selectedImage;
     bool uploading = false;
     try {
@@ -1480,15 +1518,26 @@ class _SellerDashboardState extends State<SellerDashboard> {
           builder: (context, setDialogState) => AlertDialog(
             title: const Text('Edit seller profile'),
             content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              OutlinedButton.icon(
+                onPressed: uploading ? null : () async {
+                  final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                  if (image != null) setDialogState(() => selectedImage = image);
+                },
+                icon: const Icon(Icons.camera_alt),
+                label: Text(selectedImage == null ? 'Update Shop Photo' : 'New shop photo selected'),
+              ),
+              const SizedBox(height: 12),
               TextField(controller: owner, decoration: const InputDecoration(labelText: 'Your name')),
+              const SizedBox(height: 10),
+              TextFormField(controller: mobile, keyboardType: TextInputType.phone, maxLength: 10, decoration: const InputDecoration(labelText: 'Mobile Number', counterText: '')),
+              const SizedBox(height: 10),
+              TextFormField(controller: alternateMobile, keyboardType: TextInputType.phone, maxLength: 10, decoration: const InputDecoration(labelText: 'Alternate Mobile Number (optional)', counterText: '')),
               const SizedBox(height: 10),
               TextField(controller: shop, decoration: const InputDecoration(labelText: 'Shop name')),
               const SizedBox(height: 12),
+              /* Existing image picker kept visually equivalent; the button above is the primary edit action. */
               OutlinedButton.icon(onPressed: uploading ? null : () async {
-                final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
-                if (image != null) setDialogState(() => selectedImage = image);
-              }, icon: const Icon(Icons.storefront_outlined), label: Text(selectedImage == null ? 'Change shop image' : 'New shop image selected')),
-              const SizedBox(height: 6),
+
               const Align(alignment: Alignment.centerLeft, child: Text('Update your name, shop name and the shop image customers see.', style: TextStyle(color: Colors.grey, fontSize: 12))),
             ])),
             actions: [
@@ -1500,11 +1549,25 @@ class _SellerDashboardState extends State<SellerDashboard> {
                 }
                 setDialogState(() => uploading = true);
                 try {
+                  final cleanMobile = mobile.text.replaceAll(RegExp(r'\D'),'');
+                  final cleanAlternate = alternateMobile.text.replaceAll(RegExp(r'\D'),'');
+                  if (cleanMobile.length != 10 || (cleanAlternate.isNotEmpty && cleanAlternate.length != 10)) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid 10-digit mobile number.')));
+                    setDialogState(() => uploading = false);
+                    return;
+                  }
                   var newPhoto = photoUrl;
-                  if (selectedImage != null) newPhoto = await uploadImageToCloudinary(selectedImage!, folder: 'sellers/' + widget.user.uid);
+                  if (selectedImage != null) {
+                    final rawPhoto = await uploadImageToCloudinary(selectedImage!, folder: 'sellers/' + widget.user.uid);
+                    newPhoto = cloudinarySmartCropUrl(rawPhoto);
+                  }
                   await widget.user.updateDisplayName(owner.text.trim());
-                  await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({'uid':widget.user.uid,'name':owner.text.trim(),'businessName':shop.text.trim(),'photoUrl':newPhoto,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
-                  ownerName = owner.text.trim(); businessName = shop.text.trim(); photoUrl = newPhoto;
+                  await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({
+                    'uid':widget.user.uid,'name':owner.text.trim(),'businessName':shop.text.trim(),
+                    'photoUrl':newPhoto,'mobileNumber':cleanMobile,'alternateMobileNumber':cleanAlternate,
+                    'updatedAt':FieldValue.serverTimestamp()
+                  },SetOptions(merge:true));
+                  ownerName = owner.text.trim(); businessName = shop.text.trim(); photoUrl = newPhoto; mobileNumber = cleanMobile;
                   if (mounted) setState(() {});
                   if (dialog.mounted) Navigator.pop(dialog, true);
                 } catch (e) {
@@ -1517,7 +1580,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
         ),
       );
       if (saved == true && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seller profile updated.')));
-    } finally { owner.dispose(); shop.dispose(); }
+    } finally { owner.dispose(); shop.dispose(); mobile.dispose(); alternateMobile.dispose(); }
   }
 
   Future<void> pickServiceHours() async {
@@ -1537,7 +1600,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
       await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({
         'uid': widget.user.uid, 'name': ownerName, 'businessName': businessName, 'description': description.text.trim(),
         'about': about.text.trim(), 'dailyOffers': offers.text.trim(), 'openingHours': openingHours.text.trim(),
-        'isOpen': isOpen, 'items': items.take(50).toList(), 'updatedAt': FieldValue.serverTimestamp(),
+        'isOpen': isOpen, 'mobileNumber': mobileNumber, 'alternateMobileNumber': alternateMobileNumber, 'items': items.take(50).toList(), 'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (_) {}
   }
@@ -1619,7 +1682,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
     try {
       await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({
         'uid': widget.user.uid, 'name': widget.user.displayName ?? '', 'businessName': businessName,
-        'photoUrl': photoUrl, 'mobileNumber': mobileNumber, 'locationAddress': locationAddress,
+        'photoUrl': photoUrl, 'mobileNumber': mobileNumber, 'alternateMobileNumber': alternateMobileNumber, 'locationAddress': locationAddress,
         'description': description.text.trim(), 'about': about.text.trim(), 'dailyOffers': offers.text.trim(),
         'openingHours': openingHours.text.trim(), 'isOpen': isOpen, 'items': items.take(50).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -1951,7 +2014,7 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
     final name=TextEditingController(),phone=TextEditingController(),price=TextEditingController(),capacity=TextEditingController(),custom=TextEditingController();
-    String category=vehicleCategories.first; bool negotiate=true;
+    String category=vehicleCategories.first; bool negotiate=true; XFile? vehiclePhoto; bool uploading=false;
     try{
       final ok=await showDialog<bool>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setDialogState)=>AlertDialog(
         title:const Text('List your vehicle'),
@@ -1960,6 +2023,19 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
           if(category=='Other / Enter manually')TextField(controller:custom,decoration:const InputDecoration(labelText:'Enter vehicle type')),
           TextField(controller:name,decoration:const InputDecoration(labelText:'Owner name')),
           TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Mobile number')),
+          const SizedBox(height:10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: uploading ? null : () async {
+                final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                if (image != null) setDialogState(() => vehiclePhoto = image);
+              },
+              icon: const Icon(Icons.camera_alt),
+              label: Text(vehiclePhoto == null ? 'Upload vehicle photo' : 'Vehicle photo selected'),
+            ),
+          ),
+          const Align(alignment:Alignment.centerLeft,child:Text('Vehicle photo is required.',style:TextStyle(color:Colors.grey,fontSize:12))),
           TextField(controller:capacity,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Seats / capacity')),
           TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Your price (₹)')),
           SwitchListTile(contentPadding:EdgeInsets.zero,title:const Text('Allow negotiation'),value:negotiate,onChanged:(v)=>setDialogState(()=>negotiate=v)),
@@ -1969,10 +2045,23 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
       )))??false;
       if(!ok)return;
       final cleanPhone=phone.text.replaceAll(RegExp(r'\D'),''); final cleanPrice=num.tryParse(price.text.trim())??0;
-      if(name.text.trim().isEmpty||cleanPhone.length!=10||cleanPrice<=0){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter owner name, valid 10-digit mobile number and price.')));return;}
+      if(name.text.trim().isEmpty||cleanPhone.length!=10||cleanPrice<=0||vehiclePhoto==null){
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter owner name, valid 10-digit mobile number, price and upload a vehicle photo.')));return;
+      }
       final type=category=='Other / Enter manually'?custom.text.trim():category;
       if(type.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter the vehicle type.')));return;}
-      await FirebaseFirestore.instance.collection('vehicles').add({'ownerUid':user.uid,'ownerName':name.text.trim(),'ownerPhone':cleanPhone,'category':type,'capacity':int.tryParse(capacity.text.trim())??0,'price':cleanPrice,'allowNegotiation':negotiate,'status':'available','createdAt':FieldValue.serverTimestamp()});
+      try {
+        uploading = true;
+        final vehiclePhotoUrl = await uploadImageToCloudinary(vehiclePhoto!, folder: 'vehicles/' + user.uid);
+        await FirebaseFirestore.instance.collection('vehicles').add({
+          'ownerUid':user.uid,'ownerName':name.text.trim(),'ownerPhone':cleanPhone,'category':type,
+          'capacity':int.tryParse(capacity.text.trim())??0,'price':cleanPrice,'allowNegotiation':negotiate,
+          'vehiclePhotoUrl':vehiclePhotoUrl,'status':'available','createdAt':FieldValue.serverTimestamp()
+        });
+      } catch(e) {
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Vehicle photo upload failed: '+e.toString())));
+        return;
+      }
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Vehicle published successfully.')));
     }finally{name.dispose();phone.dispose();price.dispose();capacity.dispose();custom.dispose();}
   }
@@ -2062,7 +2151,7 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
 
   Future<void> _applyRidePartner(BuildContext context) async {
     final user=FirebaseAuth.instance.currentUser;if(user==null)return;
-    final name=TextEditingController(),mobile=TextEditingController(),photo=TextEditingController();String gender='Prefer not to say';
+    final name=TextEditingController(),mobile=TextEditingController();String gender='Prefer not to say';XFile? selectedPhoto;bool uploading=false;
     try{
       await showDialog<void>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(
         title:const Text('Apply for Booking'),
@@ -2070,16 +2159,42 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
           TextField(controller:name,decoration:const InputDecoration(labelText:'Name')),
           DropdownButtonFormField<String>(initialValue:gender,decoration:const InputDecoration(labelText:'Gender'),items:['Male','Female','Other','Prefer not to say'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v){if(v!=null)setState(()=>gender=v);}),
           TextField(controller:mobile,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Mobile number')),
-          TextField(controller:photo,decoration:const InputDecoration(labelText:'Profile photo URL')),
+          const SizedBox(height:10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: uploading ? null : () async {
+                final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                if (image != null) setState(() => selectedPhoto = image);
+              },
+              icon: const Icon(Icons.camera_alt),
+              label: Text(selectedPhoto == null ? 'Upload profile photo' : 'Profile photo selected'),
+            ),
+          ),
           const Align(alignment:Alignment.centerLeft,child:Text('Required: name, gender, mobile number and profile photo.',style:TextStyle(color:Colors.grey,fontSize:12))),
         ])),
         actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext),child:const Text('Cancel')),FilledButton(onPressed:()async{
-          final ph=mobile.text.replaceAll(RegExp(r'\D'),'');if(name.text.trim().isEmpty||ph.length!=10||photo.text.trim().isEmpty)return;
-          await FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).set({'uid':user.uid,'name':name.text.trim(),'gender':gender,'mobileNumber':ph,'photoUrl':photo.text.trim(),'vehicleType':'two_wheeler','status':'available','createdAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
-          if(dialogContext.mounted)Navigator.pop(dialogContext);if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride partner profile submitted.')));
+          final ph=mobile.text.replaceAll(RegExp(r'\D'),'');
+          if(name.text.trim().isEmpty||ph.length!=10||selectedPhoto==null){
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter name, valid 10-digit mobile number and upload a profile photo.')));
+            return;
+          }
+          setState(() => uploading = true);
+          try {
+            final photoUrl = await uploadImageToCloudinary(selectedPhoto!, folder: 'ride-partners/' + user.uid);
+            await FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).set({
+              'uid':user.uid,'name':name.text.trim(),'gender':gender,'mobileNumber':ph,'photoUrl':photoUrl,
+              'vehicleType':'two_wheeler','status':'available','createdAt':FieldValue.serverTimestamp()
+            },SetOptions(merge:true));
+            if(dialogContext.mounted)Navigator.pop(dialogContext);
+            if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride partner profile submitted.')));
+          } catch(e) {
+            if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Profile photo upload failed: '+e.toString())));
+            setState(() => uploading = false);
+          }
         },child:const Text('Submit'))],
       )));
-    }finally{name.dispose();mobile.dispose();photo.dispose();}
+    }finally{name.dispose();mobile.dispose();}
   }
 }
 

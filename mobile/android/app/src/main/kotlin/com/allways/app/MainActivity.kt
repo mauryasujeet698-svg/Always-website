@@ -1,5 +1,7 @@
 package com.allways.app
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -7,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
+import androidx.core.app.NotificationCompat
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -23,11 +26,35 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "showNotification" -> result.success("shown")
+                    "showNotification" -> { showNotification(call.argument<String>("title") ?: "ALLways", call.argument<String>("body") ?: "New update"); result.success("shown") }
                     "installApk" -> installApk(call.argument<String>("path"), result)
                     else -> result.notImplemented()
                 }
             }
+    }
+
+
+    private fun showNotification(title: String, body: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "allways_updates"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(NotificationChannel(channelId, "ALLways Updates", NotificationManager.IMPORTANCE_HIGH))
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        val pending = intent?.let {
+            PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(applicationInfo.icon)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .apply { if (pending != null) setContentIntent(pending) }
+            .build()
+        manager.notify((System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
     }
 
     private fun installApk(path: String?, result: MethodChannel.Result) {

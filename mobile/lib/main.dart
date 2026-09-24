@@ -901,6 +901,32 @@ class _ProfilePageState extends State<ProfilePage>{
     );
   }
 
+  Future<void> _chooseLanguage(BuildContext c) async {
+    final prefs=await SharedPreferences.getInstance();
+    final current=prefs.getString('allways_language')??'English';
+    const languages=['English','Hindi','Hinglish','Bhojpuri','Awadhi'];
+    await showDialog<void>(
+      context:c,
+      builder:(dialogContext)=>AlertDialog(
+        title:const Text('Language'),
+        content:Column(mainAxisSize:MainAxisSize.min,children:[
+          for(final language in languages)
+            RadioListTile<String>(
+              value:language,
+              groupValue:current,
+              title:Text(language),
+              onChanged:(value) async {
+                if(value==null)return;
+                await prefs.setString('allways_language',value);
+                if(dialogContext.mounted)Navigator.pop(dialogContext);
+                if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Language preference saved: '+value)));
+              },
+            ),
+        ]),
+      ),
+    );
+  }
+
   Future<void> _openNotifications(BuildContext c) async {
     await showModalBottomSheet<void>(context:c,isScrollControlled:true,showDragHandle:true,builder:(_)=>const NotificationsPage());
   }
@@ -954,6 +980,7 @@ class _ProfilePageState extends State<ProfilePage>{
         _menuCard(c,icon:Icons.local_shipping_outlined,title:'ALLways Carrier',subtitle:'Become a Seller or Delivery Partner',onTap:()=>_openCarrier(c,u)),
         _menuCard(c,icon:Icons.notifications_outlined,title:'Notifications',subtitle:'Alerts, order updates and push settings',onTap:()=>_openNotifications(c)),
         _menuCard(c,icon:Icons.brightness_6_outlined,title:'Appearance',subtitle:'Light, Dark or System theme',onTap:()=>_chooseAppearance(c)),
+        _menuCard(c,icon:Icons.language_outlined,title:'Language',subtitle:'Choose your preferred app language',onTap:()=>_chooseLanguage(c)),
         _menuCard(c,icon:Icons.share_outlined,title:'Share ALLways',subtitle:'Share ALLways with friends and family',onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
         _menuCard(c,icon:Icons.system_update_outlined,title:'Check for Updates',subtitle:'Check for the latest ALLways version',onTap:()=>_checkForUpdate(c)),
         _menuCard(c,icon:Icons.privacy_tip_outlined,title:'Privacy Policy',subtitle:'How ALLways handles your information',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const PrivacyPolicyPage()))),
@@ -1612,7 +1639,17 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
                     onChanged: loadingDuty ? null : _setDutyStatus,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                Align(alignment: Alignment.centerLeft, child: Text('Service Partner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
+                const SizedBox(height: 8),
+                Row(children:[
+                  Expanded(child:OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage())),icon:const Icon(Icons.directions_car_outlined),label:const Text('Book vehicle'))),
+                  const SizedBox(width:10),
+                  Expanded(child:OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage())),icon:const Icon(Icons.two_wheeler_outlined),label:const Text('Book a ride partner'))),
+                ]),
+                const SizedBox(height: 6),
+                const Text('Service Partner includes vehicle booking and two-wheeler ride sharing. Contact details unlock only after a confirmed booking.',style:TextStyle(color:Colors.grey,fontSize:12)),
+                const SizedBox(height:14),
                 StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: FirebaseFirestore.instance.collection('orders').where('carrierUid', isEqualTo: widget.user.uid).snapshots(),
                   builder: (context, snapshot) {
@@ -1737,6 +1774,154 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
         ],
       ),
     );
+  }
+}
+
+const vehicleCategories = <String>[
+  'Motorcycle','Scooter','E-bike','Auto Rickshaw','E-Rickshaw','Hatchback','Sedan','SUV','MUV',
+  'Luxury Car','Taxi / Cab','Tempo Traveller','Van','Mini Bus','Bus','Pickup Truck','Mini Truck (Tata Ace)',
+  'Bolero Pickup','Goods Auto','Cargo Van','Tractor','Tractor Trolley','Trailer','Ambulance','Other / Enter manually',
+];
+
+class VehicleBookingPage extends StatefulWidget {
+  const VehicleBookingPage({super.key});
+  @override State<VehicleBookingPage> createState()=>_VehicleBookingPageState();
+}
+
+class _VehicleBookingPageState extends State<VehicleBookingPage> {
+  Future<void> _publishVehicle() async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
+    final name=TextEditingController(),phone=TextEditingController(),price=TextEditingController(),capacity=TextEditingController(),custom=TextEditingController();
+    String category=vehicleCategories.first; bool negotiate=true;
+    try{
+      final ok=await showDialog<bool>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setDialogState)=>AlertDialog(
+        title:const Text('List your vehicle'),
+        content:SizedBox(width:420,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+          DropdownButtonFormField<String>(initialValue:category,decoration:const InputDecoration(labelText:'Vehicle category'),items:vehicleCategories.map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v){if(v!=null)setDialogState(()=>category=v);}),
+          if(category=='Other / Enter manually')TextField(controller:custom,decoration:const InputDecoration(labelText:'Enter vehicle type')),
+          TextField(controller:name,decoration:const InputDecoration(labelText:'Owner name')),
+          TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Mobile number')),
+          TextField(controller:capacity,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Seats / capacity')),
+          TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Your price (₹)')),
+          SwitchListTile(contentPadding:EdgeInsets.zero,title:const Text('Allow negotiation'),value:negotiate,onChanged:(v)=>setDialogState(()=>negotiate=v)),
+          const Align(alignment:Alignment.centerLeft,child:Text('You choose the price. ALLways does not set a fixed vehicle-booking price.',style:TextStyle(color:Colors.grey,fontSize:12))),
+        ]))),
+        actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(dialogContext,true),child:const Text('Publish'))],
+      )))??false;
+      if(!ok)return;
+      final cleanPhone=phone.text.replaceAll(RegExp(r'\D'),''); final cleanPrice=num.tryParse(price.text.trim())??0;
+      if(name.text.trim().isEmpty||cleanPhone.length!=10||cleanPrice<=0){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter owner name, valid 10-digit mobile number and price.')));return;}
+      final type=category=='Other / Enter manually'?custom.text.trim():category;
+      if(type.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter the vehicle type.')));return;}
+      await FirebaseFirestore.instance.collection('vehicles').add({'ownerUid':user.uid,'ownerName':name.text.trim(),'ownerPhone':cleanPhone,'category':type,'capacity':int.tryParse(capacity.text.trim())??0,'price':cleanPrice,'allowNegotiation':negotiate,'status':'available','createdAt':FieldValue.serverTimestamp()});
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Vehicle published successfully.')));
+    }finally{name.dispose();phone.dispose();price.dispose();capacity.dispose();custom.dispose();}
+  }
+
+  Future<void> _book(DocumentSnapshot<Map<String,dynamic>> doc,{required bool negotiate}) async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
+    final d=doc.data()??{};
+    await FirebaseFirestore.instance.collection('vehicleBookings').add({'vehicleId':doc.id,'ownerUid':d['ownerUid'],'ownerName':d['ownerName'],'ownerPhone':d['ownerPhone'],'customerUid':user.uid,'customerName':user.displayName??'ALLways customer','customerEmail':user.email??'','category':d['category'],'listedPrice':d['price'],'mode':negotiate?'negotiation':'book','status':'Booked','createdAt':FieldValue.serverTimestamp()});
+    if(!mounted)return;
+    await showDialog<void>(context:context,builder:(c)=>AlertDialog(
+      title:Text(negotiate?'Booking request sent':'Vehicle booked'),
+      content:Text(negotiate?'The vehicle owner can now contact you to negotiate and confirm the final price.':'Booking confirmed. You can now contact the vehicle owner.'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Done')),FilledButton.icon(onPressed:()=>_call(d['ownerPhone']?.toString()??''),icon:const Icon(Icons.call),label:const Text('Contact owner'))],
+    ));
+  }
+
+  Future<void> _call(String phone) async { if(phone.trim().isEmpty)return; await launchUrl(Uri.parse('tel:'+phone.trim())); }
+
+  @override Widget build(BuildContext context){
+    final user=FirebaseAuth.instance.currentUser;
+    return Scaffold(appBar:AppBar(title:const Text('Book vehicle')),body:StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+      stream:FirebaseFirestore.instance.collection('vehicles').where('status',isEqualTo:'available').snapshots(),
+      builder:(context,snapshot){
+        final docs=snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[];
+        return ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
+          Card(child:ListTile(leading:const Icon(Icons.add_business_outlined),title:const Text('Offer your vehicle',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Vehicle owners choose their own price and can allow negotiation.'),trailing:const Icon(Icons.chevron_right),onTap:user==null?null:_publishVehicle)),
+          const SizedBox(height:10),const Text('Available vehicles',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:8),
+          if(snapshot.hasError)const InfoCard(title:'Could not load vehicles',detail:'Please try again later.'),
+          if(!snapshot.hasData)const Padding(padding:EdgeInsets.all(20),child:Center(child:CircularProgressIndicator())),
+          if(snapshot.hasData&&docs.isEmpty)const InfoCard(title:'No vehicles listed yet',detail:'Vehicle owners can publish a vehicle from “Offer your vehicle”.'),
+          ...docs.map((doc){final d=doc.data();final allow=d['allowNegotiation']==true;return Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Row(children:[const Icon(Icons.directions_car_outlined),const SizedBox(width:10),Expanded(child:Text((d['category']??'Vehicle').toString(),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900))),Text('₹'+(d['price']??0).toString(),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900))]),
+            const SizedBox(height:6),Text('Owner: '+(d['ownerName']??'').toString()+(d['capacity']!=null&&d['capacity'].toString()!='0'?' • Capacity: '+d['capacity'].toString():'')),
+            const SizedBox(height:4),Text(allow?'Owner allows negotiation':'Fixed owner price',style:const TextStyle(color:Colors.grey)),const SizedBox(height:10),
+            Row(children:[Expanded(child:FilledButton(onPressed:()=>_book(doc,negotiate:false),child:const Text('Book'))),if(allow)...[const SizedBox(width:8),Expanded(child:OutlinedButton(onPressed:()=>_book(doc,negotiate:true),child:const Text('Book & negotiate')))]])
+          ])));}),
+          const SizedBox(height:14),const Text('25 popular vehicle categories',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:8),
+          Wrap(spacing:8,runSpacing:8,children:vehicleCategories.map((x)=>Chip(label:Text(x))).toList()),
+        ]);
+      },
+    ));
+  }
+}
+
+class RidePartnerPage extends StatefulWidget {
+  const RidePartnerPage({super.key});
+  @override State<RidePartnerPage> createState()=>_RidePartnerPageState();
+}
+
+class _RidePartnerPageState extends State<RidePartnerPage> {
+  Future<void> _bookRide() async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
+    final destination=TextEditingController(),km=TextEditingController(); int seats=1;
+    try{
+      final ok=await showDialog<bool>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setDialogState)=>AlertDialog(
+        title:const Text('Look for a Ride'),
+        content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+          DropdownButtonFormField<int>(initialValue:seats,decoration:const InputDecoration(labelText:'Available seats'),items:List.generate(3,(i)=>DropdownMenuItem(value:i+1,child:Text((i+1).toString()+' seat'+(i==0?'':'s')))),onChanged:(v){if(v!=null)setDialogState(()=>seats=v);}),
+          TextField(controller:destination,decoration:const InputDecoration(labelText:'Destination')),
+          TextField(controller:km,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Ride distance (km)')),
+          const SizedBox(height:8),const Text('Pickup is from a main road only. Doorstep pickup is not available.',style:TextStyle(color:Colors.grey,fontSize:12)),
+        ])),
+        actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(dialogContext,true),child:const Text('Find ride'))],
+      )))??false;
+      if(!ok)return;
+      final distance=num.tryParse(km.text.trim())??0;
+      if(destination.text.trim().isEmpty||distance<=0){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter destination and a valid distance.')));return;}
+      final price=distance<5?10:distance<=5?15:20;
+      final snap=await FirebaseFirestore.instance.collection('ridePartners').where('vehicleType',isEqualTo:'two_wheeler').where('status',isEqualTo:'available').get();
+      if(snap.docs.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('No two-wheeler ride partner is available right now.')));return;}
+      final partner=snap.docs.first.data();
+      await FirebaseFirestore.instance.collection('rideBookings').add({'customerUid':user.uid,'customerName':user.displayName??'ALLways customer','partnerUid':partner['uid'],'partnerName':partner['name'],'partnerPhone':partner['mobileNumber'],'destination':destination.text.trim(),'distanceKm':distance,'seats':seats,'price':price,'status':'Booked','pickupRule':'Main road pickup only','createdAt':FieldValue.serverTimestamp()});
+      if(mounted)await showDialog<void>(context:context,builder:(c)=>AlertDialog(title:const Text('Ride booking successful'),content:Text('₹'+price.toString()+' • '+distance.toString()+' km • Two-wheeler only. You can now contact the ride partner.'),actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Done')),FilledButton.icon(onPressed:()=>launchUrl(Uri.parse('tel:'+(partner['mobileNumber']??'').toString())),icon:const Icon(Icons.call),label:const Text('Contact partner'))]));
+    }finally{destination.dispose();km.dispose();}
+  }
+
+  @override Widget build(BuildContext context){
+    return Scaffold(appBar:AppBar(title:const Text('Book a ride partner')),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
+      Card(child:ListTile(leading:const Icon(Icons.two_wheeler_outlined),title:const Text('Look for a Ride',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Two-wheeler only • main-road pickup • no doorstep pickup'),trailing:const Icon(Icons.chevron_right),onTap:_bookRide)),
+      Card(child:ListTile(leading:const Icon(Icons.person_add_alt_1_outlined),title:const Text('Apply for Booking',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Become a two-wheeler ride partner'),trailing:const Icon(Icons.chevron_right),onTap:()=>_applyRidePartner(context))),
+      const SizedBox(height:12),const Text('Ride pricing',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:6),const Text('Below 5 km: ₹10\n5 km: ₹15\nAbove 5 km: ₹20'),
+      const SizedBox(height:12),const Text('Important',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const Text('ALLways is providing this as a trial platform without commission. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants. Please verify the partner and vehicle before travelling. You can report a partner or ride through ALLways.'),
+    ]));
+  }
+
+  Future<void> _applyRidePartner(BuildContext context) async {
+    final user=FirebaseAuth.instance.currentUser;if(user==null)return;
+    final name=TextEditingController(),mobile=TextEditingController(),photo=TextEditingController();String gender='Prefer not to say';
+    try{
+      await showDialog<void>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(
+        title:const Text('Apply for Booking'),
+        content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+          TextField(controller:name,decoration:const InputDecoration(labelText:'Name')),
+          DropdownButtonFormField<String>(initialValue:gender,decoration:const InputDecoration(labelText:'Gender'),items:['Male','Female','Other','Prefer not to say'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v){if(v!=null)setState(()=>gender=v);}),
+          TextField(controller:mobile,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Mobile number')),
+          TextField(controller:photo,decoration:const InputDecoration(labelText:'Profile photo URL')),
+          const Align(alignment:Alignment.centerLeft,child:Text('Required: name, gender, mobile number and profile photo.',style:TextStyle(color:Colors.grey,fontSize:12))),
+        ])),
+        actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext),child:const Text('Cancel')),FilledButton(onPressed:()async{
+          final ph=mobile.text.replaceAll(RegExp(r'\D'),'');if(name.text.trim().isEmpty||ph.length!=10||photo.text.trim().isEmpty)return;
+          await FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).set({'uid':user.uid,'name':name.text.trim(),'gender':gender,'mobileNumber':ph,'photoUrl':photo.text.trim(),'vehicleType':'two_wheeler','status':'available','createdAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+          if(dialogContext.mounted)Navigator.pop(dialogContext);if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride partner profile submitted.')));
+        },child:const Text('Submit'))],
+      )));
+    }finally{name.dispose();mobile.dispose();photo.dispose();}
   }
 }
 

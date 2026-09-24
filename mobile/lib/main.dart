@@ -423,11 +423,11 @@ class _ShellState extends State<Shell> {
           ),
         Expanded(child:pages[tab]),
       ])),
-      bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:const[
-        NavigationDestination(icon:Icon(Icons.shopping_bag_outlined),label:tr('Shop')),
-        NavigationDestination(icon:Icon(Icons.directions_car_outlined),label:tr('Travel')),
-        NavigationDestination(icon:Icon(Icons.storefront_outlined),label:tr('Local sellers')),
-        NavigationDestination(icon:Icon(Icons.person_outline),label:tr('Profile'))]),
+      bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:[
+        NavigationDestination(icon:const Icon(Icons.shopping_bag_outlined),label:tr('Shop')),
+        NavigationDestination(icon:const Icon(Icons.directions_car_outlined),label:tr('Travel')),
+        NavigationDestination(icon:const Icon(Icons.storefront_outlined),label:tr('Local sellers')),
+        NavigationDestination(icon:const Icon(Icons.person_outline),label:tr('Profile'))]),
       floatingActionButton:count==0?null:FloatingActionButton.extended(
         onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(cart:cart,addresses:addresses,onQty:qty,onPlace:placeOrder))),
         icon:const Icon(Icons.shopping_cart),label:Text(count.toString()+' • ₹'+total.toStringAsFixed(0))),

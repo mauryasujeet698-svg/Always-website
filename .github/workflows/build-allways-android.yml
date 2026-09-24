@@ -546,7 +546,7 @@ jobs:
               dep = '    implementation "com.google.firebase:firebase-messaging:25.1.3"'
               if dep not in s:
                   if "dependencies {" in s:
-                      s = s.replace("dependencies {", "dependencies {\\n" + dep, 1)
+                      s = s.replace("dependencies {", "dependencies {\n" + dep, 1)
                   else:
                       raise SystemExit("dependencies block missing in android/app/build.gradle")
                   p.write_text(s)
@@ -556,9 +556,9 @@ jobs:
               dep = '    implementation("com.google.firebase:firebase-messaging:25.1.3")'
               if dep not in s:
                   if "dependencies {" in s:
-                      s = s.replace("dependencies {", "dependencies {\\n" + dep, 1)
+                      s = s.replace("dependencies {", "dependencies {\n" + dep, 1)
                   elif "android {" in s:
-                      s = s.replace("android {", "dependencies {\\n" + dep + "\\n}\\n\\nandroid {", 1)
+                      s = s.replace("android {", "dependencies {\n" + dep + "\n}\n\nandroid {", 1)
                   else:
                       raise SystemExit("No insertion point found in android/app/build.gradle.kts")
                   p.write_text(s)

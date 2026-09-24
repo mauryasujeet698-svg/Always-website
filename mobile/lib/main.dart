@@ -937,8 +937,11 @@ class _ProfilePageState extends State<ProfilePage>{
             Container(
               width:48,height:48,
               decoration:BoxDecoration(color:danger?scheme.errorContainer:scheme.primaryContainer,borderRadius:BorderRadius.circular(14)),
-              child: Stack(clipBehavior: Clip.none, children: [
-                Icon(icon,color:danger?scheme.onErrorContainer:scheme.onPrimaryContainer),
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon,color:danger?scheme.onErrorContainer:scheme.onPrimaryContainer),
                 if(showDot) Positioned(right:-3,top:-3,child:Container(width:10,height:10,decoration:BoxDecoration(color:Colors.green,shape:BoxShape.circle,border:Border.all(color:scheme.surface,width:2)))),
               ]),
             ),

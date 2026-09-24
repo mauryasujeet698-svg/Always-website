@@ -83,6 +83,24 @@ const updateManifestUrl='https://raw.githubusercontent.com/mauryasujeet698-svg/A
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 final ValueNotifier<bool> unreadNotificationNotifier = ValueNotifier(false);
+final ValueNotifier<String> languageNotifier = ValueNotifier('English');
+
+const Map<String,Map<String,String>> _translations = {
+  'Hindi': {
+    'Shop':'दुकान','Travel':'यात्रा','Local sellers':'स्थानीय विक्रेता','Profile':'प्रोफ़ाइल','Notifications':'सूचनाएँ','Appearance':'दिखावट','Language':'भाषा','Share ALLways':'ALLways साझा करें','Check for Updates':'अपडेट जाँचें','Log Out':'लॉग आउट','Book vehicle':'वाहन बुक करें','Book a ride partner':'राइड पार्टनर बुक करें','Search products':'उत्पाद खोजें','Orders':'ऑर्डर','Cart':'कार्ट','Add to cart':'कार्ट में जोड़ें','New Order':'नया ऑर्डर','Confirmed':'पुष्टि','Preparing':'तैयारी में','Out for delivery':'डिलीवरी के लिए रवाना','Delivered':'डिलीवर हो गया','Cancelled':'रद्द','Save changes':'बदलाव सहेजें','Close':'बंद करें','Edit seller profile':'सेलर प्रोफ़ाइल संपादित करें','Your name':'आपका नाम','Shop name':'दुकान का नाम','Change shop image':'दुकान की फोटो बदलें'
+  },
+  'Hinglish': {
+    'Shop':'Shop','Travel':'Travel','Local sellers':'Local Sellers','Profile':'Profile','Notifications':'Notifications','Appearance':'Appearance','Language':'Language','Share ALLways':'ALLways Share Karein','Check for Updates':'Update Check Karein','Log Out':'Logout','Book vehicle':'Vehicle Book Karein','Book a ride partner':'Ride Partner Book Karein','Search products':'Products Search Karein','Orders':'Orders','Cart':'Cart','Add to cart':'Cart mein add karein','New Order':'Naya Order','Confirmed':'Confirmed','Preparing':'Preparing','Out for delivery':'Delivery ke liye nikla','Delivered':'Delivered','Cancelled':'Cancelled','Save changes':'Changes Save Karein','Close':'Close','Edit seller profile':'Seller Profile Edit Karein','Your name':'Aapka naam','Shop name':'Shop ka naam','Change shop image':'Shop ki photo badlein'
+  },
+  'Bhojpuri': {
+    'Shop':'दुकान','Travel':'यात्रा','Local sellers':'लोकल दुकानदार','Profile':'प्रोफाइल','Notifications':'सूचना','Appearance':'दिखावट','Language':'भाषा','Share ALLways':'ALLways साझा करीं','Check for Updates':'अपडेट देखीं','Log Out':'लॉग आउट','Book vehicle':'गाड़ी बुक करीं','Book a ride partner':'राइड पार्टनर बुक करीं','Search products':'सामान खोजीं','Orders':'ऑर्डर','Cart':'कार्ट','Add to cart':'कार्ट में डालीं','New Order':'नया ऑर्डर','Confirmed':'पक्का','Preparing':'तैयार हो रहल','Out for delivery':'डिलीवरी खातिर निकलल','Delivered':'पहुंच गइल','Cancelled':'रद्द','Save changes':'बदलाव सेव करीं','Close':'बंद करीं','Edit seller profile':'सेलर प्रोफाइल बदलीं','Your name':'रउरा के नाम','Shop name':'दुकान के नाम','Change shop image':'दुकान के फोटो बदलीं'
+  },
+  'Awadhi': {
+    'Shop':'दुकान','Travel':'यात्रा','Local sellers':'स्थानीय दुकानदार','Profile':'प्रोफाइल','Notifications':'सूचना','Appearance':'दिखावट','Language':'भाषा','Share ALLways':'ALLways साझा करौ','Check for Updates':'अपडेट देखौ','Log Out':'लॉग आउट','Book vehicle':'गाड़ी बुक करौ','Book a ride partner':'राइड पार्टनर बुक करौ','Search products':'सामान खोजौ','Orders':'ऑर्डर','Cart':'कार्ट','Add to cart':'कार्ट मा डालौ','New Order':'नवा ऑर्डर','Confirmed':'पक्का','Preparing':'तैयार होत','Out for delivery':'डिलीवरी खातिर निकर गवा','Delivered':'पहुंच गवा','Cancelled':'रद्द','Save changes':'बदलाव सेव करौ','Close':'बंद करौ','Edit seller profile':'सेलर प्रोफाइल बदलीं','Your name':'आपका नाउँ','Shop name':'दुकान का नाउँ','Change shop image':'दुकान की फोटो बदलीं'
+  },
+};
+
+String tr(String key) => _translations[languageNotifier.value]?[key] ?? key;
 
 @pragma('vm:entry-point')
 Future<void> bg(RemoteMessage m) async { await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); }
@@ -94,6 +112,8 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final savedNotifications = prefs.getStringList('allways_notifications') ?? <String>[];
   unreadNotificationNotifier.value = savedNotifications.isNotEmpty;
+  final savedLanguage = prefs.getString('allways_language') ?? 'English';
+  languageNotifier.value = _translations.containsKey(savedLanguage) ? savedLanguage : 'English';
   final savedTheme = prefs.getString('allways_theme_mode');
   if (savedTheme == 'light') {
     themeNotifier.value = ThemeMode.light;
@@ -156,6 +176,17 @@ class _ShellState extends State<Shell> {
     super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();
     timer=Timer.periodic(const Duration(seconds:30),(_)=>loadInventory(silent:true));
     auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();loadWishlist();}else{addresses=[];wishlistIds.clear();}});
+    FirebaseMessaging.onMessageOpenedApp.listen((m){
+      final title=m.notification?.title??'ALLways';
+      final body=m.notification?.body??'Open ALLways to view this update.';
+      saveIncomingNotification(title,body);
+    });
+    FirebaseMessaging.instance.getInitialMessage().then((m){
+      if(m==null)return;
+      final title=m.notification?.title??'ALLways';
+      final body=m.notification?.body??'Open ALLways to view this update.';
+      saveIncomingNotification(title,body);
+    });
     messages=FirebaseMessaging.onMessage.listen((m)async{final title=m.notification?.title??'ALLways';final body=m.notification?.body??'New update';await saveIncomingNotification(title,body);if(!mounted)return;try{await const MethodChannel('com.allways.app/apk_installer').invokeMethod('showNotification',{'title':title,'body':body});}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
     if(user!=null){setupNotifications();loadAddresses();loadWishlist();}
   }
@@ -165,7 +196,8 @@ class _ShellState extends State<Shell> {
     try{
       final prefs=await SharedPreferences.getInstance();
       if(prefs.getBool('allways_notifications_enabled')==false)return;
-      await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);
+      await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true,provisional:false);
+      try { await const MethodChannel('com.allways.app/apk_installer').invokeMethod('createNotificationChannel'); } catch (_) {}
       final t=await FirebaseMessaging.instance.getToken();
       Future<void> save(String token) async {
         final p=await SharedPreferences.getInstance();
@@ -381,7 +413,7 @@ class _ShellState extends State<Shell> {
       const LocalSellersPage(),
       ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder),
     ];
-    return Scaffold(
+    return ValueListenableBuilder<String>(valueListenable:languageNotifier,builder:(context,lang,_)=>Scaffold(
       body:SafeArea(child:Column(children:[
         if(updateVersion!=null)
           MaterialBanner(
@@ -392,14 +424,14 @@ class _ShellState extends State<Shell> {
         Expanded(child:pages[tab]),
       ])),
       bottomNavigationBar:NavigationBar(selectedIndex:tab,onDestinationSelected:(i)=>setState(()=>tab=i),destinations:const[
-        NavigationDestination(icon:Icon(Icons.shopping_bag_outlined),label:'Shop'),
-        NavigationDestination(icon:Icon(Icons.directions_car_outlined),label:'Travel'),
-        NavigationDestination(icon:Icon(Icons.storefront_outlined),label:'Local sellers'),
-        NavigationDestination(icon:Icon(Icons.person_outline),label:'Profile')]),
+        NavigationDestination(icon:Icon(Icons.shopping_bag_outlined),label:tr('Shop')),
+        NavigationDestination(icon:Icon(Icons.directions_car_outlined),label:tr('Travel')),
+        NavigationDestination(icon:Icon(Icons.storefront_outlined),label:tr('Local sellers')),
+        NavigationDestination(icon:Icon(Icons.person_outline),label:tr('Profile'))]),
       floatingActionButton:count==0?null:FloatingActionButton.extended(
         onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(cart:cart,addresses:addresses,onQty:qty,onPlace:placeOrder))),
         icon:const Icon(Icons.shopping_cart),label:Text(count.toString()+' • ₹'+total.toStringAsFixed(0))),
-    );
+    ));
   }
 }
 
@@ -835,14 +867,14 @@ class TravelPage extends StatelessWidget {
   const TravelPage({super.key});
   Widget _actionCard(BuildContext context,{required IconData icon,required String title,required String subtitle,required VoidCallback onTap})=>Card(margin:const EdgeInsets.only(bottom:12),clipBehavior:Clip.antiAlias,child:InkWell(onTap:onTap,child:Padding(padding:const EdgeInsets.all(18),child:Row(children:[Container(width:54,height:54,decoration:BoxDecoration(color:Theme.of(context).colorScheme.primaryContainer,borderRadius:BorderRadius.circular(16)),child:Icon(icon,color:Theme.of(context).colorScheme.onPrimaryContainer)),const SizedBox(width:14),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:5),Text(subtitle,style:TextStyle(color:Theme.of(context).colorScheme.onSurfaceVariant,height:1.35))])),const Icon(Icons.chevron_right)]))));
   @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.fromLTRB(16,18,16,110),children:[
-    const Text('Travel',style:TextStyle(fontSize:30,fontWeight:FontWeight.w900)),
+    Text(tr('Travel'),style:const TextStyle(fontSize:30,fontWeight:FontWeight.w900)),
     const SizedBox(height:4),
     const Text('Book vehicles and connect with a two-wheeler ride partner.',style:TextStyle(color:Colors.grey)),
     const SizedBox(height:18),
     Container(padding:const EdgeInsets.all(20),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFF311B92),Color(0xFFE91E63)],begin:Alignment.topLeft,end:Alignment.bottomRight),borderRadius:BorderRadius.circular(22)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(Icons.travel_explore,color:Colors.white,size:38),SizedBox(height:12),Text('ALLways Mobility',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w900)),SizedBox(height:6),Text('Local vehicle booking and two-wheeler ride sharing. No commission during the trial.',style:TextStyle(color:Colors.white70,height:1.4))])),
     const SizedBox(height:18),
-    _actionCard(context,icon:Icons.directions_car_outlined,title:'Book vehicle',subtitle:'Choose from 25 vehicle categories. Owners set their own price, with Book or Book & negotiate.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage()))),
-    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a ride partner',subtitle:'Two-wheeler only. Select seats, destination and kilometres. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),
+    _actionCard(context,icon:Icons.directions_car_outlined,title:tr('Book vehicle'),subtitle:'Choose from 25 vehicle categories. Owners set their own price, with Book or Book & negotiate.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage()))),
+    _actionCard(context,icon:Icons.two_wheeler_outlined,title:tr('Book a ride partner'),subtitle:'Two-wheeler only. Select seats, destination and kilometres. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.info_outline),const SizedBox(width:10),Expanded(child:Text('Trial service: verify the partner and vehicle before travelling. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants.',style:TextStyle(color:Colors.grey,height:1.35)))]))),
   ]);
 }
@@ -940,6 +972,7 @@ class _ProfilePageState extends State<ProfilePage>{
               onChanged:(value) async {
                 if(value==null)return;
                 await prefs.setString('allways_language',value);
+                languageNotifier.value=value;
                 if(dialogContext.mounted)Navigator.pop(dialogContext);
                 if(c.mounted)ScaffoldMessenger.of(c).showSnackBar(SnackBar(content:Text('Language preference saved: '+value)));
               },
@@ -961,7 +994,7 @@ class _ProfilePageState extends State<ProfilePage>{
     return ListView(
       padding:const EdgeInsets.only(top:12,bottom:24),
       children:[
-        const Padding(padding:EdgeInsets.fromLTRB(16,0,16,6),child:Text('Profile',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900))),
+        Padding(padding:const EdgeInsets.fromLTRB(16,0,16,6),child:Text(tr('Profile'),style:const TextStyle(fontSize:28,fontWeight:FontWeight.w900))),
         Card(
           margin:const EdgeInsets.symmetric(horizontal:16,vertical:6),
           elevation:0,
@@ -1002,13 +1035,13 @@ class _ProfilePageState extends State<ProfilePage>{
         _menuCard(c,icon:Icons.location_on_outlined,title:'Saved Addresses',subtitle:'Add, edit or manage your delivery addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(userId:u.uid,addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
         _menuCard(c,icon:Icons.favorite_border,title:'Wishlist',subtitle:'Your saved products and favourites',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
         _menuCard(c,icon:Icons.local_shipping_outlined,title:'ALLways Carrier',subtitle:'Become a Seller or Delivery Partner',onTap:()=>_openCarrier(c,u)),
-        ValueListenableBuilder<bool>(valueListenable:unreadNotificationNotifier,builder:(_,unread,__)=>_menuCard(c,icon:Icons.notifications_outlined,title:'Notifications',subtitle:'Alerts, order updates and push settings',showDot:unread,onTap:()=>_openNotifications(c))),
-        _menuCard(c,icon:Icons.brightness_6_outlined,title:'Appearance',subtitle:'Light, Dark or System theme',onTap:()=>_chooseAppearance(c)),
-        _menuCard(c,icon:Icons.language_outlined,title:'Language',subtitle:'Choose your preferred app language',onTap:()=>_chooseLanguage(c)),
-        _menuCard(c,icon:Icons.share_outlined,title:'Share ALLways',subtitle:'Share ALLways with friends and family',onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
-        _menuCard(c,icon:Icons.system_update_outlined,title:'Check for Updates',subtitle:'Check for the latest ALLways version',onTap:()=>_checkForUpdate(c)),
+        ValueListenableBuilder<bool>(valueListenable:unreadNotificationNotifier,builder:(_,unread,__)=>_menuCard(c,icon:Icons.notifications_outlined,title:tr('Notifications'),subtitle:'Alerts, order updates and push settings',showDot:unread,onTap:()=>_openNotifications(c))),
+        _menuCard(c,icon:Icons.brightness_6_outlined,title:tr('Appearance'),subtitle:'Light, Dark or System theme',onTap:()=>_chooseAppearance(c)),
+        _menuCard(c,icon:Icons.language_outlined,title:tr('Language'),subtitle:'Choose your preferred app language',onTap:()=>_chooseLanguage(c)),
+        _menuCard(c,icon:Icons.share_outlined,title:tr('Share ALLways'),subtitle:'Share ALLways with friends and family',onTap:()=>SharePlus.instance.share(ShareParams(text:'Try ALLways — Closer to You, Always. Download ALLways 1.4.7: '+shareApkUrl))),
+        _menuCard(c,icon:Icons.system_update_outlined,title:tr('Check for Updates'),subtitle:'Check for the latest ALLways version',onTap:()=>_checkForUpdate(c)),
         _menuCard(c,icon:Icons.privacy_tip_outlined,title:'Privacy Policy',subtitle:'How ALLways handles your information',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const PrivacyPolicyPage()))),
-        _menuCard(c,icon:Icons.logout_outlined,title:'Log Out',subtitle:'Sign out of your ALLways account',danger:true,onTap:()=>FirebaseAuth.instance.signOut()),
+        _menuCard(c,icon:Icons.logout_outlined,title:tr('Log Out'),subtitle:'Sign out of your ALLways account',danger:true,onTap:()=>FirebaseAuth.instance.signOut()),
         const SizedBox(height:12),
         const Text('ALLways • Closer to You, Always',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey)),
       ],

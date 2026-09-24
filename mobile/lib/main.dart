@@ -997,7 +997,6 @@ class _ProfilePageState extends State<ProfilePage>{
       ),
     );
   }
-
   // Language preference is reactive through languageNotifier so visible labels update immediately.
   Future<void> _chooseLanguage(BuildContext c) async {
     final prefs=await SharedPreferences.getInstance();
@@ -1997,8 +1996,7 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
           const SizedBox(height: 2),
           Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
         ],
-      ),
-    );
+      ),    );
   }
 }
 
@@ -2103,7 +2101,7 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
             const SizedBox(height:4),Text(allow?'Owner allows negotiation':'Fixed owner price',style:const TextStyle(color:Colors.grey)),const SizedBox(height:10),
             Row(children:[Expanded(child:FilledButton(onPressed:()=>_book(doc,negotiate:false),child:const Text('Book'))),if(allow)...[const SizedBox(width:8),Expanded(child:OutlinedButton(onPressed:()=>_book(doc,negotiate:true),child:const Text('Book & negotiate')))]])
           ])));}),
-          const SizedBox(height:14),const Text('25 popular vehicle categories',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:8),
+          const SizedBox(height:14),TravelBookingsSection(type:'vehicle'),const SizedBox(height:14),const Text('25 popular vehicle categories',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:8),
           Wrap(spacing:8,runSpacing:8,children:vehicleCategories.map((x)=>Chip(label:Text(x))).toList()),
         ]);
       },
@@ -2135,8 +2133,26 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
       if(!ok)return;
       final distance=num.tryParse(km.text.trim())??0;
       if(destination.text.trim().isEmpty||distance<=0){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter destination and a valid distance.')));return;}
-      final price=distance<5?10:distance<=5?15:20;
-      final snap=await FirebaseFirestore.instance.collection('ridePartners').where('vehicleType',isEqualTo:'two_wheeler').where('status',isEqualTo:'available').get();
+      num perKmAbove20=5;
+      if(distance>20){
+        final rate=TextEditingController(text:'5');
+        final calculated=await showDialog<num>(context:context,builder:(c)=>AlertDialog(
+          title:const Text('Ride price calculator'),
+          content:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text('First 20 km: ₹20\\nExtra distance: '+(distance-20).toStringAsFixed(1)+' km'),
+            const SizedBox(height:12),
+            TextField(controller:rate,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Rate per extra km (₹)')),
+            const SizedBox(height:8),
+            const Text('Trial calculator. Default extra-km rate is ₹5.',style:TextStyle(color:Colors.grey,fontSize:12)),
+          ]),
+          actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Cancel')),FilledButton(onPressed:(){final r=num.tryParse(rate.text.trim())??0;if(r>0)Navigator.pop(c,r);},child:const Text('Calculate'))],
+        ));
+        rate.dispose();
+        if(calculated==null)return;
+        perKmAbove20=calculated;
+      }
+      final price=distance<5?10:(distance<=20?20:20+((distance-20)*perKmAbove20));
+      final snap=await FirebaseFirestore.instance.collection('ridePartners').where('vehicleType',isEqualTo:'two_wheeler').where('status',isEqualTo:'online').get();
       if(snap.docs.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('No two-wheeler ride partner is available right now.')));return;}
       final partner=snap.docs.first.data();
       await FirebaseFirestore.instance.collection('rideBookings').add({'customerUid':user.uid,'customerName':user.displayName??'ALLways customer','partnerUid':partner['uid'],'partnerName':partner['name'],'partnerPhone':partner['mobileNumber'],'destination':destination.text.trim(),'distanceKm':distance,'seats':seats,'price':price,'status':'Booked','pickupRule':'Main road pickup only','createdAt':FieldValue.serverTimestamp()});
@@ -2144,18 +2160,37 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
     }finally{destination.dispose();km.dispose();}
   }
 
+  Future<void> _setRideOnline(bool value) async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)return;
+    await FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).set({'uid':user.uid,'status':value?'online':'offline','statusUpdatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+  }
+
   @override Widget build(BuildContext context){
+    final user=FirebaseAuth.instance.currentUser;
     return Scaffold(appBar:AppBar(title:const Text('Book a ride partner')),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
       Card(child:ListTile(leading:const Icon(Icons.two_wheeler_outlined),title:const Text('Look for a Ride',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Two-wheeler only • main-road pickup • no doorstep pickup'),trailing:const Icon(Icons.chevron_right),onTap:_bookRide)),
-      Card(child:ListTile(leading:const Icon(Icons.person_add_alt_1_outlined),title:const Text('Apply for Booking',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Become a two-wheeler ride partner'),trailing:const Icon(Icons.chevron_right),onTap:()=>_applyRidePartner(context))),
-      const SizedBox(height:12),const Text('Ride pricing',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:6),const Text('Below 5 km: ₹10\n5 km: ₹15\nAbove 5 km: ₹20'),
+      StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+        stream:user==null?const Stream<DocumentSnapshot<Map<String,dynamic>>>.empty():FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).snapshots(),
+        builder:(context,snapshot){
+          final profile=snapshot.data?.data();
+          if(profile==null)return Card(child:ListTile(leading:const Icon(Icons.person_add_alt_1_outlined),title:const Text('Apply for Booking',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Become a two-wheeler ride partner'),trailing:const Icon(Icons.chevron_right),onTap:()=>_applyRidePartner(context)));
+          final online=(profile['status']??'offline')=='online';
+          return Card(child:Column(children:[
+            SwitchListTile(title:Text(online?'Online — accepting ride requests':'Offline — not accepting ride requests',style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((profile['name']??'Ride partner').toString()),value:online,onChanged:_setRideOnline),
+            ListTile(leading:const Icon(Icons.edit_outlined),title:const Text('Update saved details'),onTap:()=>_applyRidePartner(context)),
+          ]));
+        }),
+      const SizedBox(height:12),TravelBookingsSection(type:'ride'),const SizedBox(height:12),const Text('Ride pricing',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const SizedBox(height:6),const Text('Below 5 km: ₹10\n5 km: ₹15\nAbove 5 km: ₹20'),
       const SizedBox(height:12),const Text('Important',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),const Text('ALLways is providing this as a trial platform without commission. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants. Please verify the partner and vehicle before travelling. You can report a partner or ride through ALLways.'),
     ]));
   }
 
   Future<void> _applyRidePartner(BuildContext context) async {
     final user=FirebaseAuth.instance.currentUser;if(user==null)return;
-    final name=TextEditingController(),mobile=TextEditingController();String gender='Prefer not to say';XFile? selectedPhoto;bool uploading=false;
+    final existingSnap=await FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).get();
+    final existing=existingSnap.data();
+    final name=TextEditingController(text:(existing?['name']??'').toString()),mobile=TextEditingController(text:(existing?['mobileNumber']??'').toString());String gender=(existing?['gender']??'Prefer not to say').toString();XFile? selectedPhoto;bool uploading=false;
     try{
       await showDialog<void>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setState)=>AlertDialog(
         title:const Text('Apply for Booking'),
@@ -2184,16 +2219,17 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         ])),
         actions:[TextButton(onPressed:()=>Navigator.pop(dialogContext),child:const Text('Cancel')),FilledButton(onPressed:()async{
           final ph=mobile.text.replaceAll(RegExp(r'\D'),'');
-          if(name.text.trim().isEmpty||ph.length!=10||selectedPhoto==null){
+          if(name.text.trim().isEmpty||ph.length!=10||(((existing?['photoUrl']??'').toString().isEmpty)&&selectedPhoto==null)){
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter name, valid 10-digit mobile number and upload a profile photo.')));
             return;
           }
           setState(() => uploading = true);
           try {
-            final photoUrl = await uploadImageToCloudinary(selectedPhoto!, folder: 'ride-partners/' + user.uid);
+            var photoUrl=(existing?['photoUrl']??'').toString();
+            if(selectedPhoto!=null) photoUrl=await uploadImageToCloudinary(selectedPhoto!, folder: 'ride-partners/' + user.uid);
             await FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).set({
               'uid':user.uid,'name':name.text.trim(),'gender':gender,'mobileNumber':ph,'photoUrl':photoUrl,
-              'vehicleType':'two_wheeler','status':'available','createdAt':FieldValue.serverTimestamp()
+              'vehicleType':'two_wheeler','status':(existing?['status']??'offline').toString(),'updatedAt':FieldValue.serverTimestamp()
             },SetOptions(merge:true));
             if(dialogContext.mounted)Navigator.pop(dialogContext);
             if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride partner profile submitted.')));
@@ -2204,6 +2240,64 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         },child:const Text('Submit'))],
       )));
     }finally{name.dispose();mobile.dispose();}
+  }
+}
+
+class TravelBookingsSection extends StatelessWidget {
+  final String type;
+  const TravelBookingsSection({super.key,required this.type});
+
+  Future<void> _reviewReport(BuildContext context,String bookingId) async {
+    final review=TextEditingController(); final report=TextEditingController(); int rating=5;
+    final action=await showDialog<String>(context:context,builder:(c)=>StatefulBuilder(builder:(c,setState)=>AlertDialog(
+      title:Text(type=='ride'?'Ride review / report':'Vehicle review / report'),
+      content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+        const Align(alignment:Alignment.centerLeft,child:Text('Review',style:TextStyle(fontWeight:FontWeight.w800))),
+        DropdownButtonFormField<int>(initialValue:rating,items:[1,2,3,4,5].map((x)=>DropdownMenuItem(value:x,child:Text(x.toString()+' / 5'))).toList(),onChanged:(v){if(v!=null)setState(()=>rating=v);}),
+        TextField(controller:review,maxLines:3,decoration:const InputDecoration(labelText:'Your review (optional)')),
+        const SizedBox(height:12),
+        const Align(alignment:Alignment.centerLeft,child:Text('Report an issue',style:TextStyle(fontWeight:FontWeight.w800))),
+        TextField(controller:report,maxLines:3,decoration:const InputDecoration(labelText:'Report details (optional)')),
+      ])),
+      actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,'save'),child:const Text('Submit'))],
+    )));
+    if(action!='save') { review.dispose(); report.dispose(); return; }
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null) { review.dispose(); report.dispose(); return; }
+    if(review.text.trim().isNotEmpty) await FirebaseFirestore.instance.collection('travelReviews').add({'bookingId':bookingId,'bookingType':type,'userUid':user.uid,'rating':rating,'review':review.text.trim(),'createdAt':FieldValue.serverTimestamp()});
+    if(report.text.trim().isNotEmpty) await FirebaseFirestore.instance.collection('travelReports').add({'bookingId':bookingId,'bookingType':type,'userUid':user.uid,'report':report.text.trim(),'createdAt':FieldValue.serverTimestamp(),'status':'open'});
+    review.dispose(); report.dispose();
+    if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Review/report submitted.')));
+  }
+
+  @override Widget build(BuildContext context){
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)return const SizedBox.shrink();
+    final collection=type=='ride'?'rideBookings':'vehicleBookings';
+    return Card(child:ExpansionTile(
+      leading:Icon(type=='ride'?Icons.two_wheeler_outlined:Icons.directions_car_outlined),
+      title:Text(type=='ride'?'My ride bookings':'My vehicle bookings',style:const TextStyle(fontWeight:FontWeight.w900)),
+      children:[
+        StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+          stream:FirebaseFirestore.instance.collection(collection).where('customerUid',isEqualTo:user.uid).snapshots(),
+          builder:(context,snapshot){
+            if(snapshot.hasError)return const Padding(padding:EdgeInsets.all(16),child:Text('Bookings unavailable.'));
+            if(!snapshot.hasData)return const Padding(padding:EdgeInsets.all(16),child:CircularProgressIndicator());
+            if(snapshot.data!.docs.isEmpty)return const Padding(padding:EdgeInsets.all(16),child:Text('No bookings yet.'));
+            return Column(children:snapshot.data!.docs.take(20).map((doc){
+              final d=doc.data();
+              final name=(d['partnerName']??d['ownerName']??'Booking').toString();
+              final status=(d['status']??'').toString();
+              return ListTile(
+                title:Text(name,style:const TextStyle(fontWeight:FontWeight.w800)),
+                subtitle:Text(status+(d['price']!=null?' • ₹'+d['price'].toString():'')+(d['destination']!=null?' • '+d['destination'].toString():'')),
+                trailing:OutlinedButton(onPressed:()=>_reviewReport(context,doc.id),child:const Text('Review / Report')),
+              );
+            }).toList());
+          },
+        ),
+      ],
+    ));
   }
 }
 
@@ -2888,6 +2982,39 @@ class AdminRolesPanel extends StatelessWidget {
   }
 }
 
+class AdminDeliveryAssignmentPanel extends StatefulWidget {
+  const AdminDeliveryAssignmentPanel({super.key});
+  @override State<AdminDeliveryAssignmentPanel> createState()=>_AdminDeliveryAssignmentPanelState();
+}
+
+class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPanel> {
+  Future<void> _assign(BuildContext context,QueryDocumentSnapshot<Map<String,dynamic>> order) async {
+    final partners=await FirebaseFirestore.instance.collection('customers').where('role',isEqualTo:'carrier').get();
+    final online=partners.docs.where((d)=>(d.data()['dutyStatus']??'offline').toString().toLowerCase()=='online').toList();
+    if(online.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('No delivery partner is online right now.')));return;}
+    final selected=await showDialog<QueryDocumentSnapshot<Map<String,dynamic>>>(context:context,builder:(c)=>AlertDialog(
+      title:const Text('Assign delivery partner'),
+      content:SizedBox(width:420,child:ListView(shrinkWrap:true,children:online.map((d){final x=d.data();return ListTile(leading:const Icon(Icons.delivery_dining),title:Text((x['displayName']??x['email']??d.id).toString()),subtitle:Text((x['email']??'').toString()),onTap:()=>Navigator.pop(c,d));}).toList())),
+      actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Cancel'))],
+    ));
+    if(selected==null)return;
+    final x=selected.data();
+    await order.reference.update({'carrierUid':selected.id,'carrierName':(x['displayName']??x['email']??selected.id).toString(),'carrierEmail':(x['email']??'').toString(),'status':'Assigned','statusNote':'Delivery partner assigned','customerMessage':'Delivery partner assigned','assignedAt':FieldValue.serverTimestamp(),'updatedAt':DateTime.now().millisecondsSinceEpoch});
+    if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Delivery partner assigned.')));
+  }
+
+  @override Widget build(BuildContext context){
+    return Card(child:ExpansionTile(leading:const Icon(Icons.assignment_ind_outlined),title:const Text('Delivery Assignment',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Assign online delivery partners to orders'),children:[
+      StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').snapshots(),builder:(context,snapshot){
+        if(!snapshot.hasData)return const Padding(padding:EdgeInsets.all(16),child:CircularProgressIndicator());
+        final docs=snapshot.data!.docs.where((d){final x=d.data();return x['carrierUid']==null&&(x['status']??'')!='Delivered'&&(x['status']??'')!='Cancelled';}).take(30).toList();
+        if(docs.isEmpty)return const Padding(padding:EdgeInsets.all(16),child:Text('No unassigned active orders.'));
+        return Column(children:docs.map((d){final x=d.data();return ListTile(title:Text('#'+(x['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((x['name']??'Customer').toString()+' • '+(x['status']??'').toString()),trailing:FilledButton(onPressed:()=>_assign(context,d),child:const Text('Assign')));}).toList());
+      }),
+    ]));
+  }
+}
+
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
   @override State<AdminScreen> createState() => _AdminScreenState();
@@ -2997,8 +3124,7 @@ class _AdminScreenState extends State<AdminScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            children: [              Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -3278,6 +3404,7 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           const AdminRolesPanel(),
           bannerManager(),
+          const AdminDeliveryAssignmentPanel(),
           const Padding(
             padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: Align(
@@ -3409,4 +3536,3 @@ class _AuthState extends State<AuthScreen>{
 }
 
 class InfoCard extends StatelessWidget{final String title,detail;const InfoCard({super.key,required this.title,required this.detail});Widget build(BuildContext c)=>Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(fontWeight:FontWeight.w800)),const SizedBox(height:6),Text(detail,style:const TextStyle(color:Colors.grey))])));}
-

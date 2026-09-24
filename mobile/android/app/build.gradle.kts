@@ -57,6 +57,12 @@ android {
     }
 }
 
+dependencies {
+    // Native Firebase Messaging is required by the custom background service.
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-messaging")
+}
+
 flutter {
     source = "../.."
 }

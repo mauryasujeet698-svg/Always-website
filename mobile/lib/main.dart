@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -191,14 +192,12 @@ class AllwaysApp extends StatelessWidget {
 }
 
 class Product {
-  final String id,name,category,icon,description,brand,sellerId; final num price,stock;
+  final String id,name,category,icon,description,brand,sellerId;
+  final num price,stock;
   const Product({required this.id,required this.name,required this.category,required this.icon,required this.description,required this.brand,required this.sellerId,required this.price,required this.stock});
   factory Product.fromJson(Map<String,dynamic> j){
     num n(dynamic x)=>x is num?x:num.tryParse(x?.toString()??'')??0;
-    return Product(id:(j['id']??'').toString(),name:(j['name']??j['title']??'Item').toString(),
-      category:(j['category']??j['cat']??'Other').toString(),icon:(j['icon']??'🛍️').toString(),
-      description:(j['description']??'').toString(),brand:(j['brand']??'').toString(),sellerId:(j['sellerId']??j['sellerUid']??j['vendorId']??'').toString(),
-      price:n(j['price']),stock:n(j['stock']));
+    return Product(id:(j['id']??'').toString(),name:(j['name']??j['title']??'Item').toString(),category:(j['category']??j['cat']??'Other').toString().trim(),icon:(j['icon']??'🛍️').toString(),description:(j['description']??'').toString(),brand:(j['brand']??'').toString(),sellerId:(j['sellerId']??j['sellerUid']??j['vendorId']??'').toString(),price:n(j['price']),stock:n(j['stock']));
   }
 }
 class CartItem { final Product product; int qty; CartItem(this.product,this.qty); }
@@ -507,404 +506,36 @@ class _ShellState extends State<Shell> {
 }
 
 class ShopPage extends StatefulWidget{
-  final List<Product> products;
-  final bool loading;
-  final String? error;
-  final Future<void> Function({bool silent}) onRefresh;
-  final void Function(Product) onAdd;
-  final Map<String,CartItem> cart;
-  final void Function(String,int) onQty;
-  final User? user;
-  final Set<String> wishlistIds;
-  final Future<void> Function(Product) onWishlist;
-  final VoidCallback onOpenCart;
-  final List<Map<String,dynamic>> addresses;
-
-  const ShopPage({
-    super.key,
-    required this.products,
-    required this.loading,
-    required this.error,
-    required this.onRefresh,
-    required this.onAdd,
-    required this.cart,
-    required this.onQty,
-    required this.user,
-    required this.wishlistIds,
-    required this.onWishlist,
-    required this.onOpenCart,
-    required this.addresses,
-  });
-
-  @override
-  State<ShopPage> createState()=>_ShopPageState();
+  final List<Product> products;final bool loading;final String? error;final Future<void> Function({bool silent}) onRefresh;final void Function(Product) onAdd;final Map<String,CartItem> cart;final void Function(String,int) onQty;final User? user;final Set<String> wishlistIds;final Future<void> Function(Product) onWishlist;final VoidCallback onOpenCart;final List<Map<String,dynamic>> addresses;
+  const ShopPage({super.key,required this.products,required this.loading,required this.error,required this.onRefresh,required this.onAdd,required this.cart,required this.onQty,required this.user,required this.wishlistIds,required this.onWishlist,required this.onOpenCart,required this.addresses});
+  @override State<ShopPage> createState()=>_ShopPageState();
 }
-
 class _ShopPageState extends State<ShopPage>{
-  String cat='All',search='';
-  String selectedLocation='Select delivery location';
-  bool locating=false;
-
-  @override
-  void initState(){
-    super.initState();
-    _syncLocation();
-  }
-
-  @override
-  void didUpdateWidget(covariant ShopPage oldWidget){
-    super.didUpdateWidget(oldWidget);
-    if(widget.addresses!=oldWidget.addresses) _syncLocation();
-  }
-
-  void _syncLocation(){
-    if(widget.addresses.isNotEmpty){
-      final current=widget.addresses.firstWhere(
-        (x)=>x['isCurrent']==true,
-        orElse:()=>widget.addresses.first,
-      );
-      final value=(current['address']??'').toString().trim();
-      if(value.isNotEmpty) selectedLocation=value;
-    }
-  }
-
-  Future<void> _changeLocation() async {
-    final user=widget.user;
-    if(user==null){
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content:Text('Sign in to select your delivery location.')),
-      );
-      return;
-    }
-
-    await showModalBottomSheet<void>(
-      context:context,
-      showDragHandle:true,
-      builder:(sheet)=>SafeArea(
-        child:ListView(
-          shrinkWrap:true,
-          padding:const EdgeInsets.fromLTRB(12,4,12,18),
-          children:[
-            const Padding(
-              padding:EdgeInsets.fromLTRB(8,4,8,10),
-              child:Text('Choose delivery location',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),
-            ),
-            ...widget.addresses.take(5).map((x)=>ListTile(
-              leading:const Icon(Icons.location_on_outlined),
-              title:Text((x['name']??'Saved address').toString()),
-              subtitle:Text((x['address']??'').toString()),
-              onTap:(){
-                final value=(x['address']??'').toString();
-                if(value.trim().isNotEmpty) setState(()=>selectedLocation=value);
-                Navigator.pop(sheet);
-              },
-            )),
-            const Divider(),
-            ListTile(
-              leading:const Icon(Icons.my_location),
-              title:const Text('Use current location',style:TextStyle(fontWeight:FontWeight.w800)),
-              subtitle:const Text('Detect your current delivery location'),
-              onTap:()async{
-                Navigator.pop(sheet);
-                await _useCurrentLocation();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _useCurrentLocation() async {
-    if(locating) return;
-    setState(()=>locating=true);
-    try{
-      if(!await Geolocator.isLocationServiceEnabled()){
-        throw Exception('Please turn on Location/GPS first.');
-      }
-      var permission=await Geolocator.checkPermission();
-      if(permission==LocationPermission.denied){
-        permission=await Geolocator.requestPermission();
-      }
-      if(permission==LocationPermission.denied||permission==LocationPermission.deniedForever){
-        throw Exception('Location permission was not granted.');
-      }
-      final position=await Geolocator.getCurrentPosition(
-        locationSettings:const LocationSettings(accuracy:LocationAccuracy.high),
-      ).timeout(const Duration(seconds:10));
-      var address='Latitude: ${position.latitude}, Longitude: ${position.longitude}';
-      try{
-        final marks=await placemarkFromCoordinates(position.latitude,position.longitude);
-        if(marks.isNotEmpty){
-          final p=marks.first;
-          final parts=[p.street,p.subLocality,p.locality,p.subAdministrativeArea,p.administrativeArea,p.postalCode]
-              .whereType<String>()
-              .where((x)=>x.trim().isNotEmpty)
-              .map((x)=>x.trim())
-              .toList();
-          if(parts.isNotEmpty) address=parts.toSet().join(', ');
-        }
-      }catch(_){}
-      await FirebaseFirestore.instance.collection('customers').doc(widget.user!.uid)
-          .collection('addresses').doc('current_location').set({
-        'name':'Current location',
-        'phone':'',
-        'address':address,
-        'latitude':position.latitude,
-        'longitude':position.longitude,
-        'isCurrent':true,
-        'createdAt':FieldValue.serverTimestamp(),
-      },SetOptions(merge:true));
-      if(mounted) setState(()=>selectedLocation=address);
-    }catch(e){
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content:Text('Could not update location: ${e.toString()}')),
-      );
-    }finally{
-      if(mounted) setState(()=>locating=false);
-    }
-  }
-
-  Widget _productCard(BuildContext c,Product p){
-    final liked=widget.wishlistIds.contains(p.id);
-    final inCart=widget.cart.containsKey(p.id);
-    return Card(
-      margin:EdgeInsets.zero,
-      clipBehavior:Clip.antiAlias,
-      child:InkWell(
-        onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(
-          product:p,onAdd:()=>widget.onAdd(p),liked:liked,onWishlist:()=>widget.onWishlist(p),
-        ))),
-        child:Padding(
-          padding:const EdgeInsets.fromLTRB(10,8,10,10),
-          child:Column(
-            crossAxisAlignment:CrossAxisAlignment.start,
-            children:[
-              Stack(
-                children:[
-                  Container(
-                    height:118,
-                    width:double.infinity,
-                    decoration:BoxDecoration(
-                      color:Theme.of(c).colorScheme.surfaceContainerHighest,
-                      borderRadius:BorderRadius.circular(14),
-                    ),
-                    alignment:Alignment.center,
-                    child:Text(p.icon,style:const TextStyle(fontSize:52)),
-                  ),
-                  Positioned(
-                    top:6,right:6,
-                    child:IconButton(
-                      visualDensity:VisualDensity.compact,
-                      onPressed:()=>widget.onWishlist(p),
-                      icon:Icon(liked?Icons.favorite:Icons.favorite_border,color:Colors.red),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height:8),
-              Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w900)),
-              const SizedBox(height:2),
-              Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:12)),
-              const SizedBox(height:3),
-              Text('₹${p.price}',style:const TextStyle(fontSize:16,fontWeight:FontWeight.w900)),
-              const SizedBox(height:7),
-              SizedBox(
-                width:double.infinity,
-                child:FilledButton(
-                  onPressed:p.stock>0?()=>widget.onAdd(p):null,
-                  child:Text(inCart?'Add more':'+ Add'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _category(String name,String icon){
-    final selected=cat==name;
-    return InkWell(
-      onTap:()=>setState(()=>cat=name),
-      borderRadius:BorderRadius.circular(18),
-      child:SizedBox(
-        width:72,
-        child:Column(
-          children:[
-            AnimatedContainer(
-              duration:const Duration(milliseconds:180),
-              height:60,width:60,
-              decoration:BoxDecoration(
-                color:selected?Theme.of(context).colorScheme.primaryContainer:Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius:BorderRadius.circular(18),
-                border:Border.all(color:selected?Theme.of(context).colorScheme.primary:Theme.of(context).colorScheme.outlineVariant),
-              ),
-              alignment:Alignment.center,
-              child:Text(icon,style:const TextStyle(fontSize:30)),
-            ),
-            const SizedBox(height:5),
-            Text(name,maxLines:1,overflow:TextOverflow.ellipsis,textAlign:TextAlign.center,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w700)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override Widget build(BuildContext c){
-    final q=search.toLowerCase().trim();
-    final filtered=widget.products.where((p){
-      final text=(p.name+' '+p.category+' '+p.brand+' '+p.description).toLowerCase();
-      return (cat=='All'||p.category==cat)&&(q.isEmpty||text.contains(q));
-    }).toList();
-    final categories=<String,String>{
-      'All':'▦','Dairy':'🥛','Grocery':'🛒','Fruits & Vegetables':'🥬','Bakery':'🥖','Snacks':'🍟','Beverages':'🥤'
-    };
-    final offers=widget.products.take(6).toList();
-
-    return RefreshIndicator(
-      onRefresh:()=>widget.onRefresh(),
-      child:ListView(
-        padding:const EdgeInsets.fromLTRB(16,10,16,110),
-        children:[
-          Row(
-            children:[
-              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                const Text('ALLways',style:TextStyle(fontSize:31,fontWeight:FontWeight.w900)),
-                const Text('Closer to You, Always',style:TextStyle(color:Colors.grey)),
-              ])),
-              ValueListenableBuilder<bool>(
-                valueListenable:unreadNotificationNotifier,
-                builder:(_,unread,__)=>
-                  IconButton(
-                    tooltip:'Notifications',
-                    onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const NotificationsPage())),
-                    icon:Badge(isLabelVisible:unread,child:const Icon(Icons.notifications_none,size:29)),
-                  ),
-              ),
-              IconButton(
-                tooltip:'Cart',
-                onPressed:widget.onOpenCart,
-                icon:Badge(
-                  isLabelVisible:widget.cart.isNotEmpty,
-                  label:Text(widget.cart.length.toString()),
-                  child:const Icon(Icons.shopping_cart_outlined,size:28),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height:10),
-          Card(
-            margin:EdgeInsets.zero,
-            clipBehavior:Clip.antiAlias,
-            child:ListTile(
-              leading:Container(
-                width:46,height:46,
-                decoration:BoxDecoration(color:Theme.of(c).colorScheme.primaryContainer,borderRadius:BorderRadius.circular(14)),
-                child:const Icon(Icons.location_on_outlined),
-              ),
-              title:const Text('Deliver to',style:TextStyle(fontSize:12,color:Colors.grey,fontWeight:FontWeight.w700)),
-              subtitle:Row(children:[
-                Expanded(child:Text(selectedLocation,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w900))),
-                if(locating) const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)),
-              ]),
-              trailing:TextButton(onPressed:locating?null:_changeLocation,child:const Text('Change')),
-            ),
-          ),
-          const SizedBox(height:10),
-          TextField(
-            decoration:InputDecoration(
-              hintText:'Search for milk, bread, eggs…',
-              prefixIcon:const Icon(Icons.search),
-              suffixIcon:IconButton(onPressed:()=>setState(()=>search=''),icon:const Icon(Icons.mic_none)),
-              filled:true,
-              fillColor:Theme.of(c).colorScheme.surfaceContainerHighest,
-              border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none),
-            ),
-            onChanged:(v)=>setState(()=>search=v),
-          ),
-          const SizedBox(height:14),
-          SizedBox(
-            height:92,
-            child:ListView.separated(
-              scrollDirection:Axis.horizontal,
-              itemCount:categories.length,
-              separatorBuilder:(_,__)=>const SizedBox(width:10),
-              itemBuilder:(_,i){
-                final entry=categories.entries.elementAt(i);
-                return _category(entry.key,entry.value);
-              },
-            ),
-          ),
-          const SizedBox(height:10),
-          StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
-            stream:FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
-            builder:(context,snapshot){
-              if(snapshot.hasError||!snapshot.hasData)return const SizedBox.shrink();
-              final raw=snapshot.data?.data()?['imageUrls'];
-              final urls=raw is List?raw.map((e)=>e.toString()).where((e)=>e.isNotEmpty).take(3).toList():<String>[];
-              if(urls.isEmpty)return const SizedBox.shrink();
-              return _AutoBannerCarousel(urls:urls,height:190);
-            },
-          ),
-          const SizedBox(height:16),
-          Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[
-            const Text('Top Offers for You',style:TextStyle(fontSize:22,fontWeight:FontWeight.w900)),
-            TextButton(onPressed:(){setState(()=>cat='All');},child:const Text('See all ›')),
-          ]),
-          SizedBox(
-            height:265,
-            child:ListView.separated(
-              scrollDirection:Axis.horizontal,
-              itemCount:offers.length,
-              separatorBuilder:(_,__)=>const SizedBox(width:10),
-              itemBuilder:(_,i)=>SizedBox(width:170,child:_productCard(c,offers[i])),
-            ),
-          ),
-          const SizedBox(height:18),
-          Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[
-            const Text('Shop by Category',style:TextStyle(fontSize:22,fontWeight:FontWeight.w900)),
-            TextButton(onPressed:(){setState(()=>cat='All');},child:const Text('See all ›')),
-          ]),
-          SizedBox(
-            height:120,
-            child:ListView.separated(
-              scrollDirection:Axis.horizontal,
-              itemCount:categories.length-1,
-              separatorBuilder:(_,__)=>const SizedBox(width:10),
-              itemBuilder:(_,i){
-                final entry=categories.entries.elementAt(i+1);
-                return _category(entry.key,entry.value);
-              },
-            ),
-          ),
-          const SizedBox(height:14),
-          Row(mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[
-            const Text('Popular Near You',style:TextStyle(fontSize:22,fontWeight:FontWeight.w900)),
-            TextButton(onPressed:(){setState(()=>search='');},child:const Text('See all ›')),
-          ]),
-          if(widget.loading)
-            const Padding(padding:EdgeInsets.all(40),child:Center(child:CircularProgressIndicator()))
-          else if(widget.error!=null)
-            const InfoCard(title:'Could not load inventory',detail:'Check your connection and pull down to retry.')
-          else if(filtered.isEmpty)
-            const InfoCard(title:'No items found',detail:'Try another category or search.')
-          else
-            GridView.builder(
-              shrinkWrap:true,
-              physics:const NeverScrollableScrollPhysics(),
-              itemCount:filtered.length,
-              gridDelegate:const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount:2,crossAxisSpacing:10,mainAxisSpacing:10,childAspectRatio:.67,
-              ),
-              itemBuilder:(context,index)=>_productCard(context,filtered[index]),
-            ),
-        ],
-      ),
-    );
-  }
+  final searchController=TextEditingController();final stt.SpeechToText speech=stt.SpeechToText();
+  String search='',location='Select delivery location';bool locating=false,listening=false;int bannerIndex=0;Timer? bannerTimer;
+  static const preferred=['Popular Near You','Daily Needs','Fresh Fruits & Vegetables','Dairy','Grocery','Bakery','Snacks','Beverages','Breakfast Essentials','Rice & Grains','Atta & Flour','Pulses & Dal','Cooking Oil','Spices & Masala','Salt & Sugar','Dry Fruits & Nuts','Tea & Coffee','Biscuits & Cookies','Chocolates & Sweets','Instant Food','Noodles & Pasta','Sauces & Spreads','Pickles & Chutneys','Canned & Packaged Food','Frozen Food','Ice Cream','Meat & Seafood','Eggs','Personal Care','Bath & Body','Hair Care','Oral Care','Skin Care','Baby Care','Health & Wellness','Home Care','Cleaning Essentials','Laundry Care','Dishwashing','Kitchen Essentials','Paper & Tissue','Pet Care','Stationery','Electronics','Mobile Accessories','Household Essentials','Pooja Essentials','Organic & Natural','Local Specials','Seasonal Products'];
+  static const icons={'All':'▦','Dairy':'🥛','Grocery':'🛒','Fruits & Vegetables':'🥬','Bakery':'🥖','Snacks':'🍟','Beverages':'🥤','Breakfast Essentials':'🍳','Rice & Grains':'🍚','Atta & Flour':'🌾','Pulses & Dal':'🫘','Cooking Oil':'🫗','Spices & Masala':'🌶️','Salt & Sugar':'🧂','Dry Fruits & Nuts':'🥜','Tea & Coffee':'☕','Biscuits & Cookies':'🍪','Chocolates & Sweets':'🍫','Instant Food':'🍜','Noodles & Pasta':'🍝','Sauces & Spreads':'🥫','Pickles & Chutneys':'🫙','Canned & Packaged Food':'📦','Frozen Food':'🧊','Ice Cream':'🍦','Meat & Seafood':'🥩','Eggs':'🥚','Personal Care':'🧴','Bath & Body':'🛁','Hair Care':'💇','Oral Care':'🪥','Skin Care':'🧖','Baby Care':'🍼','Health & Wellness':'💊','Home Care':'🏠','Cleaning Essentials':'🧹','Laundry Care':'🧺','Dishwashing':'🧽','Kitchen Essentials':'🍳','Paper & Tissue':'🧻','Pet Care':'🐾','Stationery':'📚','Electronics':'🔌','Mobile Accessories':'📱','Household Essentials':'🧰','Pooja Essentials':'🪔','Organic & Natural':'🌿','Local Specials':'⭐','Seasonal Products':'🎉'};
+  @override void initState(){super.initState();syncLocation();bannerTimer=Timer.periodic(const Duration(seconds:4),(_){if(mounted)setState(()=>bannerIndex++);});}
+  @override void dispose(){bannerTimer?.cancel();searchController.dispose();speech.stop();super.dispose();}
+  @override void didUpdateWidget(covariant ShopPage old){super.didUpdateWidget(old);if(widget.addresses!=old.addresses)syncLocation();}
+  void syncLocation(){if(widget.addresses.isNotEmpty){final x=widget.addresses.firstWhere((x)=>x['isCurrent']==true,orElse:()=>widget.addresses.first);final v=(x['address']??'').toString().trim();if(v.isNotEmpty)location=v;}}
+  Future<void> voice()async{try{final ok=await speech.initialize(onStatus:(s){if(mounted&&s!='listening')setState(()=>listening=false);},onError:(_){if(mounted)setState(()=>listening=false);});if(!ok)return;setState(()=>listening=true);await speech.listen(onResult:(r){if(!mounted)return;searchController.text=r.recognizedWords;searchController.selection=TextSelection.fromPosition(TextPosition(offset:searchController.text.length));setState(()=>search=searchController.text);},listenOptions:const stt.SpeechListenOptions(partialResults:true));}catch(_){if(mounted)setState(()=>listening=false);}}
+  Future<void> changeLocation()async{if(widget.user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Sign in to select your delivery location.')));return;}await showModalBottomSheet(context:context,showDragHandle:true,builder:(sheet)=>SafeArea(child:ListView(children:[const ListTile(title:Text('Choose delivery location',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900))),...widget.addresses.take(8).map((x)=>ListTile(leading:const Icon(Icons.location_on_outlined),title:Text((x['name']??'Saved address').toString()),subtitle:Text((x['address']??'').toString()),onTap:(){final v=(x['address']??'').toString();if(v.isNotEmpty)setState(()=>location=v);Navigator.pop(sheet);})),ListTile(leading:const Icon(Icons.my_location),title:const Text('Use current location'),onTap:()async{Navigator.pop(sheet);await currentLocation();})])));}
+  Future<void> currentLocation()async{if(locating)return;setState(()=>locating=true);try{if(!await Geolocator.isLocationServiceEnabled())throw Exception('Turn on GPS first.');var p=await Geolocator.checkPermission();if(p==LocationPermission.denied)p=await Geolocator.requestPermission();if(p==LocationPermission.denied||p==LocationPermission.deniedForever)throw Exception('Location permission was not granted.');final pos=await Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high)).timeout(const Duration(seconds:10));var a='Latitude: '+pos.latitude.toString()+', Longitude: '+pos.longitude.toString();try{final m=await placemarkFromCoordinates(pos.latitude,pos.longitude);if(m.isNotEmpty){final x=m.first;final parts=[x.street,x.subLocality,x.locality,x.subAdministrativeArea,x.administrativeArea,x.postalCode].whereType<String>().where((v)=>v.trim().isNotEmpty).map((v)=>v.trim()).toList();if(parts.isNotEmpty)a=parts.toSet().join(', ');}}catch(_){}await FirebaseFirestore.instance.collection('customers').doc(widget.user!.uid).collection('addresses').doc('current_location').set({'name':'Current location','address':a,'latitude':pos.latitude,'longitude':pos.longitude,'isCurrent':true,'createdAt':FieldValue.serverTimestamp()},SetOptions(merge:true));if(mounted)setState(()=>location=a);}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString())));}finally{if(mounted)setState(()=>locating=false);}}
+  List<String> get cats{final found=<String>{for(final p in widget.products)if(p.category.trim().isNotEmpty)p.category.trim()};final out=<String>[];for(final x in preferred)if(found.contains(x))out.add(x);out.addAll(found.where((x)=>!out.contains(x)).toList()..sort());return ['All',...out];}
+  List<Product> byCat(String n)=>n=='All'?List<Product>.from(widget.products):widget.products.where((p)=>p.category.trim().toLowerCase()==n.trim().toLowerCase()).toList();
+  void openCat(BuildContext c,String n)=>Navigator.push(c,MaterialPageRoute(builder:(_)=>CategoryProductsPage(category:n,products:byCat(n),onAdd:widget.onAdd,cart:widget.cart,onQty:widget.onQty,wishlistIds:widget.wishlistIds,onWishlist:widget.onWishlist)));
+  Widget chip(BuildContext c,String n)=>InkWell(onTap:()=>openCat(c,n),child:SizedBox(width:72,child:Column(children:[Container(height:60,width:60,decoration:BoxDecoration(color:n=='All'?Theme.of(c).colorScheme.primaryContainer:Theme.of(c).colorScheme.surfaceContainerHighest,borderRadius:BorderRadius.circular(18)),alignment:Alignment.center,child:Text(icons[n]??'🛍️',style:const TextStyle(fontSize:28))),const SizedBox(height:4),Text(n,maxLines:1,overflow:TextOverflow.ellipsis,textAlign:TextAlign.center,style:const TextStyle(fontSize:10,fontWeight:FontWeight.w700))])));
+  Widget card(BuildContext c,Product p){final item=widget.cart[p.id],liked=widget.wishlistIds.contains(p.id);return Card(margin:EdgeInsets.zero,clipBehavior:Clip.antiAlias,child:InkWell(onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),liked:liked,onWishlist:()=>widget.onWishlist(p)))),child:Padding(padding:const EdgeInsets.all(5),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Stack(children:[Container(height:72,width:double.infinity,alignment:Alignment.center,decoration:BoxDecoration(color:Theme.of(c).colorScheme.surfaceContainerHighest,borderRadius:BorderRadius.circular(11)),child:Text(p.icon,style:const TextStyle(fontSize:34))),Positioned(right:0,top:0,child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:28,minHeight:28),onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border,color:Colors.red,size:18)))]),const SizedBox(height:3),Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900)),Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:9)),Text('₹'+p.price.toString(),style:const TextStyle(fontSize:12,fontWeight:FontWeight.w900)),const Spacer(),item==null?SizedBox(height:27,width:double.infinity,child:FilledButton(style:FilledButton.styleFrom(padding:EdgeInsets.zero),onPressed:p.stock>0?()=>widget.onAdd(p):null,child:const Text('Add',style:TextStyle(fontSize:10)))):Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[InkWell(onTap:()=>widget.onQty(p.id,item.qty-1),child:const Icon(Icons.remove,size:14)),Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)),InkWell(onTap:()=>widget.onQty(p.id,item.qty+1),child:const Icon(Icons.add,size:14))]))]))));}
+  Widget section(BuildContext c,String title,List<Product> items,bool all){if(items.isEmpty)return const SizedBox.shrink();final show=items.take(4).toList();return Column(children:[Row(children:[Expanded(child:Text(title,style:const TextStyle(fontSize:21,fontWeight:FontWeight.w900))),TextButton(onPressed:()=>openCat(c,all?'All':title),child:const Text('See all ›'))]),GridView.builder(shrinkWrap:true,physics:const NeverScrollableScrollPhysics(),itemCount:show.length,gridDelegate:const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount:4,crossAxisSpacing:6,mainAxisSpacing:7,childAspectRatio:.52),itemBuilder:(c,i)=>card(c,show[i])),const SizedBox(height:14)]);}
+  @override Widget build(BuildContext c){final q=search.trim().toLowerCase();final searched=q.isEmpty?widget.products:widget.products.where((p)=>(p.name+' '+p.category+' '+p.brand+' '+p.description).toLowerCase().contains(q)).toList();final cs=cats;final sections=<String>[];for(final x in preferred)if(byCat(x).isNotEmpty)sections.add(x);for(final x in cs.skip(1))if(!sections.contains(x)&&byCat(x).isNotEmpty)sections.add(x);return RefreshIndicator(onRefresh:()=>widget.onRefresh(),child:ListView(padding:const EdgeInsets.fromLTRB(12,0,12,110),children:[StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),builder:(context,s){final raw=s.data?.data()?['imageUrls'];final urls=raw is List?raw.map((e)=>e.toString()).where((e)=>e.isNotEmpty).take(3).toList():<String>[];final bg=urls.isEmpty?null:urls[bannerIndex%urls.length];return Container(padding:const EdgeInsets.fromLTRB(8,15,8,12),decoration:BoxDecoration(color:Theme.of(c).colorScheme.surface,image:bg==null?null:DecorationImage(image:NetworkImage(bg),fit:BoxFit.cover,colorFilter:ColorFilter.mode(Colors.black.withOpacity(.62),BlendMode.darken)),borderRadius:const BorderRadius.vertical(bottom:Radius.circular(24))),child:Column(children:[Row(children:[Expanded(child:RichText(text:const TextSpan(style:TextStyle(fontSize:31,fontWeight:FontWeight.w900),children:[TextSpan(text:'ALL',style:TextStyle(color:Color(0xFF9B7CFF))),TextSpan(text:'ways',style:TextStyle(color:Colors.white))]))),ValueListenableBuilder<bool>(valueListenable:unreadNotificationNotifier,builder:(_,u,__)=>IconButton(onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const NotificationsPage())),icon:Badge(isLabelVisible:u,child:const Icon(Icons.notifications_none,color:Colors.white,size:28)))),IconButton(onPressed:widget.onOpenCart,icon:Badge(isLabelVisible:widget.cart.isNotEmpty,label:Text(widget.cart.length.toString()),child:const Icon(Icons.shopping_cart_outlined,color:Colors.white,size:28)))]),Align(alignment:Alignment.centerLeft,child:Text('Closer to You, Always',style:TextStyle(color:Colors.white.withOpacity(.82),fontSize:14))),const SizedBox(height:8),Card(color:Colors.black.withOpacity(.40),child:ListTile(leading:const Icon(Icons.location_on,color:Color(0xFFBFA6FF)),title:const Text('Deliver to',style:TextStyle(fontSize:11,color:Colors.white70)),subtitle:Text(location,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.white,fontWeight:FontWeight.w800)),trailing:TextButton(onPressed:locating?null:changeLocation,child:const Text('Change')))),const SizedBox(height:6),TextField(controller:searchController,style:const TextStyle(color:Colors.white),decoration:InputDecoration(hintText:'Search for milk, bread, eggs…',hintStyle:const TextStyle(color:Colors.white70),prefixIcon:const Icon(Icons.search,color:Colors.white70),suffixIcon:IconButton(onPressed:listening?speech.stop:voice,icon:Icon(listening?Icons.mic:Icons.mic_none,color:listening?Colors.red:Colors.white)),filled:true,fillColor:Colors.black.withOpacity(.40),border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none)),onChanged:(v)=>setState(()=>search=v))]))}),const SizedBox(height:4),SizedBox(height:88,child:ListView.separated(scrollDirection:Axis.horizontal,itemCount:cs.length,separatorBuilder:(_,__)=>const SizedBox(width:7),itemBuilder:(_,i)=>chip(c,cs[i]))),if(widget.loading)const Padding(padding:EdgeInsets.all(40),child:Center(child:CircularProgressIndicator()))else if(widget.error!=null)const InfoCard(title:'Could not load inventory',detail:'Check your connection and pull down to retry.')else if(searched.isEmpty)const InfoCard(title:'No items found',detail:'Try another search or category.')else ...[section(c,'Top Offers for You',searched.take(4).toList(),true),...sections.map((x)=>section(c,x,byCat(x),false))]]));}
 }
 
+class CategoryProductsPage extends StatelessWidget{
+  final String category;final List<Product> products;final void Function(Product) onAdd;final Map<String,CartItem> cart;final void Function(String,int) onQty;final Set<String> wishlistIds;final Future<void> Function(Product) onWishlist;
+  const CategoryProductsPage({super.key,required this.category,required this.products,required this.onAdd,required this.cart,required this.onQty,required this.wishlistIds,required this.onWishlist});
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(category)),body:products.isEmpty?const Center(child:Text('No products in this category yet.')):GridView.builder(padding:const EdgeInsets.all(12),itemCount:products.length,gridDelegate:const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount:2,crossAxisSpacing:10,mainAxisSpacing:10,childAspectRatio:.62),itemBuilder:(context,i){final p=products[i],item=cart[p.id],liked=wishlistIds.contains(p.id);return Card(clipBehavior:Clip.antiAlias,child:Padding(padding:const EdgeInsets.all(9),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Stack(children:[Container(height:150,width:double.infinity,alignment:Alignment.center,decoration:BoxDecoration(color:Theme.of(context).colorScheme.surfaceContainerHighest,borderRadius:BorderRadius.circular(14)),child:Text(p.icon,style:const TextStyle(fontSize:60))),Positioned(right:0,top:0,child:IconButton(onPressed:()=>onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border,color:Colors.red)))]),const SizedBox(height:7),Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w900)),Text(p.category,style:const TextStyle(color:Colors.grey,fontSize:12)),Text('₹'+p.price.toString(),style:const TextStyle(fontSize:17,fontWeight:FontWeight.w900)),const Spacer(),item==null?SizedBox(width:double.infinity,height:38,child:FilledButton(onPressed:p.stock>0?()=>onAdd(p):null,child:const Text('Add'))):Container(height:38,decoration:BoxDecoration(border:Border.all(color:Theme.of(context).colorScheme.primary),borderRadius:BorderRadius.circular(20)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[IconButton(padding:EdgeInsets.zero,onPressed:()=>onQty(p.id,item.qty-1),icon:const Icon(Icons.remove,size:18)),Text(item.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w900)),IconButton(padding:EdgeInsets.zero,onPressed:()=>onQty(p.id,item.qty+1),icon:const Icon(Icons.add,size:18))]))])));});
+}
 class _AutoBannerCarousel extends StatefulWidget {
   final List<String> urls;
   final double height;

@@ -1571,8 +1571,29 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
   Widget build(BuildContext context) {
     return Card(
       child: ExpansionTile(
-        leading: Icon(Icons.delivery_dining, color: online ? Colors.greenAccent : null),
-        title: const Text('Carrier Dashboard', style: TextStyle(fontWeight: FontWeight.w800)),
+        leading: Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+            const Icon(Icons.delivery_dining),
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: online ? Colors.green : Colors.grey,
+                shape: BoxShape.circle,
+                border: Border.all(color: Theme.of(context).cardColor, width: 2),
+              ),
+            ),
+          ],
+        ),
+        title: Row(
+          children: [
+            const Expanded(child: Text('Carrier Dashboard', style: TextStyle(fontWeight: FontWeight.w800))),
+            Container(width: 8, height: 8, decoration: BoxDecoration(color: online ? Colors.green : Colors.grey, shape: BoxShape.circle)),
+            const SizedBox(width: 6),
+            Text(online ? 'Online' : 'Offline', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: online ? Colors.green : Colors.grey)),
+          ],
+        ),
         subtitle: Text(online ? 'Duty Status: Online' : 'Duty Status: Offline'),
         children: [
           Padding(

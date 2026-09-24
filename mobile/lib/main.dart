@@ -430,7 +430,7 @@ class _ShopPageState extends State<ShopPage>{
         title:Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800)),
         subtitle:Text(p.category+' • ₹'+p.price.toString()+'\n'+(p.stock>0?'In stock':'Unavailable')),
         trailing:Row(mainAxisSize:MainAxisSize.min,children:[
-          IconButton(onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border)),
+          IconButton(onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border, color: Colors.red)),
           cartAction,
         ]),
       ),
@@ -451,25 +451,35 @@ class _ShopPageState extends State<ShopPage>{
           const Text('ALLways',style:TextStyle(fontSize:30,fontWeight:FontWeight.w900)),
           const Text('Closer to You, Always',style:TextStyle(color:Colors.grey)),
           const SizedBox(height:14),
-          Card(color:Colors.black,child:const Padding(padding:EdgeInsets.all(22),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text('Priority Delivery',style:TextStyle(color:Colors.white70)),
-            SizedBox(height:7),
-            Text('Everything you need, closer to home.',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w800)),
-            SizedBox(height:7),
-            Text('Shop local essentials. Simple ordering.',style:TextStyle(color:Colors.white70)),
-          ]))),
-          const SizedBox(height:12),
-          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError || !snapshot.hasData) return const SizedBox.shrink();
-              final raw = snapshot.data?.data()?['imageUrls'];
-              final urls = raw is List ? raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
-              if (urls.isEmpty) return const SizedBox.shrink();
-              return _AutoBannerCarousel(urls: urls);
-            },
+          Card(
+            color: Colors.black,
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Priority Delivery', style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 7),
+                  const Text('Everything you need, closer to home.', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 7),
+                  const Text('Shop local essentials. Simple ordering.', style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 16),
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError || !snapshot.hasData) return const SizedBox.shrink();
+                      final raw = snapshot.data?.data()?['imageUrls'];
+                      final urls = raw is List ? raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
+                      if (urls.isEmpty) return const SizedBox.shrink();
+                      return _AutoBannerCarousel(urls: urls, height: 150);
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height:16),
+          const SizedBox(height: 16),
           TextField(decoration:const InputDecoration(hintText:'Search items',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>search=v)),
           const SizedBox(height:10),
           SizedBox(height:44,child:ListView(scrollDirection:Axis.horizontal,children:cats.map((x)=>Padding(padding:const EdgeInsets.only(right:7),child:ChoiceChip(label:Text(x),selected:cat==x,onSelected:(_)=>setState(()=>cat=x)))).toList())),
@@ -486,7 +496,8 @@ class _ShopPageState extends State<ShopPage>{
 
 class _AutoBannerCarousel extends StatefulWidget {
   final List<String> urls;
-  const _AutoBannerCarousel({required this.urls});
+  final double height;
+  const _AutoBannerCarousel({required this.urls, this.height = 165});
   @override State<_AutoBannerCarousel> createState() => _AutoBannerCarouselState();
 }
 
@@ -530,7 +541,7 @@ class _AutoBannerCarouselState extends State<_AutoBannerCarousel> {
   Widget build(BuildContext context) {
     return Column(children: [
       SizedBox(
-        height: 165,
+        height: widget.height,
         child: PageView.builder(
           controller: controller,
           itemCount: widget.urls.length,
@@ -672,37 +683,158 @@ class _CartScreenState extends State<CartScreen>{
   }
 }
 
-class OrdersPage extends StatelessWidget{
-  final User? user;final Future<void> Function(String) onCancel;
-  const OrdersPage({super.key,required this.user,required this.onCancel});
-  Widget build(BuildContext c){
-    if(user==null)return const InfoCard(title:'Your orders',detail:'Sign in to place and track your ALLways orders.');
-    return StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').where('customerId',isEqualTo:user!.uid).snapshots(),builder:(c,s){
-      if(s.hasError)return const InfoCard(title:'Orders unavailable',detail:'Please check your connection.');
-      if(!s.hasData)return const Center(child:CircularProgressIndicator());
-      final docs=[...s.data!.docs]..sort((a,b)=>((b.data()['createdAt']??0)as num).compareTo(((a.data()['createdAt']??0)as num)));
-      return ListView(padding:const EdgeInsets.all(16),children:[
-        const Text('Your Orders',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900)),const SizedBox(height:12),
-        if(docs.isEmpty)const InfoCard(title:'No orders yet',detail:'Your placed orders will appear here.'),
-        ...docs.map((d){final o=d.data();final status=(o['status']??'New Order').toString();final canCancel=status=='New Order'||status=='Confirmed';final items=(o['items'] as List? ?? []).map((x)=>x['name'].toString()+' × '+x['qty'].toString()).join(', ');
-          return Card(child:ExpansionTile(title:Text('#'+(o['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(status+' • ₹'+(o['total']??0).toString()),children:[
-            Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-              StatusView(status:status),
-              if((o['eta']??o['estimatedDelivery']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(top:10,bottom:8),child:ListTile(leading:const Icon(Icons.schedule),title:const Text('Estimated delivery',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['eta']??o['estimatedDelivery']).toString(),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)))),
-              if((o['customerMessage']??o['statusNote']??'').toString().isNotEmpty)Card(margin:const EdgeInsets.only(bottom:10),child:ListTile(leading:const Icon(Icons.message_outlined),title:const Text('Message from ALLways',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text((o['customerMessage']??o['statusNote']).toString(),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)))),
-              const SizedBox(height:3),Text(items),Text('Address: '+(o['address']??'').toString()),
-              if((o['cancellationReason']??'').toString().isNotEmpty)Padding(padding:const EdgeInsets.only(top:8),child:Text('Cancellation reason: '+o['cancellationReason'].toString())),
-              if(canCancel)Padding(padding:const EdgeInsets.only(top:12),child:OutlinedButton.icon(onPressed:()=>_confirmCancel(c,o['id']?.toString()??d.id,onCancel),icon:const Icon(Icons.cancel_outlined),label:const Text('Cancel order')))
-            ]))]));})
-      ]);
-    });
+class OrdersPage extends StatelessWidget {
+  final User? user;
+  final Future<void> Function(String) onCancel;
+  const OrdersPage({super.key, required this.user, required this.onCancel});
+
+  DateTime _createdAt(Map<String, dynamic> o) {
+    final value = o['createdAt'];
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is num) return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    return DateTime.tryParse((o['time'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
-  Future<void> _confirmCancel(BuildContext c,String id,Future<void> Function(String) cancel) async {
-    final reason=TextEditingController();
-    final ok=await showDialog<bool>(context:c,builder:(_)=>AlertDialog(title:const Text('Cancel order?'),content:TextField(controller:reason,maxLines:3,decoration:const InputDecoration(labelText:'Reason for cancellation')),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Keep order')),FilledButton(onPressed:()=>Navigator.pop(c,reason.text.trim().isNotEmpty),child:const Text('Cancel order'))]))??false;
-    final clean=reason.text.trim();reason.dispose();if(ok)await cancel(id+'||'+clean);
+
+  String _dateTime(Map<String, dynamic> o) {
+    final d = _createdAt(o);
+    if (d.millisecondsSinceEpoch == 0) return 'Date unavailable';
+    final hour = d.hour == 0 ? 12 : (d.hour > 12 ? d.hour - 12 : d.hour);
+    final minute = d.minute.toString().padLeft(2, '0');
+    final ampm = d.hour >= 12 ? 'PM' : 'AM';
+    return d.day.toString().padLeft(2, '0') + '/' + d.month.toString().padLeft(2, '0') + '/' + d.year.toString() + ' • ' + hour.toString() + ':' + minute + ' ' + ampm;
+  }
+
+  Color _statusColor(String status) {
+    final s = status.toLowerCase();
+    if (s.contains('delivered')) return Colors.green;
+    if (s.contains('out for delivery') || s.contains('ready for pickup')) return Colors.orange;
+    if (s.contains('cancel')) return Colors.red;
+    if (s.contains('confirm') || s.contains('prepar')) return Colors.blue;
+    return Colors.grey;
+  }
+
+  Widget _statusChip(String status) {
+    final color = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.14),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Text(status, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext c) {
+    if (user == null) return const InfoCard(title: 'Your orders', detail: 'Sign in to place and track your ALLways orders.');
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Your Orders', style: TextStyle(fontWeight: FontWeight.w800)),
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance.collection('orders').where('customerId', isEqualTo: user!.uid).snapshots(),
+        builder: (c, s) {
+          if (s.hasError) return const InfoCard(title: 'Orders unavailable', detail: 'Please check your connection.');
+          if (!s.hasData) return const Center(child: CircularProgressIndicator());
+          final docs = [...s.data!.docs]..sort((a, b) => _createdAt(b.data()).compareTo(_createdAt(a.data())));
+          if (docs.isEmpty) return const Center(child: InfoCard(title: 'No orders yet', detail: 'Your placed orders will appear here.'));
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final d = docs[index];
+              final o = d.data();
+              final status = (o['status'] ?? 'New Order').toString();
+              final canCancel = status == 'New Order' || status == 'Confirmed';
+              final total = o['total'] is num ? (o['total'] as num).toDouble() : double.tryParse((o['total'] ?? 0).toString()) ?? 0;
+              final rawItems = o['items'];
+              final items = rawItems is List ? rawItems.map((x) => x is Map ? (x['name'].toString() + ' × ' + x['qty'].toString()) : x.toString()).join(', ') : '';
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                clipBehavior: Clip.antiAlias,
+                child: ExpansionTile(
+                  tilePadding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  title: Row(
+                    children: [
+                      Expanded(child: Text('#' + (o['id'] ?? d.id).toString(), style: const TextStyle(fontWeight: FontWeight.w900))),
+                      _statusChip(status),
+                    ],
+                  ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(_dateTime(o) + '\n₹' + total.toStringAsFixed(0), style: const TextStyle(color: Colors.grey)),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  children: [
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          StatusView(status: status),
+                          if ((o['eta'] ?? o['estimatedDelivery'] ?? '').toString().isNotEmpty)
+                            Card(margin: const EdgeInsets.only(top: 10, bottom: 8), child: ListTile(leading: const Icon(Icons.schedule), title: const Text('Estimated delivery', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text((o['eta'] ?? o['estimatedDelivery']).toString(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)))),
+                          if ((o['customerMessage'] ?? o['statusNote'] ?? '').toString().isNotEmpty)
+                            Card(margin: const EdgeInsets.only(bottom: 10), child: ListTile(leading: const Icon(Icons.message_outlined), title: const Text('Message from ALLways', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text((o['customerMessage'] ?? o['statusNote']).toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
+                          Text(items),
+                          const SizedBox(height: 6),
+                          Text('Address: ' + (o['address'] ?? '').toString()),
+                          if ((o['cancellationReason'] ?? '').toString().isNotEmpty)
+                            Padding(padding: const EdgeInsets.only(top: 8), child: Text('Cancellation reason: ' + o['cancellationReason'].toString())),
+                          if (canCancel)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: OutlinedButton.icon(
+                                onPressed: () => _confirmCancel(c, o['id']?.toString() ?? d.id, onCancel),
+                                icon: const Icon(Icons.cancel_outlined),
+                                label: const Text('Cancel order'),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _confirmCancel(BuildContext c, String id, Future<void> Function(String) cancel) async {
+    final reason = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: c,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancel order?'),
+        content: TextField(controller: reason, maxLines: 3, decoration: const InputDecoration(labelText: 'Reason for cancellation')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep order')),
+          FilledButton(onPressed: () => Navigator.pop(c, reason.text.trim().isNotEmpty), child: const Text('Cancel order')),
+        ],
+      ),
+    ) ?? false;
+    final clean = reason.text.trim();
+    reason.dispose();
+    if (ok) await cancel(id + '||' + clean);
   }
 }
+
 class StatusView extends StatelessWidget{final String status;const StatusView({super.key,required this.status});Widget build(BuildContext c){
   const s=['New Order','Confirmed','Preparing','Out for delivery','Delivered'];final i=s.indexOf(status)<0?0:s.indexOf(status);
   return Column(children:[for(int x=0;x<s.length;x++)ListTile(dense:true,contentPadding:EdgeInsets.zero,leading:Icon(x<=i?Icons.check_circle:Icons.radio_button_unchecked,color:x<=i?Colors.green:Colors.grey),title:Text(s[x]))]);
@@ -1386,45 +1518,168 @@ class _SellerDashboardState extends State<SellerDashboard> {
 }
 
 
-class CarrierDashboard extends StatelessWidget {
+class CarrierDashboard extends StatefulWidget {
   final User user;
   const CarrierDashboard({super.key, required this.user});
 
+  @override
+  State<CarrierDashboard> createState() => _CarrierDashboardState();
+}
+
+class _CarrierDashboardState extends State<CarrierDashboard> {
+  bool online = false;
+  bool loadingDuty = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDutyStatus();
+  }
+
+  Future<void> _loadDutyStatus() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('onboarding_requests').where('uid', isEqualTo: widget.user.uid).where('type', isEqualTo: 'carrier').limit(1).get();
+      if (doc.docs.isNotEmpty && mounted) {
+        setState(() {
+          online = doc.docs.first.data()['dutyStatus'] == 'online';
+          loadingDuty = false;
+        });
+      } else if (mounted) {
+        setState(() => loadingDuty = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => loadingDuty = false);
+    }
+  }
+
+  Future<void> _setDutyStatus(bool value) async {
+    setState(() => online = value);
+    try {
+      final doc = await FirebaseFirestore.instance.collection('onboarding_requests').where('uid', isEqualTo: widget.user.uid).where('type', isEqualTo: 'carrier').limit(1).get();
+      if (doc.docs.isNotEmpty) {
+        await doc.docs.first.reference.update({
+          'dutyStatus': value ? 'online' : 'offline',
+          'dutyStatusUpdatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => online = !value);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not update duty status.')));
+      }
+    }
+  }
+
   Future<void> openMaps(BuildContext context, String address) async {
+    if (address.trim().isEmpty) return;
     final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=' + Uri.encodeComponent(address));
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open Google Maps.')));
     }
   }
 
+  num _number(dynamic value) => value is num ? value : num.tryParse(value.toString()) ?? 0;
+
   @override
   Widget build(BuildContext context) {
     return Card(
       child: ExpansionTile(
-        leading: const Icon(Icons.delivery_dining),
+        leading: Icon(Icons.delivery_dining, color: online ? Colors.greenAccent : null),
         title: const Text('Carrier Dashboard', style: TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: const Text('Active assigned orders'),
+        subtitle: Text(online ? 'Duty Status: Online' : 'Duty Status: Offline'),
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  ),
+                  child: SwitchListTile(
+                    title: const Text('Duty Status', style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: Text(online ? 'Online — ready for pickup requests' : 'Offline — you will not receive new pickup requests'),
+                    value: online,
+                    onChanged: loadingDuty ? null : _setDutyStatus,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance.collection('orders').where('carrierUid', isEqualTo: widget.user.uid).snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) return const SizedBox(height: 88, child: Center(child: CircularProgressIndicator()));
+                    num earnings = 0;
+                    int completed = 0;
+                    for (final d in snapshot.data!.docs) {
+                      final o = d.data();
+                      if ((o['status'] ?? '').toString().toLowerCase() == 'delivered') {
+                        completed++;
+                        earnings += _number(o['carrierEarnings'] ?? o['deliveryFee'] ?? 0);
+                      }
+                    }
+                    return Row(
+                      children: [
+                        Expanded(child: _carrierStat(context, 'Today\'s Earnings', '₹' + earnings.toStringAsFixed(0), Icons.currency_rupee)),
+                        const SizedBox(width: 10),
+                        Expanded(child: _carrierStat(context, 'Completed Deliveries', completed.toString(), Icons.check_circle_outline)),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('New Pickup Requests', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                ),
+                const SizedBox(height: 8),
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'Ready for pickup').snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) return const Padding(padding: EdgeInsets.all(12), child: Text('Pickup requests are temporarily unavailable.'));
+                    if (!snapshot.hasData) return const Padding(padding: EdgeInsets.all(14), child: CircularProgressIndicator());
+                    final docs = snapshot.data!.docs;
+                    if (docs.isEmpty) return const Padding(padding: EdgeInsets.all(14), child: Text('No new pickup requests right now.'));
+                    return Column(
+                      children: docs.take(10).map((d) {
+                        final o = d.data();
+                        final rawItems = o['items'];
+                        final itemText = rawItems is List ? rawItems.map((x) => x is Map ? (x['name'].toString() + ' × ' + x['qty'].toString()) : x.toString()).join(', ') : '';
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: const CircleAvatar(child: Icon(Icons.inventory_2_outlined)),
+                            title: Text('#' + (o['id'] ?? d.id).toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
+                            subtitle: Text((itemText.isEmpty ? 'Order ready for pickup' : itemText) + '\nCOD: ₹' + _number(o['total']).toStringAsFixed(0)),
+                            isThreeLine: true,
+                            trailing: IconButton(
+                              onPressed: () => openMaps(context, (o['address'] ?? '').toString()),
+                              icon: const Icon(Icons.navigation_outlined),
+                              tooltip: 'Navigate',
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance.collection('orders').where('carrierUid', isEqualTo: user.uid).snapshots(),
+            stream: FirebaseFirestore.instance.collection('orders').where('carrierUid', isEqualTo: widget.user.uid).snapshots(),
             builder: (context, snapshot) {
-              if (snapshot.hasError) return Padding(padding: const EdgeInsets.all(14), child: Text('Could not load assigned orders: ' + snapshot.error.toString()));
-              if (!snapshot.hasData) return const Padding(padding: EdgeInsets.all(14), child: CircularProgressIndicator());
-
+              if (!snapshot.hasData) return const SizedBox.shrink();
               final docs = snapshot.data!.docs.where((d) {
                 final status = (d.data()['status'] ?? '').toString();
                 return status != 'Delivered' && status != 'Cancelled';
               }).toList();
-
-              if (docs.isEmpty) return const Padding(padding: EdgeInsets.all(16), child: Text('No active assigned orders.'));
-
+              if (docs.isEmpty) return const Padding(padding: EdgeInsets.fromLTRB(16, 4, 16, 16), child: Text('No active assigned orders.'));
               return Column(
                 children: docs.map((d) {
                   final order = d.data();
                   final rawItems = order['items'];
-                  final itemText = rawItems is List
-                      ? rawItems.map((x) => x is Map ? (x['name'].toString() + ' × ' + x['qty'].toString()) : x.toString()).join(', ')
-                      : '';
+                  final itemText = rawItems is List ? rawItems.map((x) => x is Map ? (x['name'].toString() + ' × ' + x['qty'].toString()) : x.toString()).join(', ') : '';
                   return Card(
                     child: ListTile(
                       title: Text('#' + (order['id'] ?? d.id).toString()),
@@ -1440,6 +1695,26 @@ class CarrierDashboard extends StatelessWidget {
               );
             },
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _carrierStat(BuildContext context, String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(height: 8),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
         ],
       ),
     );

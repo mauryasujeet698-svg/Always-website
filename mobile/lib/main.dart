@@ -3421,7 +3421,6 @@ class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPa
       actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Cancel'))],
     ));
     if(selected==null)return;
-    final x=selected.data();
     try{
       await FirebaseFirestore.instance.runTransaction((tx) async {
         final latestOrder=await tx.get(order.reference);

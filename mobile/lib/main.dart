@@ -451,33 +451,20 @@ class _ShopPageState extends State<ShopPage>{
           const Text('ALLways',style:TextStyle(fontSize:30,fontWeight:FontWeight.w900)),
           const Text('Closer to You, Always',style:TextStyle(color:Colors.grey)),
           const SizedBox(height:14),
-          Card(
-            color: Colors.black,
-            clipBehavior: Clip.antiAlias,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 22, 22, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Priority Delivery', style: TextStyle(color: Colors.white70)),
-                  const SizedBox(height: 7),
-                  const Text('Everything you need, closer to home.', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 7),
-                  const Text('Shop local essentials. Simple ordering.', style: TextStyle(color: Colors.white70)),
-                  const SizedBox(height: 16),
-                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError || !snapshot.hasData) return const SizedBox.shrink();
-                      final raw = snapshot.data?.data()?['imageUrls'];
-                      final urls = raw is List ? raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
-                      if (urls.isEmpty) return const SizedBox.shrink();
-                      return _AutoBannerCarousel(urls: urls, height: 150);
-                    },
-                  ),
-                ],
-              ),
-            ),
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('settings').doc('banners').snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError || !snapshot.hasData) return const SizedBox.shrink();
+              final raw = snapshot.data?.data()?['imageUrls'];
+              final urls = raw is List ? raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
+              if (urls.isEmpty) return const SizedBox.shrink();
+              return Card(
+                color: Colors.black,
+                clipBehavior: Clip.antiAlias,
+                margin: EdgeInsets.zero,
+                child: _AutoBannerCarousel(urls: urls, height: 190),
+              );
+            },
           ),
           const SizedBox(height: 16),
           TextField(decoration:const InputDecoration(hintText:'Search items',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>search=v)),
@@ -1911,6 +1898,7 @@ class _LocalSellersPageState extends State<LocalSellersPage> {
                 final ratingText = rating == null ? 'New' : '⭐ ' + rating.toString();
                 final open = x['isOpen'];
                 final statusText = open == true ? 'Open now' : open == false ? 'Closed' : 'Hours not set';
+                final statusColor = open == true ? Colors.green : open == false ? Colors.grey : Colors.orange;
                 return Card(
                   margin: const EdgeInsets.only(bottom: 10),
                   clipBehavior: Clip.antiAlias,
@@ -1927,7 +1915,11 @@ class _LocalSellersPageState extends State<LocalSellersPage> {
                       Expanded(child: Text(shop, style: const TextStyle(fontWeight: FontWeight.w800))),
                       const Icon(Icons.verified, size: 18),
                     ]),
-                    subtitle: Text('$cat • $ratingText • $statusText'),
+                    subtitle: Row(children: [
+                      Container(width: 8, height: 8, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text('$cat • $ratingText • $statusText', overflow: TextOverflow.ellipsis)),
+                    ]),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SellerProfilePage(sellerId: d.id))),
                   ),
@@ -2042,7 +2034,7 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 Chip(label: Text(data['rating'] == null ? 'New seller' : '⭐ ' + data['rating'].toString())),
-                Chip(label: Text(open == true ? '🟢 Open now' : open == false ? '🔴 Closed' : 'Hours not set')),
+                Chip(avatar: Container(width: 9, height: 9, decoration: BoxDecoration(color: open == true ? Colors.green : open == false ? Colors.grey : Colors.orange, shape: BoxShape.circle)), label: Text(open == true ? 'Open now' : open == false ? 'Closed' : 'Hours not set')),
                 if (hours.isNotEmpty) Chip(label: Text(hours)),
               ]),
               const SizedBox(height: 10),

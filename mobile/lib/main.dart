@@ -1541,9 +1541,6 @@ class _SellerDashboardState extends State<SellerDashboard> {
               const SizedBox(height: 10),
               TextField(controller: shop, decoration: const InputDecoration(labelText: 'Shop name')),
               const SizedBox(height: 12),
-              /* Existing image picker kept visually equivalent; the button above is the primary edit action. */
-              OutlinedButton.icon(onPressed: uploading ? null : () async {
-
               const Align(alignment: Alignment.centerLeft, child: Text('Update your name, shop name and the shop image customers see.', style: TextStyle(color: Colors.grey, fontSize: 12))),
             ])),
             actions: [

@@ -532,7 +532,10 @@ jobs:
             git push origin HEAD:allways-android-app
           fi
 
-      # firebase_messaging is already declared in mobile/pubspec.yaml.\n      # Its Android Firebase Messaging dependency is supplied transitively by the Flutter plugin.\n      # Do not inject a second native dependency here; doing so breaks generated Kotlin Gradle projects.\n      - name: Set ALLways app label and notification permission
+      # firebase_messaging is already declared in mobile/pubspec.yaml.
+      # Its Android Firebase Messaging dependency is supplied transitively by the Flutter plugin.
+      # Do not inject a second native dependency here; doing so breaks generated Kotlin Gradle projects.
+      - name: Set ALLways app label and notification permission
         run: |
           cd mobile
           python3 - <<'PY'

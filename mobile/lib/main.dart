@@ -998,6 +998,7 @@ class _ProfilePageState extends State<ProfilePage>{
     );
   }
 
+  // Language preference is reactive through languageNotifier so visible labels update immediately.
   Future<void> _chooseLanguage(BuildContext c) async {
     final prefs=await SharedPreferences.getInstance();
     final current=prefs.getString('allways_language')??'English';

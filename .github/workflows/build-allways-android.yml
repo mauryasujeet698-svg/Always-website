@@ -1,3 +1,592 @@
+# ALLways Android build workflow - signing verification
+name: Build ALLways Android APK
+
+on:
+  push:
+    branches:
+      - allways-android-app
+      - main
+    paths:
+      - "mobile/**"
+      - ".github/workflows/build-allways-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.2"
+          channel: stable
+          cache: true
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Ensure permanent Android project exists
+        run: |
+          cd mobile
+          if [ ! -f android/settings.gradle ] && [ ! -f android/settings.gradle.kts ]; then
+            mkdir -p /tmp/allways-bootstrap
+            if [ -f android/app/google-services.json ]; then cp android/app/google-services.json /tmp/allways-bootstrap/google-services.json; fi
+            flutter create . --platforms=android --org com.allways.app
+            if [ -f /tmp/allways-bootstrap/google-services.json ]; then
+              mkdir -p android/app
+              cp /tmp/allways-bootstrap/google-services.json android/app/google-services.json
+            fi
+          fi
+          test -f android/settings.gradle || test -f android/settings.gradle.kts
+          test -f android/app/google-services.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          target="com.allways.app"
+          root=Path("android/app/src/main")
+          candidates=list((root/"kotlin").rglob("MainActivity.kt"))+list((root/"java").rglob("MainActivity.java"))
+          if not candidates: raise SystemExit("MainActivity not found")
+          src=candidates[0]
+          text=re.sub(r'^package\s+[^\n]+',f'package {target}',src.read_text(),count=1,flags=re.M)
+          target_dir=root/"kotlin"/"com"/"allways"/"app"
+          if src.suffix==".java": target_dir=root/"java"/"com"/"allways"/"app"
+          target_dir.mkdir(parents=True,exist_ok=True)
+          dst=target_dir/src.name
+          dst.write_text(text)
+          if src.resolve()!=dst.resolve(): src.unlink()
+          PY
+
+      - name: Configure native PackageInstaller updater
+        run: |
+          cd mobile
+          mkdir -p android/app/src/main/kotlin/com/allways/app
+          cat > android/app/src/main/kotlin/com/allways/app/MainActivity.kt <<'EOF'
+          package com.allways.app
+          
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageInstaller
+          import android.net.Uri
+          import android.os.Build
+          import android.provider.Settings
+          import androidx.core.app.NotificationCompat
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+          import java.io.File
+          import java.io.FileInputStream
+          
+          class MainActivity : FlutterActivity() {
+              private val updaterChannel = "com.allways.app/apk_installer"
+              private val installAction = "com.allways.app.PACKAGE_INSTALL_STATUS"
+              private val notificationChannelId = "allways_updates"
+
+              override fun onCreate(savedInstanceState: android.os.Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  createNotificationChannel()
+              }
+          
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannel)
+                      .setMethodCallHandler { call, result ->
+                          when (call.method) {
+                              "showNotification" -> {
+                                  showLocalNotification(call.argument<String>("title") ?: "ALLways", call.argument<String>("body") ?: "New update")
+                                  result.success("shown")
+                              }
+                              "createNotificationChannel" -> {
+                                  createNotificationChannel()
+                                  result.success("created")
+                              }
+                              "installApk" -> installApk(call.argument<String>("path"), result)
+                              else -> result.notImplemented()
+                          }
+                      }
+              }
+          
+              private fun createNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      manager.createNotificationChannel(
+                          NotificationChannel(notificationChannelId, "ALLways Updates", NotificationManager.IMPORTANCE_HIGH).apply {
+                              description = "Order, delivery and ALLways alerts"
+                              enableVibration(true)
+                          }
+                      )
+                  }
+              }
+
+              private fun showLocalNotification(title: String, body: String) {
+                  createNotificationChannel()
+                  val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                  }
+                  val pending = launchIntent?.let {
+                      PendingIntent.getActivity(
+                          this,
+                          (System.currentTimeMillis() and 0x7fffffff).toInt(),
+                          it,
+                          PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+                      )
+                  }
+                  val notification = NotificationCompat.Builder(this, notificationChannelId)
+                      .setSmallIcon(applicationInfo.icon)
+                      .setContentTitle(title)
+                      .setContentText(body)
+                      .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                      .setAutoCancel(true)
+                      .setContentIntent(pending)
+                      .build()
+                  (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                      .notify((System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
+              }
+
+              private fun installApk(path: String?, result: MethodChannel.Result) {
+                  if (path.isNullOrBlank()) {
+                      result.error("NO_APK", "APK path is missing", null)
+                      return
+                  }
+                  try {
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                          !packageManager.canRequestPackageInstalls()) {
+                          startActivity(
+                              Intent(
+                                  Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                  Uri.parse("package:$packageName")
+                              )
+                          )
+                          result.success("permission_required")
+                          return
+                      }
+                      val apk = File(path)
+                      if (!apk.exists() || !apk.isFile || !apk.canRead() || apk.length() <= 0L) {
+                          result.error("NO_APK", "Downloaded APK is missing or unreadable", null)
+                          return
+                      }
+          
+                      val installer = packageManager.packageInstaller
+                      val params = PackageInstaller.SessionParams(
+                          PackageInstaller.SessionParams.MODE_FULL_INSTALL
+                      )
+                      params.setAppPackageName(packageName)
+                      params.setAppLabel("ALLways")
+          
+                      val sessionId = installer.createSession(params)
+                      val session = installer.openSession(sessionId)
+                      try {
+                          session.openWrite("package", 0, apk.length()).use { output ->
+                              FileInputStream(apk).use { input ->
+                                  input.copyTo(output, 1024 * 1024)
+                              }
+                              session.fsync(output)
+                          }
+          
+                          val statusIntent = Intent(this, InstallStatusReceiver::class.java).apply {
+                              action = installAction
+                              putExtra("sessionId", sessionId)
+                          }
+          
+                          val flags =
+                              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                  PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                              } else {
+                                  PendingIntent.FLAG_UPDATE_CURRENT
+                              }
+          
+                          session.commit(
+                              PendingIntent.getBroadcast(
+                                  this,
+                                  sessionId,
+                                  statusIntent,
+                                  flags
+                              ).intentSender
+                          )
+                          result.success("started")
+                      } catch (e: Exception) {
+                          try { session.abandon() } catch (_: Exception) {}
+                          throw e
+                      } finally {
+                          try { session.close() } catch (_: Exception) {}
+                      }
+                  } catch (e: Exception) {
+                      result.error(
+                          "INSTALL_FAILED",
+                          e.message ?: "Package installation failed",
+                          null
+                      )
+                  }
+              }
+          
+              class InstallStatusReceiver : BroadcastReceiver() {
+                  override fun onReceive(context: Context, intent: Intent) {
+                      if (
+                          intent.getIntExtra(
+                              PackageInstaller.EXTRA_STATUS,
+                              PackageInstaller.STATUS_FAILURE
+                          ) == PackageInstaller.STATUS_PENDING_USER_ACTION
+                      ) {
+                          val confirmIntent =
+                              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                  intent.getParcelableExtra(
+                                      Intent.EXTRA_INTENT,
+                                      Intent::class.java
+                                  )
+                              } else {
+                                  @Suppress("DEPRECATION")
+                                  intent.getParcelableExtra(Intent.EXTRA_INTENT)
+                              }
+          
+                          if (confirmIntent != null) {
+                              confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                              context.startActivity(confirmIntent)
+                          }
+                      }
+                  }
+              }
+          }
+          
+          EOF
+          cat > android/app/src/main/kotlin/com/allways/app/AllwaysFirebaseMessagingService.kt <<'EOF'
+          package com.allways.app
+
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+          import androidx.core.app.NotificationCompat
+          import com.google.firebase.messaging.FirebaseMessagingService
+          import com.google.firebase.messaging.RemoteMessage
+
+          class AllwaysFirebaseMessagingService : FirebaseMessagingService() {
+              override fun onMessageReceived(message: RemoteMessage) {
+                  val title = message.notification?.title ?: message.data["title"] ?: "ALLways"
+                  val body = message.notification?.body ?: message.data["body"] ?: message.data["message"] ?: "You have a new ALLways update."
+                  val channelId = "allways_updates"
+                  val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      manager.createNotificationChannel(NotificationChannel(channelId, "ALLways Updates", NotificationManager.IMPORTANCE_HIGH))
+                  }
+                  val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                  }
+                  val pending = launchIntent?.let {
+                      PendingIntent.getActivity(this, (System.currentTimeMillis() and 0x7fffffff).toInt(), it,
+                          PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                  }
+                  val notification = NotificationCompat.Builder(this, channelId)
+                      .setSmallIcon(applicationInfo.icon)
+                      .setContentTitle(title)
+                      .setContentText(body)
+                      .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                      .setAutoCancel(true)
+                      .setContentIntent(pending)
+                      .build()
+                  manager.notify((System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
+              }
+          }
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          manifest=Path("android/app/src/main/AndroidManifest.xml")
+          s=manifest.read_text()
+          if "android.permission.REQUEST_INSTALL_PACKAGES" not in s:
+              m=re.search(r"<manifest[^>]*>",s)
+              if not m: raise SystemExit("manifest root missing")
+              s=s[:m.end()]+'\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>'+s[m.end():]
+          if "MainActivity$InstallStatusReceiver" not in s:
+              s=s.replace("</application>",'        <receiver android:name=".MainActivity$InstallStatusReceiver" android:exported="false"/>\n    </application>',1)
+          manifest.write_text(s)
+          PY
+      - name: Preserve Flutter launch manifest and validate it
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          p=Path("android/app/src/main/AndroidManifest.xml")
+          ET.parse(p)
+          s=p.read_text()
+          required=['${applicationName}','.MainActivity','@style/LaunchTheme','android.intent.action.MAIN','android.intent.category.LAUNCHER']
+          missing=[x for x in required if x not in s]
+          if missing:
+              raise SystemExit("FAIL: Flutter launch manifest missing: "+", ".join(missing))
+          print("PASS: preserved Flutter-generated launch manifest.")
+          PY
+
+      - name: Verify PackageInstaller updater and launcher
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          main=Path("android/app/src/main/kotlin/com/allways/app/MainActivity.kt").read_text()
+          manifest=Path("android/app/src/main/AndroidManifest.xml").read_text()
+          ET.parse("android/app/src/main/AndroidManifest.xml")
+          required=["PackageInstaller.SessionParams","session.openWrite","session.commit","packageManager.canRequestPackageInstalls()","Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES"]
+          missing=[x for x in required if x not in main]
+          if "Intent.ACTION_INSTALL_PACKAGE" in main: missing.append("deprecated ACTION_INSTALL_PACKAGE must be absent")
+          for x in ["android.permission.REQUEST_INSTALL_PACKAGES","android:name=\".MainActivity\"","android.intent.action.MAIN","android.intent.category.LAUNCHER"]:
+              if x not in manifest: missing.append(x)
+          if missing: raise SystemExit("FAIL: "+", ".join(missing))
+          print("PASS: stable launcher + PackageInstaller updater verified")
+          PY
+
+      - name: Configure ALLways Android package and Firebase Google Services
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          target_package = "com.allways.app"
+
+          # flutter create --org com.allways.app would otherwise produce
+          # com.allways.app.allways_app. ALLways is already registered in
+          # Firebase/Google OAuth as com.allways.app, so force the exact ID.
+          app = Path("android/app")
+          groovy = app / "build.gradle"
+          kotlin = app / "build.gradle.kts"
+          settings_groovy = Path("android/settings.gradle")
+          settings_kotlin = Path("android/settings.gradle.kts")
+
+          if groovy.exists():
+              p = groovy
+              s = p.read_text()
+              s = re.sub(r"namespace\s+['\"][^'\"]+['\"]", 'namespace "' + target_package + '"', s, count=1)
+              s = re.sub(r"applicationId\s+['\"][^'\"]+['\"]", 'applicationId "' + target_package + '"', s, count=1)
+              p.write_text(s)
+          elif kotlin.exists():
+              p = kotlin
+              s = p.read_text()
+              s = re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "' + target_package + '"', s, count=1)
+              s = re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "' + target_package + '"', s, count=1)
+              p.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle file found")
+
+          # Apply the official Google Services Gradle plugin so the checked-in
+          # google-services.json is actually processed during the build.
+          if settings_groovy.exists():
+              p = settings_groovy
+              s = p.read_text()
+              if 'com.google.gms.google-services' not in s:
+                  marker = 'plugins {'
+                  s = s.replace(marker, marker + '\n    id "com.google.gms.google-services" version "4.5.0" apply false', 1)
+              p.write_text(s)
+              app_text = groovy.read_text() if groovy.exists() else ""
+              if 'com.google.gms.google-services' not in app_text:
+                  app_text = app_text.replace('plugins {', 'plugins {\n    id "com.google.gms.google-services"', 1)
+                  groovy.write_text(app_text)
+          elif settings_kotlin.exists():
+              p = settings_kotlin
+              s = p.read_text()
+              if 'com.google.gms.google-services' not in s:
+                  marker = 'plugins {'
+                  s = s.replace(marker, marker + '\n    id("com.google.gms.google-services") version "4.5.0" apply false', 1)
+              p.write_text(s)
+              app_text = kotlin.read_text() if kotlin.exists() else ""
+              if 'com.google.gms.google-services' not in app_text:
+                  app_text = app_text.replace('plugins {', 'plugins {\n    id("com.google.gms.google-services")', 1)
+                  kotlin.write_text(app_text)
+          else:
+              raise SystemExit("No Android settings Gradle file found")
+          PY
+
+          grep -R -n 'applicationId.*com.allways.app' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
+
+      - name: Verify Firebase configuration
+        run: |
+          cd mobile
+          test -f android/app/google-services.json
+          grep -q '"client_type": 1' android/app/google-services.json
+          grep -q '"package_name": "com.allways.app"' android/app/google-services.json
+          grep -q 'com.allways.app' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null
+          grep -q 'com.google.gms.google-services' android/settings.gradle android/settings.gradle.kts 2>/dev/null
+
+      - name: Configure permanent ALLways release signing
+        env:
+          ALLWAYS_KEYSTORE_BASE64: ${{ secrets.ALLWAYS_KEYSTORE_BASE64 }}
+          ALLWAYS_KEYSTORE_PASSWORD: ${{ secrets.ALLWAYS_KEYSTORE_PASSWORD }}
+          ALLWAYS_KEY_PASSWORD: ${{ secrets.ALLWAYS_KEY_PASSWORD }}
+        run: |
+          test -n "$ALLWAYS_KEYSTORE_BASE64"
+          test -n "$ALLWAYS_KEYSTORE_PASSWORD"
+          test -n "$ALLWAYS_KEY_PASSWORD"
+          cd mobile
+          mkdir -p android/keystore
+          printf '%s' "$ALLWAYS_KEYSTORE_BASE64" | base64 --decode > android/keystore/allways-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ALLWAYS_KEYSTORE_PASSWORD
+          keyPassword=$ALLWAYS_KEY_PASSWORD
+          keyAlias=allways
+          storeFile=keystore/allways-release.jks
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app")
+          groovy = p / "build.gradle"
+          kotlin = p / "build.gradle.kts"
+
+          if groovy.exists():
+              f = groovy
+              s = f.read_text()
+              if "key.properties" not in s:
+                  prefix = '''import java.util.Properties
+          import java.io.FileInputStream
+
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+                  s = prefix + s
+              if "signingConfigs {" not in s:
+                  s = s.replace("android {", '''android {
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties["keyAlias"]
+                      keyPassword keystoreProperties["keyPassword"]
+                      storeFile keystoreProperties["storeFile"] ? rootProject.file(keystoreProperties["storeFile"]) : null
+                      storePassword keystoreProperties["storePassword"]
+                  }
+              }''', 1)
+              s = s.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release")
+              if "signingConfig signingConfigs.release" not in s:
+                  s = s.replace("buildTypes {", '''buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+              buildTypes {''', 1)
+              f.write_text(s)
+          elif kotlin.exists():
+              f = kotlin
+              s = f.read_text()
+              if "key.properties" not in s:
+                  prefix = '''import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+                  s = prefix + s
+              if 'create("release")' not in s:
+                  s = s.replace("android {", '''android {
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = keystoreProperties["storeFile"]?.let { rootProject.file(it as String) }
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }''', 1)
+              s = s.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
+              if 'signingConfig = signingConfigs.getByName("release")' not in s:
+                  s = s.replace("buildTypes {", '''buildTypes {
+                  getByName("release") {
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+              }
+              buildTypes {''', 1)
+              f.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle build file found")
+          PY
+
+      - name: Persist Android project changes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/android
+          if ! git diff --cached --quiet; then
+            git commit -m "Persist permanent ALLways Android project"
+            git fetch origin allways-android-app
+            git rebase origin/allways-android-app
+            git push origin HEAD:allways-android-app
+          fi
+
+      # firebase_messaging is already declared in mobile/pubspec.yaml.
+      # Its Android Firebase Messaging dependency is supplied transitively by the Flutter plugin.
+      # Do not inject a second native dependency here; doing so breaks generated Kotlin Gradle projects.
+      - name: Set ALLways app label and notification permission
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          import re
+          s=re.sub(r'android:label="[^"]+"', 'android:label="ALLways"', s, count=1)
+          # Keep REQUEST_INSTALL_PACKAGES so the Android package installer can be launched on Android 8+.
+          if 'android.permission.REQUEST_INSTALL_PACKAGES' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application ', 1)
+          if 'android.permission.POST_NOTIFICATIONS' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application ', 1)
+          if 'com.google.firebase.messaging.default_notification_channel_id' not in s:
+              s=s.replace('</application>', '        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="allways_updates"/>\n    </application>', 1)
+          if 'AllwaysFirebaseMessagingService' not in s:
+              s=s.replace('</application>', '        <service android:name=".AllwaysFirebaseMessagingService" android:exported="false">\n            <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter>\n        </service>\n    </application>', 1)
+          if 'android.permission.ACCESS_FINE_LOCATION' not in s:
+              s=s.replace('<application ', '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n    <application ', 1)
+          p.write_text(s)
+          PY
+
+      - name: Apply ALLways launcher icon
+        run: |
+          cd mobile
+          mkdir -p android/app/src/main/res/drawable
+          cat > android/app/src/main/res/drawable/ic_allways.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+            <path android:fillColor="#000000" android:pathData="M54,4A50,50 0,1 0,54 104A50,50 0,1 0,54 4"/>
+            <path android:fillColor="#FFFFFF" android:pathData="M54,23 L28,82 L40,82 L46,68 L62,68 L68,82 L80,82 Z M54,42 L59,58 L49,58 Z"/>
+          </vector>
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text().replace('android:icon="@mipmap/ic_launcher"','android:icon="@drawable/ic_allways"')
+          p.write_text(s)
+          PY
+
+      - name: Prepare release padding asset
+        run: |
+          cd mobile
+          mkdir -p assets
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p=Path('assets/release_pad.bin')
+          p.write_bytes(os.urandom(2*1024*1024))
+          print('Created', p, p.stat().st_size, 'bytes')
+          PY
+
       - name: Get packages
         run: |
           cd mobile
@@ -17,5 +606,71 @@
             });
           }
           EOF
-          flutter analyze --no-fatal-infos --no-fatal-warnings
+          flutter analyze --no-fatal-infos
           flutter test
+          cd ..
+          node --check functions/index.js
+
+      - name: Build release APK
+        run: |
+          cd mobile
+          flutter build apk --release --no-shrink
+
+      - name: Verify Android launcher manifest
+        run: |
+          cd mobile
+          APKANALYZER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}" -type f -name apkanalyzer | sort -V | tail -n 1)"
+          test -x "$APKANALYZER"
+          "$APKANALYZER" manifest print build/app/outputs/flutter-apk/app-release.apk > /tmp/allways-manifest.txt
+          grep -q 'com.allways.app.MainActivity' /tmp/allways-manifest.txt
+          grep -q 'android.intent.action.MAIN' /tmp/allways-manifest.txt
+          grep -q 'android.intent.category.LAUNCHER' /tmp/allways-manifest.txt
+      - name: Validate APK without emulator
+        run: |
+          cd mobile
+          APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          ZIPALIGN="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name zipalign | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          test -x "$ZIPALIGN"
+          "$ZIPALIGN" -c -P 16 -v 4 build/app/outputs/flutter-apk/app-release.apk
+          "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
+          echo "ALLways APK passed CI package, alignment, manifest, and signature validation."
+      - name: Verify APK signing certificate
+        run: |
+          cd mobile
+          APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
+          CERT_OUTPUT="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)"
+          echo "$CERT_OUTPUT"
+          echo "$CERT_OUTPUT" | grep -qi 'SHA-1 digest: ee37c219b6d8b962665ec7753b4514b62b35601a' || {
+            echo "ERROR: APK is not signed with the permanent ALLways release certificate."
+            exit 1
+          }
+
+      - name: Prepare versioned APK asset
+        run: |
+          cd mobile
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/allways-v1.4.7.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: allways-release-apk-v1.4.7
+          path: mobile/build/app/outputs/flutter-apk/allways-v1.4.7.apk
+          if-no-files-found: error
+
+      - name: Publish latest APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view allways-latest >/dev/null 2>&1; then
+            gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"
+          fi
+          # Replace existing release assets explicitly. This avoids the GitHub
+          # Releases API 404 that can occur when --clobber targets a stale asset id.
+          for asset in allways-v1.4.7.apk app-release.apk; do
+            gh release delete-asset allways-latest "$asset" --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          done
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.7.apk --repo "$GITHUB_REPOSITORY"
+          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --repo "$GITHUB_REPOSITORY"

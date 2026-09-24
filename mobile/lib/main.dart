@@ -1663,6 +1663,40 @@ class SellerProfilePage extends StatefulWidget {
 class _SellerProfilePageState extends State<SellerProfilePage> {
   bool favourite = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadFavourite();
+  }
+
+  Future<void> _loadFavourite() async {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('favoriteSellers').doc(widget.sellerId).get();
+      if (mounted) setState(() => favourite = snap.exists);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFavourite() async {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sign in to save favourite sellers.')));
+      return;
+    }
+    final ref = FirebaseFirestore.instance.collection('customers').doc(u.uid).collection('favoriteSellers').doc(widget.sellerId);
+    setState(() => favourite = !favourite);
+    try {
+      if (favourite) {
+        await ref.set({'sellerId': widget.sellerId, 'addedAt': FieldValue.serverTimestamp()});
+      } else {
+        await ref.delete();
+      }
+    } catch (_) {
+      if (mounted) setState(() => favourite = !favourite);
+    }
+  }
+
   Future<void> callSeller(String phone) async {
     if (phone.isEmpty) return;
     await launchUrl(Uri.parse('tel:$phone'));
@@ -1700,7 +1734,7 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
         return Scaffold(
           appBar: AppBar(
             title: const Text('Local Seller'),
-            actions: [IconButton(onPressed: () => setState(() => favourite = !favourite), icon: Icon(favourite ? Icons.favorite : Icons.favorite_border, color: Colors.red))],
+            actions: [IconButton(onPressed: _toggleFavourite, icon: Icon(favourite ? Icons.favorite : Icons.favorite_border, color: Colors.red))],
           ),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
@@ -1929,13 +1963,30 @@ class AdminRolesPanel extends StatelessWidget {
                 final x = d.data();
                 return Card(
                   child: ListTile(
-                    leading: (x['photoUrl'] ?? '').toString().isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.network((x['photoUrl'] ?? '').toString(), width: 64, height: 64, fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
-                          )
-                        : const Icon(Icons.person_outline),
+                    leading: SizedBox(
+                      width: role == 'carrier' && (x['bikePhotoUrl'] ?? '').toString().isNotEmpty ? 112 : 64,
+                      height: 64,
+                      child: Row(
+                        children: [
+                          if ((x['photoUrl'] ?? '').toString().isNotEmpty)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.network((x['photoUrl'] ?? '').toString(), width: 64, height: 64, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
+                            )
+                          else
+                            const SizedBox(width: 64, height: 64, child: Icon(Icons.person_outline)),
+                          if (role == 'carrier' && (x['bikePhotoUrl'] ?? '').toString().isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.network((x['bikePhotoUrl'] ?? '').toString(), width: 40, height: 64, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                     title: Text((x['fullName'] ?? 'Applicant').toString()),
                     subtitle: Text([
                       if ((x['mobileNumber'] ?? '').toString().isNotEmpty) 'Mobile: ' + (x['mobileNumber'] ?? '').toString(),

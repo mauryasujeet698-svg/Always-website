@@ -532,6 +532,39 @@ jobs:
             git push origin HEAD:allways-android-app
           fi
 
+      - name: Ensure native Firebase Messaging dependency
+        run: |
+          cd mobile
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("android/app")
+          groovy = app / "build.gradle"
+          kotlin = app / "build.gradle.kts"
+          if groovy.exists():
+              p = groovy
+              s = p.read_text()
+              dep = '    implementation "com.google.firebase:firebase-messaging:25.1.3"'
+              if dep not in s:
+                  if "dependencies {" in s:
+                      s = s.replace("dependencies {", "dependencies {\\n" + dep, 1)
+                  else:
+                      raise SystemExit("dependencies block missing in android/app/build.gradle")
+                  p.write_text(s)
+          elif kotlin.exists():
+              p = kotlin
+              s = p.read_text()
+              dep = '    implementation("com.google.firebase:firebase-messaging:25.1.3")'
+              if dep not in s:
+                  if "dependencies {" in s:
+                      s = s.replace("dependencies {", "dependencies {\\n" + dep, 1)
+                  else:
+                      raise SystemExit("dependencies block missing in android/app/build.gradle.kts")
+                  p.write_text(s)
+          else:
+              raise SystemExit("No Android app Gradle build file found")
+          PY
+          grep -R -n 'firebase-messaging:25.1.3' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null
+
       - name: Set ALLways app label and notification permission
         run: |
           cd mobile

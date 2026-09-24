@@ -222,7 +222,7 @@ class _ShellState extends State<Shell> {
       final body=m.notification?.body??'Open ALLways to view this update.';
       saveIncomingNotification(title,body);
     });
-    messages=FirebaseMessaging.onMessage.listen((m)async{final title=m.notification?.title??'ALLways';final body=m.notification?.body??'New update';await saveIncomingNotification(title,body);if(!mounted)return;try{await const MethodChannel('com.allways.app/apk_installer').invokeMethod('showNotification',{'title':title,'body':body});}catch(_){}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
+    messages=FirebaseMessaging.onMessage.listen((m)async{final title=m.notification?.title??m.data['title']??'ALLways';final body=m.notification?.body??m.data['body']??m.data['message']??'New update';await saveIncomingNotification(title,body);if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
     if(user!=null){setupNotifications();loadAddresses();loadWishlist();}
   }
   @override void dispose(){timer?.cancel();auth?.cancel();messages?.cancel();super.dispose();}

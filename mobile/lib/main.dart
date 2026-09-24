@@ -1611,9 +1611,20 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
                     if (!snapshot.hasData) return const SizedBox(height: 88, child: Center(child: CircularProgressIndicator()));
                     num earnings = 0;
                     int completed = 0;
+                    final now = DateTime.now();
                     for (final d in snapshot.data!.docs) {
                       final o = d.data();
-                      if ((o['status'] ?? '').toString().toLowerCase() == 'delivered') {
+                      final created = o['createdAt'];
+                      DateTime? orderDate;
+                      if (created is Timestamp) {
+                        orderDate = created.toDate();
+                      } else if (created is num) {
+                        orderDate = DateTime.fromMillisecondsSinceEpoch(created.toInt());
+                      } else {
+                        orderDate = DateTime.tryParse((o['time'] ?? '').toString());
+                      }
+                      final isToday = orderDate != null && orderDate.year == now.year && orderDate.month == now.month && orderDate.day == now.day;
+                      if (isToday && (o['status'] ?? '').toString().toLowerCase() == 'delivered') {
                         completed++;
                         earnings += _number(o['carrierEarnings'] ?? o['deliveryFee'] ?? 0);
                       }

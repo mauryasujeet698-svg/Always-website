@@ -1514,7 +1514,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
     final owner = TextEditingController(text: ownerName);
     final shop = TextEditingController(text: businessName);
     final mobile = TextEditingController(text: mobileNumber);
-    final alternateMobile = TextEditingController(text: '');
+    final alternateMobile = TextEditingController(text: alternateMobileNumber);
     XFile? selectedImage;
     bool uploading = false;
     try {
@@ -2165,13 +2165,18 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
           const SizedBox(height:10),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: uploading ? null : () async {
-                final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
-                if (image != null) setState(() => selectedPhoto = image);
-              },
-              icon: const Icon(Icons.camera_alt),
-              label: Text(selectedPhoto == null ? 'Upload profile photo' : 'Profile photo selected'),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Upload profile photo',
+                  onPressed: uploading ? null : () async {
+                    final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                    if (image != null) setState(() => selectedPhoto = image);
+                  },
+                  icon: Icon(selectedPhoto == null ? Icons.camera_alt : Icons.check_circle),
+                ),
+                Expanded(child: Text(selectedPhoto == null ? 'Upload profile photo' : 'Profile photo selected')),
+              ],
             ),
           ),
           const Align(alignment:Alignment.centerLeft,child:Text('Required: name, gender, mobile number and profile photo.',style:TextStyle(color:Colors.grey,fontSize:12))),

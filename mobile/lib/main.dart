@@ -1386,6 +1386,28 @@ class _SellerDashboardState extends State<SellerDashboard> {
 
   Future<String> uploadItemImage(XFile image) async => uploadImageToCloudinary(image, folder: 'sellers/' + widget.user.uid);
 
+  Future<void> pickServiceHours() async {
+    final start = TimeOfDay(hour: 9, minute: 0);
+    final end = TimeOfDay(hour: 21, minute: 0);
+    final chosenStart = await showTimePicker(context: context, initialTime: start, helpText: 'Opening time');
+    if (!mounted || chosenStart == null) return;
+    final chosenEnd = await showTimePicker(context: context, initialTime: end, helpText: 'Closing time');
+    if (!mounted || chosenEnd == null) return;
+    final startText = chosenStart.format(context);
+    final endText = chosenEnd.format(context);
+    setState(() => openingHours.text = '$startText - $endText');
+  }
+
+  Future<void> saveSellerRealtime() async {
+    try {
+      await FirebaseFirestore.instance.collection('sellers').doc(widget.user.uid).set({
+        'uid': widget.user.uid, 'businessName': businessName, 'description': description.text.trim(),
+        'about': about.text.trim(), 'dailyOffers': offers.text.trim(), 'openingHours': openingHours.text.trim(),
+        'isOpen': isOpen, 'items': items.take(50).toList(), 'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
   Future<void> addItem() async {
     if (items.length >= 50) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You can list up to 50 items.')));
@@ -1455,7 +1477,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
       ),
     );
     name.dispose(); price.dispose(); itemDescription.dispose(); itemAbout.dispose();
-    if (added == true && mounted) setState(() {});
+    if (added == true && mounted) { setState(() {}); await saveSellerRealtime(); }
   }
 
   Future<void> saveSeller() async {
@@ -1496,7 +1518,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
               const SizedBox(height: 10),
               TextField(controller: offers, maxLines: 2, decoration: const InputDecoration(labelText: 'Daily offers')),
               const SizedBox(height: 10),
-              TextField(controller: openingHours, decoration: const InputDecoration(labelText: 'Opening hours')),
+              Row(children:[Expanded(child:TextField(controller: openingHours, readOnly:true, decoration:const InputDecoration(labelText:'Service hours'))),const SizedBox(width:8),IconButton(tooltip:'Choose service hours',onPressed:pickServiceHours,icon:const Icon(Icons.schedule))]),
               const SizedBox(height: 6),
               SegmentedButton<bool?>(
                 segments: const [ButtonSegment<bool?>(value: true, label: Text('Open')), ButtonSegment<bool?>(value: false, label: Text('Closed'))],
@@ -1516,7 +1538,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
                     if (item['price'] != null) '₹' + item['price'].toString(),
                     if ((item['description'] ?? '').toString().isNotEmpty) item['description'].toString(),
                   ].join(' • ')),
-                  trailing: IconButton(onPressed: () => setState(() => items.removeAt(entry.key)), icon: const Icon(Icons.delete_outline)),
+                  trailing: IconButton(onPressed: () async { setState(() => items.removeAt(entry.key)); await saveSellerRealtime(); }, icon: const Icon(Icons.delete_outline)),
                 ));
               }),
               const SizedBox(height: 8),
@@ -2119,7 +2141,7 @@ class _LocalSellersPageState extends State<LocalSellersPage> {
                     ),
                     title: Row(children: [
                       Expanded(child: Text(shop, style: const TextStyle(fontWeight: FontWeight.w800))),
-                      const Icon(Icons.verified, size: 18),
+                      const Icon(Icons.verified, size: 18, color: Colors.blue),
                     ]),
                     subtitle: Row(children: [
                       Container(width: 8, height: 8, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
@@ -2233,7 +2255,7 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
               const SizedBox(height: 16),
               Row(children: [
                 Expanded(child: Text(shop, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900))),
-                const Icon(Icons.verified, size: 22),
+                const Icon(Icons.verified, size: 22, color: Colors.blue),
               ]),
               const SizedBox(height: 6),
               Text(category, style: const TextStyle(color: Colors.grey)),
@@ -2281,6 +2303,7 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
                       if ((item['about'] ?? '').toString().isNotEmpty) item['about'].toString(),
                       if (item['price'] != null) '₹' + item['price'].toString(),
                     ].join(' • ')),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LocalSellerProductPage(item: item, sellerName: shop))),
                   ),
                 )),
               const SizedBox(height: 8),
@@ -2290,6 +2313,30 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
         );
       },
     );
+  }
+}
+
+class LocalSellerProductPage extends StatelessWidget {
+  final Map<String,dynamic> item;
+  final String sellerName;
+  const LocalSellerProductPage({super.key,required this.item,required this.sellerName});
+
+  @override Widget build(BuildContext context){
+    final image=(item['imageUrl']??'').toString();
+    final name=(item['name']??'Item').toString();
+    final price=item['price'];
+    final desc=(item['description']??'').toString();
+    final about=(item['about']??'').toString();
+    return Scaffold(appBar:AppBar(title:const Text('Product details')),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
+      ClipRRect(borderRadius:BorderRadius.circular(18),child:image.isEmpty?Container(height:240,alignment:Alignment.center,child:const Icon(Icons.inventory_2_outlined,size:80)):Image.network(image,height:240,width:double.infinity,fit:BoxFit.cover)),
+      const SizedBox(height:16),
+      Text(name,style:const TextStyle(fontSize:26,fontWeight:FontWeight.w900)),
+      if(price!=null) Padding(padding:const EdgeInsets.only(top:8),child:Text('₹$price',style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800))),
+      const SizedBox(height:12),
+      Text('Sold by $sellerName',style:const TextStyle(color:Colors.grey)),
+      if(desc.isNotEmpty)...[const SizedBox(height:18),const Text('Description',style:TextStyle(fontSize:19,fontWeight:FontWeight.w800)),const SizedBox(height:6),Text(desc)],
+      if(about.isNotEmpty)...[const SizedBox(height:18),const Text('About this product',style:TextStyle(fontSize:19,fontWeight:FontWeight.w800)),const SizedBox(height:6),Text(about)],
+    ]));
   }
 }
 

@@ -2510,7 +2510,7 @@ class _SellerProfilePageState extends State<SellerProfilePage> {
                 child: image.isEmpty
                     ? Container(height: 210, alignment: Alignment.center, child: const Icon(Icons.storefront_outlined, size: 72))
                     : LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(image, width: constraints.maxWidth, height: 210), height: 210, width: double.infinity, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(height: 210, alignment: Alignment.center, child: const Icon(Icons.broken_image_outlined, size: 48))),
+                        errorBuilder: (_, __, ___) => Container(height: 210, alignment: Alignment.center, child: const Icon(Icons.broken_image_outlined, size: 48)))),
               ),
               const SizedBox(height: 16),
               Row(children: [

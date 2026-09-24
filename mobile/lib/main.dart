@@ -44,7 +44,7 @@ String cloudinaryImageUrl(String url, {required double width, required double he
   final uploadMarker = '/image/upload/';
   final markerIndex = value.indexOf(uploadMarker);
   if (markerIndex < 0) return value;
-  final transform = 'w_$safeW,h_$safeH,c_fill,g_auto';
+  final transform = 'w_$safeW,h_$safeH,c_fill,g_auto,f_auto,q_auto,e_sharpen:100';
   final after = markerIndex + uploadMarker.length;
   // Avoid stacking another ALLways-generated transformation if the URL was
   // already formatted for a previous display container.
@@ -1333,12 +1333,12 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
   }
 
   Future<void> pickPhoto() async {
-    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 600);
     if (x != null && mounted) setState(() => photo = x);
   }
 
   Future<void> pickBikePhoto() async {
-    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+    final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 600);
     if (x != null && mounted) setState(() => bikePhoto = x);
   }
 
@@ -1527,7 +1527,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
             content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
               OutlinedButton.icon(
                 onPressed: uploading ? null : () async {
-                  final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                  final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 600);
                   if (image != null) setDialogState(() => selectedImage = image);
                 },
                 icon: const Icon(Icons.camera_alt),
@@ -1645,7 +1645,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: () async {
-                  final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                  final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 600);
                   if (x != null) setDialogState(() => image = x);
                 },
                 icon: const Icon(Icons.image_outlined),
@@ -2032,7 +2032,7 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
               onPressed: uploading ? null : () async {
-                final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 600);
                 if (image != null) setDialogState(() => vehiclePhoto = image);
               },
               icon: const Icon(Icons.camera_alt),
@@ -2171,7 +2171,7 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
                 IconButton(
                   tooltip: 'Upload profile photo',
                   onPressed: uploading ? null : () async {
-                    final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+                    final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 600);
                     if (image != null) setState(() => selectedPhoto = image);
                   },
                   icon: Icon(selectedPhoto == null ? Icons.camera_alt : Icons.check_circle),
@@ -3090,7 +3090,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> addBanner() async {
     try {
-      final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
+      final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 800);
       if (image == null) return;
       final url = await uploadImageToCloudinary(image, folder: 'banners');
       final doc = FirebaseFirestore.instance.collection('settings').doc('banners');

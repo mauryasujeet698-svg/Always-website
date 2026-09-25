@@ -226,14 +226,6 @@ class LatLngTween extends Tween<LatLng> {
     return LatLng(a.latitude+(b.latitude-a.latitude)*t,a.longitude+(b.longitude-a.longitude)*t);
   }
 }
-class _AnimatedTrackingMarker extends StatelessWidget {
-  final LatLng point; final Widget child;
-  const _AnimatedTrackingMarker({required this.point,required this.child});
-  @override Widget build(BuildContext context)=>TweenAnimationBuilder<LatLng>(
-    tween:LatLngTween(end:point),duration:const Duration(milliseconds:850),curve:Curves.easeOut,
-    builder:(context,value,_)=>Marker(point:value,width:52,height:52,child:child),
-  );
-}
 class LiveTrackingScreen extends StatefulWidget {
   final String collection,docId,title,mode; final String? broadcastPrefix; final bool readOnly;
   const LiveTrackingScreen({super.key,required this.collection,required this.docId,required this.title,required this.mode,this.broadcastPrefix,this.readOnly=false});
@@ -269,12 +261,19 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         if(points.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Text('Waiting for live location. Keep location enabled and allow ALLways to access it.',textAlign:TextAlign.center)));
         return FlutterMap(options:MapOptions(initialCenter:points.first,initialZoom:15),children:[
           TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
-          MarkerLayer(markers:[
-            if(customer!=null)Marker(point:customer,width:52,height:52,child:_icon(Icons.person_pin_circle,Colors.blue)),
-            if(partner!=null)_AnimatedTrackingMarker(point:partner,child:_icon(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.purple)),
-            if(pickup!=null)Marker(point:pickup,width:52,height:52,child:_icon(Icons.trip_origin,Colors.green)),
-            if(destination!=null)Marker(point:destination,width:52,height:52,child:_icon(Icons.flag,Colors.red)),
-          ]),
+          TweenAnimationBuilder<LatLng>(
+            tween:LatLngTween(end:partner),
+            duration:const Duration(milliseconds:850),
+            curve:Curves.easeOut,
+            builder:(context,animatedPartner,_){
+              return MarkerLayer(markers:[
+                if(customer!=null)Marker(point:customer,width:52,height:52,child:_icon(Icons.person_pin_circle,Colors.blue)),
+                if(animatedPartner!=null)Marker(point:animatedPartner,width:52,height:52,child:_icon(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.purple)),
+                if(pickup!=null)Marker(point:pickup,width:52,height:52,child:_icon(Icons.trip_origin,Colors.green)),
+                if(destination!=null)Marker(point:destination,width:52,height:52,child:_icon(Icons.flag,Colors.red)),
+              ]);
+            },
+          ),
           const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
         ]);
       },

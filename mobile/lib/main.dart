@@ -194,15 +194,40 @@ class AllwaysApp extends StatelessWidget {
 }
 
 
+Future<bool> ensureBackgroundLocationDisclosure(BuildContext context) async {
+  final prefs=await SharedPreferences.getInstance();
+  if(prefs.getBool('allways_background_location_disclosure_shown')==true)return true;
+  if(!context.mounted)return false;
+  final accepted=await showDialog<bool>(
+    context:context,
+    barrierDismissible:false,
+    builder:(dialogContext)=>AlertDialog(
+      title:const Text('Live location sharing'),
+      content:const Text('ALLways collects location data to enable live delivery tracking, ride-partner tracking and vehicle-booking tracking even when the app is closed or not in use. Your location is shared only for an active trip or delivery with the authorized participant(s) and ALLways administrators for fulfillment and safety.'),
+      actions:[
+        TextButton(onPressed:()=>Navigator.pop(dialogContext,false),child:const Text('Not now')),
+        FilledButton(onPressed:()=>Navigator.pop(dialogContext,true),child:const Text('Continue')),
+      ],
+    ),
+  )??false;
+  if(accepted)await prefs.setBool('allways_background_location_disclosure_shown',true);
+  return accepted;
+}
+
 class LiveLocationBroadcaster {
   StreamSubscription<Position>? _subscription;
-  Future<bool> start({required String collection,required String docId,required String prefix}) async {
+  Future<bool> start({required String collection,required String docId,required String prefix,bool background=false}) async {
     await stop();
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return false;
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return false;
+      if(background && permission==LocationPermission.whileInUse){
+        final upgraded=await Geolocator.requestPermission();
+        if(upgraded!=LocationPermission.always && upgraded!=LocationPermission.whileInUse)return false;
+        permission=upgraded;
+      }
       final LocationSettings settings = Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.high,
@@ -2014,7 +2039,9 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
       if(_broadcastingOrderId==active.id)return;
       await _carrierLocationBroadcaster?.stop();
       final broadcaster=LiveLocationBroadcaster();
-      final started=await broadcaster.start(collection:'orders',docId:active.id,prefix:'carrier');
+      if(!mounted)return;
+      if(!await ensureBackgroundLocationDisclosure(context))return;
+      final started=await broadcaster.start(collection:'orders',docId:active.id,prefix:'carrier',background:true);
       if(started){_carrierLocationBroadcaster=broadcaster;_broadcastingOrderId=active.id;}
     });
   }
@@ -2369,7 +2396,9 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
         if(_broadcastingVehicleBookingId==active.id)return;
         await _vehicleLocationBroadcaster?.stop();
         final broadcaster=LiveLocationBroadcaster();
-        final started=await broadcaster.start(collection:'vehicleBookings',docId:active.id,prefix:'owner');
+        if(!mounted)return;
+        if(!await ensureBackgroundLocationDisclosure(context))return;
+        final started=await broadcaster.start(collection:'vehicleBookings',docId:active.id,prefix:'owner',background:true);
         if(started){_vehicleLocationBroadcaster=broadcaster;_broadcastingVehicleBookingId=active.id;}
       });
     }
@@ -2557,7 +2586,9 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         if(_broadcastingRideId==active.id)return;
         await _rideLocationBroadcaster?.stop();
         final broadcaster=LiveLocationBroadcaster();
-        final started=await broadcaster.start(collection:'rideBookings',docId:active.id,prefix:'partner');
+        if(!mounted)return;
+        if(!await ensureBackgroundLocationDisclosure(context))return;
+        final started=await broadcaster.start(collection:'rideBookings',docId:active.id,prefix:'partner',background:true);
         if(started){_rideLocationBroadcaster=broadcaster;_broadcastingRideId=active.id;}
       });
     }

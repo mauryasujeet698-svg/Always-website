@@ -2662,7 +2662,7 @@ class _OnDemandRidePageState extends State<OnDemandRidePage> {
         const Text('Enter your destination, see an upfront estimate, request an available partner, then track the accepted partner live.',style:TextStyle(color:Colors.grey,height:1.35)),
         const SizedBox(height:14),
         FilledButton.icon(onPressed:_requestRide,icon:const Icon(Icons.search),label:const Text('Find a ride')),
-      ])),
+        ]))),
       const SizedBox(height:12),
       const Card(
         child:Padding(

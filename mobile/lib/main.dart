@@ -3972,8 +3972,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   },
                 ),
                 if ((order['carrierUid'] ?? '').toString().isNotEmpty &&
-                    status.toLowerCase() != 'delivered' &&
-                    status.toLowerCase() != 'cancelled')
+                    (status.toLowerCase() == 'assigned' || status.toLowerCase() == 'picked up' || status.toLowerCase() == 'out for delivery'))
                   Align(
                     alignment: Alignment.centerLeft,
                     child: OutlinedButton.icon(

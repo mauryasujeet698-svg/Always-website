@@ -319,9 +319,18 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   @override void initState(){
     super.initState();
     if(!widget.readOnly&&widget.broadcastPrefix!=null){
-      final needsBackground = widget.broadcastPrefix=='partner' || widget.broadcastPrefix=='carrier';
-      _broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!,background:needsBackground);
+      WidgetsBinding.instance.addPostFrameCallback((_){_startBroadcastWithDisclosure();});
     }
+  }
+
+  Future<void> _startBroadcastWithDisclosure() async {
+    if(!mounted||widget.broadcastPrefix==null||widget.readOnly)return;
+    final needsBackground = widget.broadcastPrefix=='partner' || widget.broadcastPrefix=='driver' || widget.broadcastPrefix=='carrier';
+    if(needsBackground){
+      final allowed=await ensureBackgroundLocationDisclosure(context);
+      if(!allowed||!mounted)return;
+    }
+    await _broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!,background:needsBackground);
   }
 
   @override void dispose(){_broadcaster.stop();super.dispose();}

@@ -3287,7 +3287,7 @@ class _RiderLoginPageState extends State<RiderLoginPage> {
       const Icon(Icons.two_wheeler_outlined,size:64),const SizedBox(height:12),const Text('Sign in to Rider mode',style:TextStyle(fontSize:22,fontWeight:FontWeight.w900)),const SizedBox(height:8),
       const Text('Use your approved ALLways rider account to receive nearby ride requests.',textAlign:TextAlign.center),const SizedBox(height:18),
       FilledButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const AuthScreen())),child:const Text('Sign in')),
-    ])));
+    ]))));
     if(_loading)return Scaffold(appBar:AppBar(title:const Text('Rider login')),body:const Center(child:CircularProgressIndicator()));
     if(_profile.isEmpty)return Scaffold(appBar:AppBar(title:const Text('Rider login')),body:ListView(padding:const EdgeInsets.all(20),children:[
       const Icon(Icons.two_wheeler_outlined,size:64),const SizedBox(height:12),const Text('Rider profile not found',style:TextStyle(fontSize:22,fontWeight:FontWeight.w900)),

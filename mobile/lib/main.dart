@@ -297,10 +297,10 @@ class _AnimatedLiveMarkerState extends State<AnimatedLiveMarker>{
       tween:LatLngTween(begin:from,end:widget.point),
       duration:const Duration(milliseconds:900),curve:Curves.easeInOut,
       onEnd:(){if(mounted&&_from!=null)setState(()=>_from=null);},
-      builder:(context,point,_)=>Marker(point:point,width:60,height:60,child:Container(
+      builder:(context,point,_)=>Container(
         decoration:BoxDecoration(color:widget.color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:10,color:Colors.black26)]),
         child:Icon(widget.icon,color:Colors.white,size:29),
-      )),
+      ),
     );
   }
 }
@@ -426,8 +426,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             ? (d['partnerPhone']??d['driverPhone']??d['carrierPhone']??'')
             : (d['customerPhone']??'' )).toString();
 
-        if(partner!=null)_lastPartnerPoint=partner;
-
         return Stack(children:[
           FlutterMap(
             options:MapOptions(initialCenter:partner??pickup??customer??points.first,initialZoom:15,maxZoom:19,minZoom:3,initialCameraFit:points.length>1?CameraFit.coordinates(coordinates:points,padding:const EdgeInsets.fromLTRB(45,130,45,190),maxZoom:16,minZoom:12):null),
@@ -442,10 +440,15 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 if(pickup!=null)Marker(point:pickup,width:54,height:54,child:_marker(Icons.trip_origin,Colors.green)),
                 if(destination!=null)Marker(point:destination,width:54,height:54,child:_marker(Icons.flag,Colors.red)),
                 if(partner!=null)
-                  AnimatedLiveMarker(
+                  Marker(
                     point:partner,
-                    icon:widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,
-                    color:Colors.deepPurple,
+                    width:60,
+                    height:60,
+                    child:AnimatedLiveMarker(
+                      point:partner,
+                      icon:widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,
+                      color:Colors.deepPurple,
+                    ),
                   ),
               ]),
               const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
@@ -3001,7 +3004,7 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         final broadcaster=LiveLocationBroadcaster();
         if(!mounted)return;
         if(!await ensureBackgroundLocationDisclosure(context))return;
-        final started=await broadcaster.start(collection:'rideBookings',docId:active.id,prefix:'partner',background:true);
+        final started=await broadcaster.start(collection:'rideBookings',docId:active.id,prefix:'driver',background:true);
         if(started){_rideLocationBroadcaster=broadcaster;_broadcastingRideId=active.id;}
       });
       _autoRideSubscription=FirebaseFirestore.instance.collection('autoRideRequests').where('driverUid',isEqualTo:uid).snapshots().listen((snapshot) async {
@@ -3239,9 +3242,9 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
                 subtitle:Text((d['destination']??'Destination').toString()+' • ₹'+(d['estimatedFare']??0).toString()),
                 trailing:Wrap(spacing:4,children:[
                   if(phone.isNotEmpty)IconButton(onPressed:()=>_callNumber(context,phone),icon:const Icon(Icons.call),tooltip:'Call customer'),
-                  OutlinedButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(collection:'autoRideRequests',docId:doc.id,title:'Live ride tracking',mode:'ride',broadcastPrefix:'partner',allowCancel:true))),child:const Text('Track')),
+                  OutlinedButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(collection:'autoRideRequests',docId:doc.id,title:'Live ride tracking',mode:'ride',broadcastPrefix:'driver',allowCancel:true))),child:const Text('Track')),
                 ]),
-              );
+              ));
             }).toList());
           },
         ),

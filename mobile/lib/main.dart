@@ -20,6 +20,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'firebase_options.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
@@ -191,6 +193,89 @@ class AllwaysApp extends StatelessWidget {
   );
 }
 
+
+class LiveLocationBroadcaster {
+  StreamSubscription<Position>? _subscription;
+  Future<bool> start({required String collection,required String docId,required String prefix}) async {
+    await stop();
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return false;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return false;
+      _subscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
+      ).listen((position) async {
+        try {
+          await FirebaseFirestore.instance.collection(collection).doc(docId).set({
+            '\${prefix}Lat': position.latitude,
+            '\${prefix}Lng': position.longitude,
+            '\${prefix}LocationUpdatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (_) {}
+      });
+      return true;
+    } catch (_) { return false; }
+  }
+  Future<void> stop() async { await _subscription?.cancel(); _subscription=null; }
+}
+class LatLngTween extends Tween<LatLng> {
+  LatLngTween({super.begin, super.end});
+  @override LatLng lerp(double t) {
+    final a=begin??end??const LatLng(0,0), b=end??a;
+    return LatLng(a.latitude+(b.latitude-a.latitude)*t,a.longitude+(b.longitude-a.longitude)*t);
+  }
+}
+class _AnimatedTrackingMarker extends StatelessWidget {
+  final LatLng point; final Widget child;
+  const _AnimatedTrackingMarker({required this.point,required this.child});
+  @override Widget build(BuildContext context)=>TweenAnimationBuilder<LatLng>(
+    tween:LatLngTween(end:point),duration:const Duration(milliseconds:850),curve:Curves.easeOut,
+    builder:(context,value,_)=>Marker(point:value,width:52,height:52,child:child),
+  );
+}
+class LiveTrackingScreen extends StatefulWidget {
+  final String collection,docId,title,mode; final String? broadcastPrefix; final bool readOnly;
+  const LiveTrackingScreen({super.key,required this.collection,required this.docId,required this.title,required this.mode,this.broadcastPrefix,this.readOnly=false});
+  @override State<LiveTrackingScreen> createState()=>_LiveTrackingScreenState();
+}
+class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
+  final LiveLocationBroadcaster _broadcaster=LiveLocationBroadcaster();
+  @override void initState(){super.initState();if(!widget.readOnly&&widget.broadcastPrefix!=null){_broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!);}}
+  @override void dispose(){_broadcaster.stop();super.dispose();}
+  double? _n(dynamic v)=>v is num?v.toDouble():double.tryParse(v?.toString()??'');
+  LatLng? _point(Map<String,dynamic> d,String p){final lat=_n(d['\${p}Lat']),lng=_n(d['\${p}Lng']);if(lat==null||lng==null||lat.isNaN||lng.isNaN)return null;return LatLng(lat,lng);}
+  Widget _icon(IconData icon,Color color)=>Container(decoration:BoxDecoration(color:color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:8,color:Colors.black26)]),child:Icon(icon,color:Colors.white,size:26));
+  @override Widget build(BuildContext context)=>Scaffold(
+    appBar:AppBar(title:Text(widget.title)),
+    body:StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+      stream:FirebaseFirestore.instance.collection(widget.collection).doc(widget.docId).snapshots(),
+      builder:(context,snapshot){
+        if(snapshot.hasError)return Center(child:Text('Tracking unavailable: \${snapshot.error}'));
+        if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
+        final d=snapshot.data!.data()??<String,dynamic>{};
+        final customer=_point(d,'customer');
+        LatLng? partner;
+        if(widget.mode=='order')partner=_point(d,'carrier');
+        else if(widget.mode=='vehicle')partner=_point(d,'owner');
+        else partner=_point(d,'partner');
+        final pickup=_point(d,'pickup'),destination=_point(d,'destination');
+        final points=<LatLng>[if(customer!=null)customer,if(partner!=null)partner,if(pickup!=null)pickup,if(destination!=null)destination];
+        if(points.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Text('Waiting for live location. Keep location enabled and allow ALLways to access it.',textAlign:TextAlign.center)));
+        return FlutterMap(options:MapOptions(initialCenter:points.first,initialZoom:15),children:[
+          TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
+          MarkerLayer(markers:[
+            if(customer!=null)Marker(point:customer,width:52,height:52,child:_icon(Icons.person_pin_circle,Colors.blue)),
+            if(partner!=null)_AnimatedTrackingMarker(point:partner,child:_icon(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.purple)),
+            if(pickup!=null)Marker(point:pickup,width:52,height:52,child:_icon(Icons.trip_origin,Colors.green)),
+            if(destination!=null)Marker(point:destination,width:52,height:52,child:_icon(Icons.flag,Colors.red)),
+          ]),
+          const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
+        ]);
+      },
+    ),
+  );
+}
 class Product {
   final String id,name,category,icon,description,brand,sellerId;
   final num price,stock;
@@ -296,15 +381,16 @@ class _ShellState extends State<Shell> {
 
   Future<void> setNotificationsEnabled(bool enabled) async {
     final prefs=await SharedPreferences.getInstance();
-    await prefs.setBool('allways_notifications_enabled',enabled);
     if(enabled){
+      final settings=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true,provisional:false);
+      if(settings.authorizationStatus==AuthorizationStatus.denied){await prefs.setBool('allways_notifications_enabled',false);return;}
+      await FirebaseMessaging.instance.subscribeToTopic('all_users');
+      await prefs.setBool('allways_notifications_enabled',true);
       await setupNotifications();
     }else{
-      try{await FirebaseMessaging.instance.deleteToken();}catch(_){}
-      if(user!=null){
-        try{await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).delete();}catch(_){}
-      }
-      await prefs.remove('allways_fcm_token');
+      await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
+      await prefs.setBool('allways_notifications_enabled',false);
+      if(user!=null){try{await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).set({'uid':user!.uid,'notificationsEnabled':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));}catch(_){}}
     }
   }
 
@@ -1291,33 +1377,24 @@ class _NotificationsPageState extends State<NotificationsPage>{
     setState(()=>enabled=value);
     try{
       final prefs=await SharedPreferences.getInstance();
-      await prefs.setBool('allways_notifications_enabled',value);
       if(value){
-        final status=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true);
-        if(status.authorizationStatus==AuthorizationStatus.denied){
-          if(mounted)setState(()=>enabled=false);
-          await prefs.setBool('allways_notifications_enabled',false);
-          return;
-        }
+        final status=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true,provisional:false);
+        if(status.authorizationStatus==AuthorizationStatus.denied){if(mounted)setState(()=>enabled=false);await prefs.setBool('allways_notifications_enabled',false);return;}
+        await FirebaseMessaging.instance.subscribeToTopic('all_users');
+        await prefs.setBool('allways_notifications_enabled',true);
         final token=await FirebaseMessaging.instance.getToken();
         final u=FirebaseAuth.instance.currentUser;
         if(token!=null&&u!=null){
-          await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({
-            'uid':u.uid,'email':u.email??'','token':token,'updatedAt':FieldValue.serverTimestamp()
-          },SetOptions(merge:true));
+          await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({'uid':u.uid,'email':u.email??'','token':token,'notificationsEnabled':true,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
           await prefs.setString('allways_fcm_token',token);
         }
       }else{
-        try{await FirebaseMessaging.instance.deleteToken();}catch(_){}
+        await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
+        await prefs.setBool('allways_notifications_enabled',false);
         final u=FirebaseAuth.instance.currentUser;
-        if(u!=null){
-          try{await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).delete();}catch(_){}
-        }
-        await prefs.remove('allways_fcm_token');
+        if(u!=null){try{await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({'uid':u.uid,'notificationsEnabled':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));}catch(_){}}
       }
-    }catch(_){
-      if(mounted)setState(()=>enabled=!value);
-    }
+    }catch(_){if(mounted)setState(()=>enabled=!value);}
     if(mounted)setState((){});
   }
 

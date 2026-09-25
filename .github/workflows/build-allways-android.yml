@@ -648,29 +648,37 @@ jobs:
             exit 1
           }
 
-      - name: Prepare versioned APK asset
+      - name: Extract App Version
+        id: get_version
         run: |
-          cd mobile
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/allways-v1.4.7.apk
+          VERSION=$(grep '^version:' mobile/pubspec.yaml | awk '{print $2}' | cut -d '+' -f 1)
+          test -n "$VERSION"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Detected version: $VERSION"
+
+      - name: Prepare APK Release Asset
+        run: |
+          mkdir -p release-assets
+          cp mobile/build/app/outputs/flutter-apk/app-release.apk "release-assets/allways-v${APP_VERSION}.apk"
+          cp mobile/build/app/outputs/flutter-apk/app-release.apk "release-assets/allways-latest.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: allways-release-apk-v1.4.7
-          path: mobile/build/app/outputs/flutter-apk/allways-v1.4.7.apk
+          name: allways-release-apk-v${{ env.APP_VERSION }}
+          path: release-assets/allways-v${{ env.APP_VERSION }}.apk
           if-no-files-found: error
 
-      - name: Publish latest APK release
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/allways-android-app') || github.ref == 'refs/heads/main'
+        with:
+          tag_name: allways-latest
+          name: "ALLways Android v${{ env.APP_VERSION }}"
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/allways-v${{ env.APP_VERSION }}.apk
+            release-assets/allways-latest.apk
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if ! gh release view allways-latest >/dev/null 2>&1; then
-            gh release create allways-latest --title "ALLways Latest APK" --notes "Latest ALLways Android build"
-          fi
-          # Replace existing release assets explicitly. This avoids the GitHub
-          # Releases API 404 that can occur when --clobber targets a stale asset id.
-          for asset in allways-v1.4.7.apk app-release.apk; do
-            gh release delete-asset allways-latest "$asset" --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          done
-          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/allways-v1.4.7.apk --repo "$GITHUB_REPOSITORY"
-          gh release upload allways-latest mobile/build/app/outputs/flutter-apk/app-release.apk --repo "$GITHUB_REPOSITORY"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

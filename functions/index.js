@@ -61,6 +61,7 @@ async function getUserToken(uid) {
   if (!uid) return "";
   const snap = await db.collection("fcmTokens").doc(String(uid)).get();
   if (!snap.exists) return "";
+  if (snap.data()?.notificationsEnabled === false) return "";
   return String(snap.data()?.token || "").trim();
 }
 

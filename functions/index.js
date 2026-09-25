@@ -467,6 +467,39 @@ exports.onRideBookingCreated = onDocumentCreated(
   }
 );
 
+
+exports.onRideBookingUpdated = onDocumentUpdated(
+  "rideBookings/{bookingId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const oldStatus = String(before.status || "").toLowerCase();
+    const newStatus = String(after.status || "").toLowerCase();
+    if (oldStatus === newStatus) return;
+
+    const customerUid = String(after.customerUid || "").trim();
+    if (!customerUid) return;
+
+    if (newStatus === "accepted") {
+      await sendToUser(
+        customerUid,
+        "Ride Accepted",
+        "Your ALLways ride partner accepted the booking. Live tracking is available.",
+        { type: "ride_update", bookingId: event.params.bookingId, status: "Accepted" },
+        after.customer_fcm_token
+      );
+    } else if (newStatus === "rejected") {
+      await sendToUser(
+        customerUid,
+        "Ride Request Rejected",
+        "The selected ride partner rejected the request.",
+        { type: "ride_update", bookingId: event.params.bookingId, status: "Rejected" },
+        after.customer_fcm_token
+      );
+    }
+  }
+);
+
 exports.onVehicleBookingCreated = onDocumentCreated(
   "vehicleBookings/{bookingId}",
   async (event) => {

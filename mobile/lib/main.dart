@@ -228,7 +228,7 @@ class LiveLocationBroadcaster {
         if(upgraded!=LocationPermission.always && upgraded!=LocationPermission.whileInUse)return false;
         permission=upgraded;
       }
-      final LocationSettings settings = Platform.isAndroid
+      final LocationSettings settings = background && Platform.isAndroid
           ? AndroidSettings(
               accuracy: LocationAccuracy.high,
               distanceFilter: 10,

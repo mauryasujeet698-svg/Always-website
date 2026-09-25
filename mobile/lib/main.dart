@@ -203,14 +203,26 @@ class LiveLocationBroadcaster {
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return false;
-      _subscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
-      ).listen((position) async {
+      final LocationSettings settings = Platform.isAndroid
+          ? AndroidSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 10,
+              intervalDuration: const Duration(seconds: 10),
+              foregroundNotificationConfig: const ForegroundNotificationConfig(
+                notificationTitle: 'ALLways live tracking',
+                notificationText: 'ALLways is sharing your location for an active delivery or ride.',
+                notificationChannelName: 'ALLways Live Tracking',
+                enableWakeLock: true,
+                setOngoing: true,
+              ),
+            )
+          : const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10);
+      _subscription = Geolocator.getPositionStream(locationSettings: settings).listen((position) async {
         try {
           await FirebaseFirestore.instance.collection(collection).doc(docId).set({
-            '\${prefix}Lat': position.latitude,
-            '\${prefix}Lng': position.longitude,
-            '\${prefix}LocationUpdatedAt': FieldValue.serverTimestamp(),
+            '${prefix}Lat': position.latitude,
+            '${prefix}Lng': position.longitude,
+            '${prefix}LocationUpdatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
         } catch (_) {}
       });
@@ -305,17 +317,17 @@ class _ShellState extends State<Shell> {
     timer=Timer.periodic(const Duration(seconds:30),(_)=>loadInventory(silent:true));
     auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();loadWishlist();}else{addresses=[];wishlistIds.clear();}});
     FirebaseMessaging.onMessageOpenedApp.listen((m){
-      final title=m.notification?.title??'ALLways';
-      final body=m.notification?.body??'Open ALLways to view this update.';
-      saveIncomingNotification(title,body);
+      final title=m.notification?.title??m.data['title']??'ALLways';
+      final body=m.notification?.body??m.data['body']??'Open ALLways to view this update.';
+      saveIncomingNotification(title,body,type:(m.data['type']??'announcement').toString());
     });
     FirebaseMessaging.instance.getInitialMessage().then((m){
       if(m==null)return;
-      final title=m.notification?.title??'ALLways';
-      final body=m.notification?.body??'Open ALLways to view this update.';
-      saveIncomingNotification(title,body);
+      final title=m.notification?.title??m.data['title']??'ALLways';
+      final body=m.notification?.body??m.data['body']??'Open ALLways to view this update.';
+      saveIncomingNotification(title,body,type:(m.data['type']??'announcement').toString());
     });
-    messages=FirebaseMessaging.onMessage.listen((m)async{final title=m.notification?.title??m.data['title']??'ALLways';final body=m.notification?.body??m.data['body']??m.data['message']??'New update';await saveIncomingNotification(title,body);if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
+    messages=FirebaseMessaging.onMessage.listen((m)async{final title=m.notification?.title??m.data['title']??'ALLways';final body=m.notification?.body??m.data['body']??m.data['message']??'New update';await saveIncomingNotification(title,body,type:(m.data['type']??'announcement').toString());if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
     if(user!=null){setupNotifications();loadAddresses();loadWishlist();}
   }
   @override void dispose(){timer?.cancel();auth?.cancel();messages?.cancel();super.dispose();}
@@ -358,6 +370,8 @@ class _ShellState extends State<Shell> {
               'uid': user!.uid,
               'email': user!.email ?? '',
               'token': token,
+              'notificationsEnabled': p.getBool('notifications_enabled') ?? p.getBool('allways_notifications_enabled') ?? true,
+              'notificationPreferences': preferenceMap,
               'updatedAt': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
           } catch (_) {}
@@ -372,11 +386,15 @@ class _ShellState extends State<Shell> {
     } catch (_) {}
   }
 
-  Future<void> saveIncomingNotification(String title,String body) async {
+  Future<void> saveIncomingNotification(String title,String body,{String type='announcement'}) async {
     try{
       final prefs=await SharedPreferences.getInstance();
+      final enabled=prefs.getBool('notifications_enabled')??prefs.getBool('allways_notifications_enabled')??true;
+      if(!enabled)return;
+      final key=type.contains('delivery')?'deliveryUpdates':type.contains('order')?'orderUpdates':(type.contains('ride')||type.contains('vehicle')||type.contains('travel'))?'travelUpdates':type.contains('offer')?'offers':'announcements';
+      if(prefs.getBool('notification_'+key)==false)return;
       final raw=prefs.getStringList('allways_notifications')??<String>[];
-      raw.insert(0,jsonEncode({'title':title,'body':body,'timestamp':DateTime.now().millisecondsSinceEpoch,'read':false}));
+      raw.insert(0,jsonEncode({'title':title,'body':body,'type':type,'timestamp':DateTime.now().millisecondsSinceEpoch,'read':false}));
       unreadNotificationNotifier.value = true;
       if(raw.length>50)raw.removeRange(50,raw.length);
       await prefs.setStringList('allways_notifications',raw);
@@ -387,13 +405,15 @@ class _ShellState extends State<Shell> {
     final prefs=await SharedPreferences.getInstance();
     if(enabled){
       final settings=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true,provisional:false);
-      if(settings.authorizationStatus==AuthorizationStatus.denied){await prefs.setBool('allways_notifications_enabled',false);return;}
+      if(settings.authorizationStatus==AuthorizationStatus.denied){await prefs.setBool('allways_notifications_enabled',false);await prefs.setBool('notifications_enabled',false);return;}
       await FirebaseMessaging.instance.subscribeToTopic('all_users');
       await prefs.setBool('allways_notifications_enabled',true);
+      await prefs.setBool('notifications_enabled',true);
       await setupNotifications();
     }else{
       await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
       await prefs.setBool('allways_notifications_enabled',false);
+      await prefs.setBool('notifications_enabled',false);
       if(user!=null){try{await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).set({'uid':user!.uid,'notificationsEnabled':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));}catch(_){}}
     }
   }
@@ -643,44 +663,20 @@ class _ShopPageState extends State<ShopPage>{
   void openCat(BuildContext c,String n)=>Navigator.push(c,MaterialPageRoute(builder:(_)=>CategoryProductsPage(category:n,products:byCat(n),onAdd:widget.onAdd,cart:widget.cart,onQty:widget.onQty,wishlistIds:widget.wishlistIds,onWishlist:widget.onWishlist)));
   Widget chip(BuildContext c,String n)=>InkWell(onTap:()=>openCat(c,n),child:SizedBox(width:72,child:Column(children:[Container(height:60,width:60,decoration:BoxDecoration(color:n=='All'?Theme.of(c).colorScheme.primaryContainer:Theme.of(c).colorScheme.surfaceContainerHighest,borderRadius:BorderRadius.circular(18)),alignment:Alignment.center,child:Text(icons[n]??'🛍️',style:const TextStyle(fontSize:28))),const SizedBox(height:4),Text(n,maxLines:1,overflow:TextOverflow.ellipsis,textAlign:TextAlign.center,style:const TextStyle(fontSize:10,fontWeight:FontWeight.w700))])));
   Widget card(BuildContext c,Product p){
-    final item=widget.cart[p.id];
-    final liked=widget.wishlistIds.contains(p.id);
-    return Card(
-      margin:EdgeInsets.zero,
-      clipBehavior:Clip.antiAlias,
-      child:InkWell(
-        onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),liked:liked,onWishlist:()=>widget.onWishlist(p)))),
-        child:Padding(
-          padding:const EdgeInsets.all(5),
-          child:Column(
-            crossAxisAlignment:CrossAxisAlignment.start,
-            children:[
-              Stack(children:[
-                Container(height:72,width:double.infinity,alignment:Alignment.center,decoration:BoxDecoration(color:Theme.of(c).colorScheme.surfaceContainerHighest,borderRadius:BorderRadius.circular(11)),child:Text(p.icon,style:const TextStyle(fontSize:34))),
-                Positioned(right:0,top:0,child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:28,minHeight:28),onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border,color:Colors.red,size:18))),
-              ]),
-              const SizedBox(height:3),
-              Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900)),
-              Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:9)),
-              Text('₹'+p.price.toString(),style:const TextStyle(fontSize:12,fontWeight:FontWeight.w900)),
-              const Spacer(),
-              if(item==null)
-                SizedBox(height:27,width:double.infinity,child:FilledButton(style:FilledButton.styleFrom(padding:EdgeInsets.zero),onPressed:p.stock>0?()=>widget.onAdd(p):null,child:const Text('Add',style:TextStyle(fontSize:10))))
-              else
-                Container(
-                  height:27,
-                  decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),
-                  child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
-                    InkWell(onTap:()=>widget.onQty(p.id,-1),child:const Icon(Icons.remove,size:14)),
-                    Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)),
-                    InkWell(onTap:()=>widget.onQty(p.id,1),child:const Icon(Icons.add,size:14)),
-                  ]),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final item=widget.cart[p.id]; final liked=widget.wishlistIds.contains(p.id);
+    return Card(margin:EdgeInsets.zero,clipBehavior:Clip.antiAlias,child:InkWell(
+      onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>ProductScreen(product:p,onAdd:()=>widget.onAdd(p),liked:liked,onWishlist:()=>widget.onWishlist(p)))),
+      child:Padding(padding:const EdgeInsets.all(5),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Stack(children:[Container(height:72,width:double.infinity,alignment:Alignment.center,decoration:BoxDecoration(color:Theme.of(c).colorScheme.surfaceContainerHighest,borderRadius:BorderRadius.circular(11)),child:Text(p.icon,style:const TextStyle(fontSize:34))),Positioned(right:0,top:0,child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:28,minHeight:28),onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border,color:Colors.red,size:18)))]),
+        const SizedBox(height:3),Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900)),Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:9)),Text('₹'+p.price.toString(),style:const TextStyle(fontSize:12,fontWeight:FontWeight.w900)),const Spacer(),
+        if(item==null)SizedBox(height:27,width:double.infinity,child:FilledButton(style:FilledButton.styleFrom(padding:EdgeInsets.zero),onPressed:p.stock>0?()=>widget.onAdd(p):null,child:const Text('Add',style:TextStyle(fontSize:10))))
+        else Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
+          IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:30,minHeight:27),onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14)),
+          Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)),
+          IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:30,minHeight:27),onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14)),
+        ])),
+      ])),
+    ));
   }
 
   Widget section(BuildContext c,String title,List<Product> items,bool all){
@@ -1409,114 +1405,36 @@ class NotificationsPage extends StatefulWidget{
   @override State<NotificationsPage> createState()=>_NotificationsPageState();
 }
 class _NotificationsPageState extends State<NotificationsPage>{
-  bool enabled=true;
-  bool loading=true;
-  List<Map<String,dynamic>> notifications=[];
-
+  bool enabled=true,loading=true; List<Map<String,dynamic>> notifications=[];
+  final Map<String,bool> prefs=<String,bool>{'orderUpdates':true,'deliveryUpdates':true,'travelUpdates':true,'offers':true,'announcements':true};
+  String filter='All';
   @override void initState(){super.initState();_load();}
-
-  Future<void> _load() async {
-    try{
-      final prefs=await SharedPreferences.getInstance();
-      enabled=prefs.getBool('allways_notifications_enabled')??true;
-      final raw=prefs.getStringList('allways_notifications')??<String>[];
-      notifications=raw.map((x){
-        final d=jsonDecode(x);
-        return d is Map?Map<String,dynamic>.from(d):<String,dynamic>{};
-      }).where((x)=>x.isNotEmpty).toList();
-    }catch(_){}
-    if(mounted)setState(()=>loading=false);
-  }
-
-  Future<void> _toggle(bool value) async {
-    setState(()=>enabled=value);
-    try{
-      final prefs=await SharedPreferences.getInstance();
-      if(value){
-        final status=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true,provisional:false);
-        if(status.authorizationStatus==AuthorizationStatus.denied){if(mounted)setState(()=>enabled=false);await prefs.setBool('allways_notifications_enabled',false);return;}
-        await FirebaseMessaging.instance.subscribeToTopic('all_users');
-        await prefs.setBool('allways_notifications_enabled',true);
-        final token=await FirebaseMessaging.instance.getToken();
-        final u=FirebaseAuth.instance.currentUser;
-        if(token!=null&&u!=null){
-          await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({'uid':u.uid,'email':u.email??'','token':token,'notificationsEnabled':true,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
-          await prefs.setString('allways_fcm_token',token);
-        }
-      }else{
-        await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
-        await prefs.setBool('allways_notifications_enabled',false);
-        final u=FirebaseAuth.instance.currentUser;
-        if(u!=null){try{await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({'uid':u.uid,'notificationsEnabled':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));}catch(_){}}
-      }
-    }catch(_){if(mounted)setState(()=>enabled=!value);}
-    if(mounted)setState((){});
-  }
-
-  String _time(dynamic value){
-    final ms=value is num?value.toInt():int.tryParse(value?.toString()??'')??0;
-    if(ms<=0)return'';
-    final d=DateTime.fromMillisecondsSinceEpoch(ms);
-    final diff=DateTime.now().difference(d);
-    if(diff.inMinutes<1)return'Just now';
-    if(diff.inHours<1)return diff.inMinutes.toString()+' min ago';
-    if(diff.inDays<1)return diff.inHours.toString()+' hr ago';
-    return d.day.toString().padLeft(2,'0')+'/'+d.month.toString().padLeft(2,'0')+'/'+d.year.toString();
-  }
-
-  @override Widget build(BuildContext context){
-    return SafeArea(child:Column(children:[
-      Padding(
-        padding:const EdgeInsets.fromLTRB(20,4,20,8),
-        child:Row(children:[
-          const Icon(Icons.notifications_outlined),
-          const SizedBox(width:10),
-          const Expanded(child:Text('Notifications',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900))),
-          IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.close)),
-        ]),
-      ),
-      Card(
-        margin:const EdgeInsets.fromLTRB(16,0,16,10),
-        child:SwitchListTile(
-          title:const Text('Enable Notifications',style:TextStyle(fontWeight:FontWeight.w800)),
-          subtitle:const Text('Receive order, delivery and ALLways alerts'),
-          value:enabled,
-          onChanged:loading?null:_toggle,
-        ),
-      ),
-      const Divider(height:1),
-      Expanded(
-        child:loading?const Center(child:CircularProgressIndicator()):notifications.isEmpty
-          ?const Center(child:Padding(padding:EdgeInsets.all(30),child:Column(mainAxisSize:MainAxisSize.min,children:[
-              Icon(Icons.notifications_none,size:64),
-              SizedBox(height:12),
-              Text('No notifications yet.',style:TextStyle(fontSize:18,fontWeight:FontWeight.w700)),
-            ])))
-          :ListView.separated(
-            padding:const EdgeInsets.fromLTRB(16,12,16,24),
-            itemCount:notifications.length,
-            separatorBuilder:(_,__)=>const SizedBox(height:8),
-            itemBuilder:(context,index){
-              final n=notifications[index];
-              final title=(n['title']??'ALLways').toString();
-              final body=(n['body']??'').toString();
-              final time=_time(n['timestamp']);
-              return Card(margin:EdgeInsets.zero,child:ListTile(
-                leading:const CircleAvatar(child:Icon(Icons.notifications_outlined)),
-                title:Text(title,style:const TextStyle(fontWeight:FontWeight.w800)),
-                subtitle:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                  Text(body),
-                  if(time.isNotEmpty)Padding(padding:const EdgeInsets.only(top:4),child:Text(time,style:const TextStyle(fontSize:12,color:Colors.grey))),
-                ]),
-              ));
-            },
-          ),
-      ),
-    ]));
-  }
+  Future<void> _load() async {try{final p=await SharedPreferences.getInstance();enabled=p.getBool('notifications_enabled')??p.getBool('allways_notifications_enabled')??true;for(final key in prefs.keys){prefs[key]=p.getBool('notification_'+key)??true;}final raw=p.getStringList('allways_notifications')??<String>[];notifications=raw.map((x){try{final d=jsonDecode(x);return d is Map?Map<String,dynamic>.from(d):<String,dynamic>{};}catch(_){return <String,dynamic>{};}}).where((x)=>x.isNotEmpty).toList();}catch(_){}if(mounted)setState(()=>loading=false);}
+  Future<void> _savePreference(String key,bool value) async {prefs[key]=value;final p=await SharedPreferences.getInstance();await p.setBool('notification_'+key,value);final u=FirebaseAuth.instance.currentUser;if(u!=null){try{await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({'notificationPreferences':Map<String,bool>.from(prefs),'notificationsEnabled':enabled,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));}catch(_){}}if(mounted)setState((){});}
+  Future<void> _toggle(bool value) async {try{if(value){final status=await FirebaseMessaging.instance.requestPermission(alert:true,badge:true,sound:true,provisional:false);if(status.authorizationStatus==AuthorizationStatus.denied){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Notification permission is disabled for ALLways.')));return;}await FirebaseMessaging.instance.subscribeToTopic('all_users');enabled=true;}else{await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');enabled=false;}final p=await SharedPreferences.getInstance();await p.setBool('notifications_enabled',enabled);await p.setBool('allways_notifications_enabled',enabled);final u=FirebaseAuth.instance.currentUser;if(u!=null)await FirebaseFirestore.instance.collection('fcmTokens').doc(u.uid).set({'uid':u.uid,'email':u.email??'','notificationsEnabled':enabled,'notificationPreferences':Map<String,bool>.from(prefs),'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));if(enabled)await setupNotifications();}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Notification setting could not be saved: '+e.toString())));}if(mounted)setState((){});}
+  Future<void> _markAllRead() async {try{final p=await SharedPreferences.getInstance();final raw=p.getStringList('allways_notifications')??<String>[];final updated=raw.map((x){try{final d=jsonDecode(x);if(d is Map){final m=Map<String,dynamic>.from(d);m['read']=true;return jsonEncode(m);}}catch(_){}return x;}).toList();await p.setStringList('allways_notifications',updated);unreadNotificationNotifier.value=false;await _load();}catch(_){}}
+  Future<void> _clearHistory() async {final p=await SharedPreferences.getInstance();await p.remove('allways_notifications');unreadNotificationNotifier.value=false;if(mounted)setState(()=>notifications=[]);}
+  String _time(dynamic value){final ms=value is num?value.toInt():int.tryParse(value?.toString()??'')??0;if(ms<=0)return'';final d=DateTime.fromMillisecondsSinceEpoch(ms);final diff=DateTime.now().difference(d);if(diff.inMinutes<1)return'Just now';if(diff.inHours<1)return diff.inMinutes.toString()+' min ago';if(diff.inDays<1)return diff.inHours.toString()+' hr ago';return d.day.toString().padLeft(2,'0')+'/'+d.month.toString().padLeft(2,'0')+'/'+d.year.toString();}
+  bool _matches(Map<String,dynamic> n){if(filter=='All')return true;final type=(n['type']??'').toString().toLowerCase();if(filter=='Orders')return type.contains('order');if(filter=='Delivery')return type.contains('delivery');if(filter=='Travel')return type.contains('ride')||type.contains('vehicle')||type.contains('travel');if(filter=='Offers')return type.contains('offer')||type.contains('promotion');return true;}
+  Widget _setting({required IconData icon,required String title,required String subtitle,required String key})=>SwitchListTile(contentPadding:const EdgeInsets.symmetric(horizontal:16,vertical:2),secondary:CircleAvatar(child:Icon(icon)),title:Text(title,style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(subtitle),value:enabled&&prefs[key]!,onChanged:enabled?(v)=>_savePreference(key,v):null);
+  @override Widget build(BuildContext context){final visible=notifications.where(_matches).toList();return SafeArea(child:Column(children:[
+    Padding(padding:const EdgeInsets.fromLTRB(16,6,12,4),child:Row(children:[const Icon(Icons.notifications_outlined,size:26),const SizedBox(width:10),const Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Notifications',style:TextStyle(fontSize:22,fontWeight:FontWeight.w900)),Text('Stay updated with your ALLways activity',style:TextStyle(color:Colors.grey,fontSize:12))])),IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.close))])),
+    Expanded(child:loading?const Center(child:CircularProgressIndicator()):ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
+      Card(child:SwitchListTile(contentPadding:const EdgeInsets.fromLTRB(16,8,16,8),secondary:CircleAvatar(radius:24,child:Icon(enabled?Icons.notifications_active_outlined:Icons.notifications_off_outlined)),title:const Text('ALLways notifications',style:TextStyle(fontSize:17,fontWeight:FontWeight.w900)),subtitle:Text(enabled?'Notifications are enabled':'Notifications are turned off'),value:enabled,onChanged:_toggle)),
+      const SizedBox(height:14),const Text('ORDER & DELIVERY',style:TextStyle(fontSize:12,fontWeight:FontWeight.w900,color:Colors.grey)),const SizedBox(height:6),
+      Card(child:Column(children:[_setting(icon:Icons.receipt_long_outlined,title:'Order updates',subtitle:'Confirmation, preparation, delivery and completion',key:'orderUpdates'),const Divider(height:1),_setting(icon:Icons.local_shipping_outlined,title:'Delivery updates',subtitle:'Partner offers, acceptance and out-for-delivery alerts',key:'deliveryUpdates')])),
+      const SizedBox(height:14),const Text('TRAVEL & OFFERS',style:TextStyle(fontSize:12,fontWeight:FontWeight.w900,color:Colors.grey)),const SizedBox(height:6),
+      Card(child:Column(children:[_setting(icon:Icons.two_wheeler_outlined,title:'Travel & ride updates',subtitle:'Ride requests, acceptance and vehicle bookings',key:'travelUpdates'),const Divider(height:1),_setting(icon:Icons.local_offer_outlined,title:'Offers & promotions',subtitle:'Special offers and discounts from ALLways',key:'offers'),const Divider(height:1),_setting(icon:Icons.campaign_outlined,title:'ALLways announcements',subtitle:'Important service announcements and news',key:'announcements')])),
+      const SizedBox(height:18),
+      Row(children:[const Expanded(child:Text('NOTIFICATION HISTORY',style:TextStyle(fontSize:12,fontWeight:FontWeight.w900,color:Colors.grey))),TextButton(onPressed:notifications.isEmpty?null:_markAllRead,child:const Text('Mark all read')),TextButton(onPressed:notifications.isEmpty?null:_clearHistory,child:const Text('Clear'))]),
+      SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:['All','Orders','Delivery','Travel','Offers'].map((x)=>Padding(padding:const EdgeInsets.only(right:6),child:ChoiceChip(label:Text(x),selected:filter==x,onSelected:(_)=>setState(()=>filter=x)))).toList())),
+      const SizedBox(height:8),
+      if(visible.isEmpty)Card(child:Padding(padding:const EdgeInsets.all(28),child:Column(children:[Icon(Icons.notifications_none,size:54,color:Theme.of(context).colorScheme.primary),const SizedBox(height:10),const Text('No notifications yet.',style:TextStyle(fontSize:17,fontWeight:FontWeight.w800)),const SizedBox(height:4),const Text('Your order, delivery and travel updates will appear here.',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey))])))
+      else ...visible.map((n){final title=(n['title']??'ALLways').toString(),body=(n['body']??'').toString(),time=_time(n['timestamp']),read=n['read']==true,type=(n['type']??'').toString().toLowerCase();return Card(color:read?null:Theme.of(context).colorScheme.primaryContainer,margin:const EdgeInsets.only(bottom:8),child:ListTile(leading:CircleAvatar(child:Icon(type.contains('delivery')?Icons.local_shipping_outlined:type.contains('ride')?Icons.two_wheeler_outlined:Icons.notifications_outlined)),title:Text(title,style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(body),trailing:time.isEmpty?null:Text(time,style:const TextStyle(fontSize:11,color:Colors.grey))));}),
+      const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(14),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.info_outline),const SizedBox(width:10),const Expanded(child:Text('Live location updates are shown on the tracking map, not as repeated push notifications. This keeps alerts useful and reduces unnecessary network traffic.',style:TextStyle(color:Colors.grey,height:1.35)))]))),
+    ])),
+  ]));}
 }
-
-
 
 class CarrierOnboardingTile extends StatelessWidget {
   final User user;

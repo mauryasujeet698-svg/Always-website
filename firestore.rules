@@ -49,14 +49,67 @@ service cloud.firestore {
       allow update: if isAdmin()
         || (signedIn() && resource.data.customerUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'customerLat','customerLng','customerLocationUpdatedAt','updatedAt'
-          ]))
+            'customerLat','customerLng','customerLocationUpdatedAt','status',
+            'cancelledBy','cancellationReason','cancelledAt','updatedAt'
+          ])
+          && (
+            request.resource.data.status == resource.data.status ||
+            request.resource.data.status == 'Cancelled'
+          ))
         || (signedIn() && resource.data.partnerUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status','partnerAccepted','acceptedAt','rejectedAt','partnerLat','partnerLng',
-            'partnerLocationUpdatedAt','updatedAt'
+            'partnerLocationUpdatedAt','cancelledBy','cancellationReason','cancelledAt','updatedAt'
           ])
-          && request.resource.data.status in ['pending_acceptance','Accepted','Rejected']);
+          && request.resource.data.status in ['pending_acceptance','Accepted','Rejected','Cancelled']);
+      allow delete: if false;
+    }
+
+    match /autoRideRequests/{requestId} {
+      function onlineRidePartner() {
+        return signedIn()
+          && exists(/databases/$(database)/documents/ridePartners/$(request.auth.uid))
+          && get(/databases/$(database)/documents/ridePartners/$(request.auth.uid)).data.status == 'online'
+          && get(/databases/$(database)/documents/ridePartners/$(request.auth.uid)).data.vehicleType in ['bike','auto','two_wheeler'];
+      }
+
+      allow create: if signedIn() && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.status == 'searching'
+        && request.resource.data.rejectedBy is list;
+
+      allow read: if signedIn() && (
+        resource.data.customerUid == request.auth.uid ||
+        resource.data.driverUid == request.auth.uid ||
+        isAdmin() ||
+        onlineRidePartner()
+      );
+
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.customerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','cancelledBy','cancellationReason','cancelledAt',
+            'customerLat','customerLng','customerLocationUpdatedAt','updatedAt'
+          ])
+          && request.resource.data.status in ['searching','accepted','started','cancelled','completed'])
+        || (signedIn() && resource.data.driverUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','driverUid','driverName','driverPhone','driverVehicleType','acceptedAt',
+            'driverLat','driverLng','driverLocationUpdatedAt','rejectedBy','updatedAt',
+            'cancelledBy','cancellationReason','cancelledAt'
+          ])
+          && request.resource.data.status in ['accepted','started','cancelled'])
+        || (onlineRidePartner()
+          && resource.data.status == 'searching'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rejectedBy','updatedAt'])
+          && request.resource.data.rejectedBy is list)
+        || (onlineRidePartner()
+          && resource.data.status == 'searching'
+          && request.resource.data.driverUid == request.auth.uid
+          && request.resource.data.status == 'accepted'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','driverUid','driverName','driverPhone','driverVehicleType','acceptedAt','updatedAt'
+          ]));
+
       allow delete: if false;
     }
 

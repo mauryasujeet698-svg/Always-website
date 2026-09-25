@@ -1102,7 +1102,8 @@ class OrdersPage extends StatelessWidget {
                           Text(items),
                           const SizedBox(height: 6),
                           Text('Address: ' + (o['address'] ?? '').toString()),
-                          if ((o['carrierUid'] ?? '').toString().isNotEmpty && status.toLowerCase() != 'delivered' && status.toLowerCase() != 'cancelled')
+                          if ((o['carrierUid'] ?? '').toString().isNotEmpty &&
+                              (status.toLowerCase() == 'assigned' || status.toLowerCase() == 'picked up' || status.toLowerCase() == 'out for delivery'))
                             Padding(
                               padding: const EdgeInsets.only(top: 10),
                               child: FilledButton.icon(

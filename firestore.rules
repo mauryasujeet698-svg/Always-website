@@ -21,14 +21,68 @@ service cloud.firestore {
         || (signedIn() && resource.data.carrierUid == request.auth.uid
           && request.resource.data.customerId == resource.data.customerId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'carrierUid','carrierName','carrierPhone','carrierAccepted','assignmentRejected',
+            'carrierUid','assignedPartnerId','carrierName','carrierPhone','carrierAccepted','assignmentRejected',
             'assignmentAttempts','status','statusNote','customerMessage','carrierLat',
             'carrierLng','carrierLocationUpdatedAt','deliveryOtpVerified','updatedAt'
           ])
-          && (!('carrierUid' in request.resource.data) || request.resource.data.carrierUid == request.auth.uid)
-          && request.resource.data.status in ['Assigned','Confirmed','Picked up','Out for delivery','Delivered']);
+          && (
+            request.resource.data.carrierUid == request.auth.uid ||
+            (request.resource.data.status == 'unassigned' && request.resource.data.carrierUid == null)
+          )
+          && request.resource.data.status in ['pending_acceptance','Assigned','Confirmed','Picked up','Out for delivery','Delivered','unassigned'])
+        || (signedIn() && resource.data.customerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'customerLat','customerLng','customerLocationUpdatedAt','updatedAt'
+          ]));
 
       allow delete: if false;
+    }
+
+
+    match /rideBookings/{bookingId} {
+      allow create: if signedIn() && request.resource.data.customerUid == request.auth.uid;
+      allow read: if signedIn() && (
+        resource.data.customerUid == request.auth.uid ||
+        resource.data.partnerUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.customerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'customerLat','customerLng','customerLocationUpdatedAt','updatedAt'
+          ]))
+        || (signedIn() && resource.data.partnerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','partnerAccepted','acceptedAt','rejectedAt','partnerLat','partnerLng',
+            'partnerLocationUpdatedAt','updatedAt'
+          ])
+          && request.resource.data.status in ['pending_acceptance','Accepted','Rejected']);
+      allow delete: if false;
+    }
+
+    match /vehicleBookings/{bookingId} {
+      allow create: if signedIn() && request.resource.data.customerUid == request.auth.uid;
+      allow read: if signedIn() && (
+        resource.data.customerUid == request.auth.uid ||
+        resource.data.ownerUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.customerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'customerLat','customerLng','customerLocationUpdatedAt','updatedAt'
+          ]))
+        || (signedIn() && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'ownerLat','ownerLng','ownerLocationUpdatedAt','updatedAt'
+          ]));
+      allow delete: if false;
+    }
+
+    match /vehicles/{vehicleId} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
     }
 
     match /fcmTokens/{uid} {

@@ -562,12 +562,38 @@ class _ShellState extends State<Shell> {
     }catch(e){msg('Order could not be saved. Please try again.');}
   }
 
+
+  Future<void> reorderItems(List<Map<String, dynamic>> rawItems) async {
+    if (user == null) { login(); return; }
+    if (products.isEmpty) await loadInventory();
+    int added=0, skipped=0;
+    for(final raw in rawItems){
+      final id=(raw['id']??'').toString();
+      Product? product;
+      for(final p in products){if(p.id==id){product=p;break;}}
+      if(product==null||product.stock<=0){skipped++;continue;}
+      final requested=raw['qty'] is num ? (raw['qty'] as num).toInt() : int.tryParse((raw['qty']??1).toString())??1;
+      final wanted=requested<1?1:requested;
+      final existing=cart[product.id]?.qty??0;
+      final available=product.stock.toInt();
+      final next=(existing+wanted)>available?available:(existing+wanted);
+      if(next<=existing){skipped++;continue;}
+      cart[product.id]=CartItem(product,next);added++;
+    }
+    if(mounted)setState((){});
+    if(added==0){msg('None of the delivered items are currently available.');return;}
+    msg(skipped>0?'$added item(s) added. $skipped unavailable item(s) were skipped.':'Your delivered items were added to the cart.');
+    if(!mounted)return;
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(cart:cart,addresses:addresses,onQty:qty,onPlace:placeOrder)));
+    if(mounted)setState((){});
+  }
+
   Widget build(BuildContext c){
     final pages=[
       ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty,user:user,wishlistIds:wishlistIds,onWishlist:toggleWishlist,onOpenCart:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(cart:cart,addresses:addresses,onQty:qty,onPlace:placeOrder))),addresses:addresses),
       const TravelPage(),
       const LocalSellersPage(),
-      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder),
+      ProfilePage(user:user,addresses:addresses,onLogin:login,onReload:loadAddresses,onDelete:deleteAddress,onCancel:cancelOrder,onReorder:reorderItems),
     ];
     return ValueListenableBuilder<String>(valueListenable:languageNotifier,builder:(context,lang,_)=>Scaffold(
       body:SafeArea(child:Column(children:[
@@ -964,8 +990,8 @@ class _CartScreenState extends State<CartScreen>{
 
 class OrdersPage extends StatelessWidget {
   final User? user;
-  final Future<void> Function(String) onCancel;
-  const OrdersPage({super.key, required this.user, required this.onCancel});
+  final Future<void> Function(String) onCancel; final Future<void> Function(List<Map<String,dynamic>>) onReorder;
+  const OrdersPage({super.key, required this.user, required this.onCancel, required this.onReorder});
 
   DateTime _createdAt(Map<String, dynamic> o) {
     final value = o['createdAt'];
@@ -1071,6 +1097,30 @@ class OrdersPage extends StatelessWidget {
                           Text(items),
                           const SizedBox(height: 6),
                           Text('Address: ' + (o['address'] ?? '').toString()),
+                          if ((o['carrierUid'] ?? '').toString().isNotEmpty && status.toLowerCase() != 'delivered' && status.toLowerCase() != 'cancelled')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: FilledButton.icon(
+                                onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LiveTrackingScreen(
+                                  collection: 'orders',
+                                  docId: d.id,
+                                  title: 'Live order tracking',
+                                  mode: 'order',
+                                  broadcastPrefix: 'customer',
+                                ))),
+                                icon: const Icon(Icons.location_searching),
+                                label: const Text('Track live'),
+                              ),
+                            ),
+                          if (status.toLowerCase() == 'delivered' && rawItems is List)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: OutlinedButton.icon(
+                                onPressed: () => onReorder(rawItems.whereType<Map>().map((x) => Map<String,dynamic>.from(x)).toList()),
+                                icon: const Icon(Icons.replay),
+                                label: const Text('Reorder'),
+                              ),
+                            ),
                           if ((o['cancellationReason'] ?? '').toString().isNotEmpty)
                             Padding(padding: const EdgeInsets.only(top: 8), child: Text('Cancellation reason: ' + o['cancellationReason'].toString())),
                           if (canCancel)
@@ -1138,8 +1188,8 @@ class TravelPage extends StatelessWidget {
 
 class ProfilePage extends StatefulWidget{
   final User? user; final List<Map<String,dynamic>> addresses; final VoidCallback onLogin;
-  final Future<void> Function() onReload; final Future<void> Function(String) onDelete; final Future<void> Function(String) onCancel;
-  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete,required this.onCancel});
+  final Future<void> Function() onReload; final Future<void> Function(String) onDelete; final Future<void> Function(String) onCancel; final Future<void> Function(List<Map<String,dynamic>>) onReorder;
+  const ProfilePage({super.key,required this.user,required this.addresses,required this.onLogin,required this.onReload,required this.onDelete,required this.onCancel,required this.onReorder});
   @override State<ProfilePage> createState()=>_ProfilePageState();
 }
 class _ProfilePageState extends State<ProfilePage>{
@@ -1291,7 +1341,7 @@ class _ProfilePageState extends State<ProfilePage>{
             ]);
           },
         ),
-        _menuCard(c,icon:Icons.receipt_long_outlined,title:'Orders',subtitle:'View and track your ALLways orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:u,onCancel:widget.onCancel)))),
+        _menuCard(c,icon:Icons.receipt_long_outlined,title:'Orders',subtitle:'View and track your ALLways orders',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>OrdersPage(user:u,onCancel:widget.onCancel,onReorder:widget.onReorder)))),
         _menuCard(c,icon:Icons.location_on_outlined,title:'Saved Addresses',subtitle:'Add, edit or manage your delivery addresses',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>SavedAddressesPage(userId:u.uid,addresses:widget.addresses,onReload:widget.onReload,onDelete:widget.onDelete)))),
         _menuCard(c,icon:Icons.favorite_border,title:'Wishlist',subtitle:'Your saved products and favourites',onTap:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const WishlistPage()))),
         _menuCard(c,icon:Icons.local_shipping_outlined,title:'ALLways Carrier',subtitle:'Become a Seller or Delivery Partner',onTap:()=>_openCarrier(c,u)),
@@ -2277,7 +2327,9 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
   Future<void> _publishVehicle() async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
-    final name=TextEditingController(),phone=TextEditingController(),price=TextEditingController(),capacity=TextEditingController(),custom=TextEditingController();
+    final name=TextEditingController(),phone=TextEditingController(),price=TextEditingController(),capacity=TextEditingController(),custom=TextEditingController(),village=TextEditingController(),landmark=TextEditingController(),pincode=TextEditingController();
+    double? vehicleLatitude;
+    double? vehicleLongitude;
     String category=vehicleCategories.first; bool negotiate=true; XFile? vehiclePhoto; bool uploading=false;
     try{
       final ok=await showDialog<bool>(context:context,builder:(dialogContext)=>StatefulBuilder(builder:(context,setDialogState)=>AlertDialog(
@@ -2300,6 +2352,35 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
             ),
           ),
           const Align(alignment:Alignment.centerLeft,child:Text('Vehicle photo is required.',style:TextStyle(color:Colors.grey,fontSize:12))),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: uploading ? null : () async {
+                try {
+                  if (!await Geolocator.isLocationServiceEnabled()) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Turn on GPS first.')));
+                    return;
+                  }
+                  var permission=await Geolocator.checkPermission();
+                  if(permission==LocationPermission.denied) permission=await Geolocator.requestPermission();
+                  if(permission==LocationPermission.denied||permission==LocationPermission.deniedForever){
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location permission was not granted.')));
+                    return;
+                  }
+                  final pos=await Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high)).timeout(const Duration(seconds:10));
+                  setDialogState((){vehicleLatitude=pos.latitude;vehicleLongitude=pos.longitude;});
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Current GPS location captured.')));
+                } catch(e) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not capture GPS location: $e')));
+                }
+              },
+              icon: const Icon(Icons.my_location),
+              label: Text(vehicleLatitude==null?'Use current location':'Current location captured'),
+            ),
+          ),
+          TextField(controller:village,decoration:const InputDecoration(labelText:'Village / Town / City Name')),
+          TextField(controller:landmark,decoration:const InputDecoration(labelText:'Landmark / Main Road')),
+          TextField(controller:pincode,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Pincode')),
           TextField(controller:capacity,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Seats / capacity')),
           TextField(controller:price,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Your price (₹)')),
           SwitchListTile(contentPadding:EdgeInsets.zero,title:const Text('Allow negotiation'),value:negotiate,onChanged:(v)=>setDialogState(()=>negotiate=v)),
@@ -2309,7 +2390,7 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
       )))??false;
       if(!ok)return;
       final cleanPhone=phone.text.replaceAll(RegExp(r'\D'),''); final cleanPrice=num.tryParse(price.text.trim())??0;
-      if(name.text.trim().isEmpty||cleanPhone.length!=10||cleanPrice<=0||vehiclePhoto==null){
+      if(name.text.trim().isEmpty||cleanPhone.length!=10||cleanPrice<=0||vehiclePhoto==null||village.text.trim().isEmpty||landmark.text.trim().isEmpty||pincode.text.trim().isEmpty){
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter owner name, valid 10-digit mobile number, price and upload a vehicle photo.')));return;
       }
       final type=category=='Other / Enter manually'?custom.text.trim():category;
@@ -2320,14 +2401,14 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
         await FirebaseFirestore.instance.collection('vehicles').add({
           'ownerUid':user.uid,'ownerName':name.text.trim(),'ownerPhone':cleanPhone,'category':type,
           'capacity':int.tryParse(capacity.text.trim())??0,'price':cleanPrice,'allowNegotiation':negotiate,
-          'vehiclePhotoUrl':vehiclePhotoUrl,'status':'available','createdAt':FieldValue.serverTimestamp()
+          'vehiclePhotoUrl':vehiclePhotoUrl,'status':'available','latitude':vehicleLatitude,'longitude':vehicleLongitude,'manual_location':{'villageTownCity':village.text.trim(),'landmarkMainRoad':landmark.text.trim(),'pincode':pincode.text.trim()},'createdAt':FieldValue.serverTimestamp()
         });
       } catch(e) {
         if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Vehicle photo upload failed: '+e.toString())));
         return;
       }
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Vehicle published successfully.')));
-    }finally{name.dispose();phone.dispose();price.dispose();capacity.dispose();custom.dispose();}
+    }finally{name.dispose();phone.dispose();price.dispose();capacity.dispose();custom.dispose();village.dispose();landmark.dispose();pincode.dispose();}
   }
 
   Future<void> _book(DocumentSnapshot<Map<String,dynamic>> doc,{required bool negotiate}) async {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -296,22 +297,44 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         final pickup=_point(d,'pickup'),destination=_point(d,'destination');
         final points=<LatLng>[if(customer!=null)customer,if(partner!=null)partner,if(pickup!=null)pickup,if(destination!=null)destination];
         if(points.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Text('Waiting for live location. Keep location enabled and allow ALLways to access it.',textAlign:TextAlign.center)));
-        return FlutterMap(options:MapOptions(initialCenter:points.first,initialZoom:15),children:[
-          TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
-          TweenAnimationBuilder<LatLng>(
-            tween:LatLngTween(end:partner),
-            duration:const Duration(milliseconds:850),
-            curve:Curves.easeOut,
-            builder:(context,animatedPartner,_){
-              return MarkerLayer(markers:[
-                if(customer!=null)Marker(point:customer,width:52,height:52,child:_icon(Icons.person_pin_circle,Colors.blue)),
-                if(animatedPartner!=null)Marker(point:animatedPartner,width:52,height:52,child:_icon(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.purple)),
-                if(pickup!=null)Marker(point:pickup,width:52,height:52,child:_icon(Icons.trip_origin,Colors.green)),
-                if(destination!=null)Marker(point:destination,width:52,height:52,child:_icon(Icons.flag,Colors.red)),
-              ]);
-            },
-          ),
-          const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
+        final activeLabel = widget.mode=='order' ? 'Live delivery tracking' : widget.mode=='vehicle' ? 'Live vehicle tracking' : 'Live ride tracking';
+        return Stack(children:[
+          FlutterMap(options:MapOptions(initialCenter:points.first,initialZoom:15),children:[
+            TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
+            TweenAnimationBuilder<LatLng>(
+              tween:LatLngTween(end:partner),
+              duration:const Duration(milliseconds:850),
+              curve:Curves.easeOut,
+              builder:(context,animatedPartner,_){
+                return MarkerLayer(markers:[
+                  if(customer!=null)Marker(point:customer,width:52,height:52,child:_icon(Icons.person_pin_circle,Colors.blue)),
+                  if(animatedPartner!=null)Marker(point:animatedPartner,width:52,height:52,child:_icon(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.purple)),
+                  if(pickup!=null)Marker(point:pickup,width:52,height:52,child:_icon(Icons.trip_origin,Colors.green)),
+                  if(destination!=null)Marker(point:destination,width:52,height:52,child:_icon(Icons.flag,Colors.red)),
+                ]);
+              },
+            ),
+            const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
+          ]),
+          Positioned(top:12,left:12,right:12,child:SafeArea(bottom:false,child:Card(margin:EdgeInsets.zero,child:Padding(
+            padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
+            child:Row(children:[
+              Container(width:10,height:10,decoration:const BoxDecoration(color:Colors.green,shape:BoxShape.circle)),
+              const SizedBox(width:9),
+              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                Text(activeLabel,style:const TextStyle(fontWeight:FontWeight.w900)),
+                Text(partner==null?'Waiting for partner location':'Partner location is updating live',style:const TextStyle(color:Colors.grey,fontSize:12)),
+              ])),
+              const Icon(Icons.gps_fixed,size:20),
+            ]),
+          )))),
+          Positioned(left:12,right:12,bottom:18,child:SafeArea(top:false,child:Card(margin:EdgeInsets.zero,child:Padding(
+            padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
+            child:Row(children:[
+              const Icon(Icons.info_outline,size:20),const SizedBox(width:8),
+              Expanded(child:Text(widget.mode=='ride'?'Green = pickup • Red = destination • Purple = ride partner':'Blue = customer • Purple = partner',style:const TextStyle(fontSize:12))),
+            ]),
+          )))),
         ]);
       },
     ),
@@ -707,9 +730,9 @@ class _ShopPageState extends State<ShopPage>{
         const SizedBox(height:3),Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900)),Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:9)),Text('₹'+p.price.toString(),style:const TextStyle(fontSize:12,fontWeight:FontWeight.w900)),const Spacer(),
         if(item==null)SizedBox(height:27,width:double.infinity,child:FilledButton(style:FilledButton.styleFrom(padding:EdgeInsets.zero),onPressed:p.stock>0?()=>widget.onAdd(p):null,child:const Text('Add',style:TextStyle(fontSize:10))))
         else Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
-          IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:30,minHeight:27),onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14)),
-          Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)),
-          IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:30,minHeight:27),onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14)),
+          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),tapTargetSize:MaterialTapTargetSize.shrinkWrap,onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14))),
+          Expanded(child:Center(child:Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)))),
+          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),tapTargetSize:MaterialTapTargetSize.shrinkWrap,onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14))),
         ])),
       ])),
     ));
@@ -1218,7 +1241,7 @@ class TravelPage extends StatelessWidget {
     Container(padding:const EdgeInsets.all(20),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFF311B92),Color(0xFFE91E63)],begin:Alignment.topLeft,end:Alignment.bottomRight),borderRadius:BorderRadius.circular(22)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(Icons.travel_explore,color:Colors.white,size:38),SizedBox(height:12),Text('ALLways Mobility',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w900)),SizedBox(height:6),Text('Local vehicle booking and two-wheeler ride sharing. No commission during the trial.',style:TextStyle(color:Colors.white70,height:1.4))])),
     const SizedBox(height:18),
     _actionCard(context,icon:Icons.directions_car_outlined,title:tr('Book vehicle'),subtitle:'Choose from 25 vehicle categories. Owners set their own price, with Book or Book & negotiate.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage()))),
-    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a Ride',subtitle:'Book a two-wheeler ride partner for your journey. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),
+    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a Ride',subtitle:'Book a two-wheeler ride partner for your journey. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),\n    _actionCard(context,icon:Icons.local_taxi_outlined,title:'Book Bike / Auto Ride',subtitle:'On-demand ride booking with upfront estimate, driver acceptance, live tracking and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage()))),
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.info_outline),const SizedBox(width:10),Expanded(child:Text('Trial service: verify the partner and vehicle before travelling. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants.',style:TextStyle(color:Colors.grey,height:1.35)))]))),
   ]);
 }
@@ -2401,6 +2424,21 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
         final started=await broadcaster.start(collection:'vehicleBookings',docId:active.id,prefix:'owner',background:true);
         if(started){_vehicleLocationBroadcaster=broadcaster;_broadcastingVehicleBookingId=active.id;}
       });
+      _autoRideSubscription=FirebaseFirestore.instance.collection('autoRideRequests').where('driverUid',isEqualTo:uid).snapshots().listen((snapshot) async {
+        QueryDocumentSnapshot<Map<String,dynamic>>? active;
+        for(final d in snapshot.docs){
+          final st=(d.data()['status']??'').toString().toLowerCase();
+          if(st=='accepted'||st=='started'){active=d;break;}
+        }
+        if(active==null){await _autoLocationBroadcaster?.stop();_autoLocationBroadcaster=null;_broadcastingAutoRideId=null;return;}
+        if(_broadcastingAutoRideId==active.id)return;
+        await _autoLocationBroadcaster?.stop();
+        final broadcaster=LiveLocationBroadcaster();
+        if(!mounted)return;
+        if(!await ensureBackgroundLocationDisclosure(context))return;
+        final started=await broadcaster.start(collection:'autoRideRequests',docId:active.id,prefix:'driver',background:true);
+        if(started){_autoLocationBroadcaster=broadcaster;_broadcastingAutoRideId=active.id;}
+      });
     }
   }
 
@@ -2557,6 +2595,138 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
   }
 }
 
+class OnDemandRidePage extends StatefulWidget {
+  const OnDemandRidePage({super.key});
+  @override State<OnDemandRidePage> createState()=>_OnDemandRidePageState();
+}
+
+class _OnDemandRidePageState extends State<OnDemandRidePage> {
+  String rideType='bike';
+
+  Future<Position?> _currentPosition() async {
+    try {
+      if(!await Geolocator.isLocationServiceEnabled())return null;
+      var p=await Geolocator.checkPermission();
+      if(p==LocationPermission.denied)p=await Geolocator.requestPermission();
+      if(p==LocationPermission.denied||p==LocationPermission.deniedForever)return null;
+      return Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high));
+    } catch(_){return null;}
+  }
+
+  Future<void> _requestRide() async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
+    final destination=TextEditingController();
+    try {
+      final pickup=await _currentPosition();
+      if(pickup==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Turn on location to request a ride.')));return;}
+      final ok=await showDialog<bool>(context:context,builder:(c)=>StatefulBuilder(builder:(c,setDialogState)=>AlertDialog(
+        title:Text(rideType=='bike'?'Book a Bike':'Book an Auto'),
+        content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+          SegmentedButton<String>(
+            segments:const [ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined))],
+            selected:<String>{rideType},
+            onSelectionChanged:(v){if(v.isNotEmpty)setDialogState(()=>rideType=v.first);},
+          ),
+          const SizedBox(height:12),
+          const Text('Pickup uses your current location. Enter the destination below.'),
+          TextField(controller:destination,decoration:const InputDecoration(labelText:'Where to?')),
+        ])),
+        actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('See estimate'))],
+      )))??false;
+      if(!ok)return;
+      if(destination.text.trim().isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter your destination.')));return;}
+      double? dLat,dLng;
+      try {
+        final places=await locationFromAddress(destination.text.trim());
+        if(places.isNotEmpty){dLat=places.first.latitude;dLng=places.first.longitude;}
+      }catch(_){}
+      final distance=dLat==null||dLng==null?0.0:Geolocator.distanceBetween(pickup.latitude,pickup.longitude,dLat,dLng)/1000.0;
+      final base=rideType=='bike'?20.0:30.0;
+      final perKm=rideType=='bike'?8.0:12.0;
+      final minimum=rideType=='bike'?30.0:40.0;
+      final estimate=distance<=0?minimum:math.max(minimum,base+(distance*perKm));
+      final confirm=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
+        title:const Text('Ride estimate'),
+        content:Text((rideType=='bike'?'Bike':'Auto')+' • '+(distance>0?distance.toStringAsFixed(1)+' km':'distance unavailable')+'\nEstimated fare: ₹'+estimate.toStringAsFixed(0)),
+        actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Request ride'))],
+      ))??false;
+      if(!confirm)return;
+      final ref=await FirebaseFirestore.instance.collection('autoRideRequests').add({
+        'customerUid':user.uid,'customerName':user.displayName??'ALLways customer','rideType':rideType,'status':'searching',
+        'pickupLatitude':pickup.latitude,'pickupLongitude':pickup.longitude,'destination':destination.text.trim(),
+        'destinationLatitude':dLat,'destinationLongitude':dLng,'distanceKm':distance,'estimatedFare':estimate,
+        'rejectedBy':<String>[],'createdAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp(),
+      });
+      if(mounted)Navigator.push(context,MaterialPageRoute(builder:(_)=>OnDemandRideTrackingPage(requestId:ref.id,rideType:rideType)));
+    }finally{destination.dispose();}
+  }
+
+  @override Widget build(BuildContext context)=>Scaffold(
+    appBar:AppBar(title:const Text('Book Bike / Auto Ride')),
+    body:ListView(padding:const EdgeInsets.fromLTRB(16,10,16,28),children:[
+      Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        const Text('Choose your ride',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),
+        const SizedBox(height:12),
+        SegmentedButton<String>(
+          segments:const [ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined))],
+          selected:<String>{rideType},onSelectionChanged:(v){if(v.isNotEmpty)setState(()=>rideType=v.first);},
+        ),
+        const SizedBox(height:12),
+        const Text('Enter your destination, see an upfront estimate, request an available partner, then track the accepted partner live.',style:TextStyle(color:Colors.grey,height:1.35)),
+        const SizedBox(height:14),
+        FilledButton.icon(onPressed:_requestRide,icon:const Icon(Icons.search),label:const Text('Find a ride')),
+      ])),
+      const SizedBox(height:12),
+      const Card(child:Padding(padding:EdgeInsets.all(16),child:Text('Before starting, verify the partner photo and vehicle details. Live GPS tracking is available during an accepted ride. You can cancel an eligible request and report an issue afterward.',style:TextStyle(color:Colors.grey,height:1.35)))),
+    ]),
+  );
+}
+
+class OnDemandRideTrackingPage extends StatelessWidget {
+  final String requestId,rideType;
+  const OnDemandRideTrackingPage({super.key,required this.requestId,required this.rideType});
+  @override Widget build(BuildContext context)=>StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+    stream:FirebaseFirestore.instance.collection('autoRideRequests').doc(requestId).snapshots(),
+    builder:(context,snapshot){
+      final d=snapshot.data?.data()??<String,dynamic>{};
+      final status=(d['status']??'searching').toString();
+      final partnerLat=d['driverLat'] is num?(d['driverLat'] as num).toDouble():null;
+      final partnerLng=d['driverLng'] is num?(d['driverLng'] as num).toDouble():null;
+      final pickupLat=d['pickupLatitude'] is num?(d['pickupLatitude'] as num).toDouble():null;
+      final pickupLng=d['pickupLongitude'] is num?(d['pickupLongitude'] as num).toDouble():null;
+      final destLat=d['destinationLatitude'] is num?(d['destinationLatitude'] as num).toDouble():null;
+      final destLng=d['destinationLongitude'] is num?(d['destinationLongitude'] as num).toDouble():null;
+      final points=<LatLng>[if(pickupLat!=null&&pickupLng!=null)LatLng(pickupLat,pickupLng),if(partnerLat!=null&&partnerLng!=null)LatLng(partnerLat,partnerLng),if(destLat!=null&&destLng!=null)LatLng(destLat,destLng)];
+      return Scaffold(
+        appBar:AppBar(title:Text(status.toLowerCase()=='searching'?'Finding a ride…':'Live '+(rideType=='bike'?'bike':'auto')+' ride')),
+        body:Column(children:[
+          Expanded(child:points.isEmpty?const Center(child:Text('Waiting for location…')):FlutterMap(options:MapOptions(initialCenter:points.first,initialZoom:15),children:[
+            TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
+            MarkerLayer(markers:[
+              if(pickupLat!=null&&pickupLng!=null)Marker(point:LatLng(pickupLat,pickupLng),width:48,height:48,child:const Icon(Icons.trip_origin,color:Colors.green,size:34)),
+              if(destLat!=null&&destLng!=null)Marker(point:LatLng(destLat,destLng),width:48,height:48,child:const Icon(Icons.flag,color:Colors.red,size:34)),
+              if(partnerLat!=null&&partnerLng!=null)Marker(point:LatLng(partnerLat,partnerLng),width:52,height:52,child:const Icon(Icons.two_wheeler,color:Colors.purple,size:36)),
+            ]),
+            const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
+          ])),
+          Padding(padding:const EdgeInsets.fromLTRB(16,8,16,16),child:Row(children:[
+            Expanded(child:Text(status.toLowerCase()=='searching'?'Searching for an available partner…':status.toLowerCase()=='accepted'?'Partner accepted. You can track the ride live.':'Ride status: '+status,style:const TextStyle(fontWeight:FontWeight.w800))),
+            if(status.toLowerCase()!='cancelled'&&status.toLowerCase()!='completed')
+              OutlinedButton(onPressed:()async{
+                final u=FirebaseAuth.instance.currentUser;if(u==null)return;
+                try{await FirebaseFirestore.instance.runTransaction((tx)async{
+                  final ref=FirebaseFirestore.instance.collection('autoRideRequests').doc(requestId);final latest=await tx.get(ref);final current=latest.data()??<String,dynamic>{};
+                  if(current['customerUid']==u.uid&&(current['status']=='searching'||current['status']=='accepted'))tx.update(ref,{'status':'cancelled','cancelledBy':'customer','cancelledAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+                });}catch(_){}
+              },child:const Text('Cancel')),
+          ])),
+        ]),
+      );
+    },
+  );
+}
+
 class RidePartnerPage extends StatefulWidget {
   const RidePartnerPage({super.key});
   @override State<RidePartnerPage> createState()=>_RidePartnerPageState();
@@ -2564,8 +2734,11 @@ class RidePartnerPage extends StatefulWidget {
 
 class _RidePartnerPageState extends State<RidePartnerPage> {
   StreamSubscription<QuerySnapshot<Map<String,dynamic>>>? _rideOrderSubscription;
+  StreamSubscription<QuerySnapshot<Map<String,dynamic>>>? _autoRideSubscription;
   LiveLocationBroadcaster? _rideLocationBroadcaster;
+  LiveLocationBroadcaster? _autoLocationBroadcaster;
   String? _broadcastingRideId;
+  String? _broadcastingAutoRideId;
 
   @override
   void initState() {
@@ -2597,7 +2770,9 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
   @override
   void dispose(){
     _rideOrderSubscription?.cancel();
+    _autoRideSubscription?.cancel();
     _rideLocationBroadcaster?.stop();
+    _autoLocationBroadcaster?.stop();
     super.dispose();
   }
 
@@ -2669,6 +2844,29 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
   }
 
 
+  Future<void> _acceptOnDemand(QueryDocumentSnapshot<Map<String,dynamic>> doc) async {
+    final user=FirebaseAuth.instance.currentUser;if(user==null)return;
+    try {
+      final profileSnap=await FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).get();
+      final p=profileSnap.data()??<String,dynamic>{};
+      await FirebaseFirestore.instance.runTransaction((tx)async{
+        final latest=await tx.get(doc.reference);
+        final d=latest.data()??<String,dynamic>{};
+        if((d['status']??'').toString().toLowerCase()!='searching')throw Exception('Ride already accepted by another partner.');
+        final rejected=(d['rejectedBy'] is List)?List.from(d['rejectedBy'] as List):<dynamic>[];
+        if(rejected.contains(user.uid))throw Exception('You already rejected this ride.');
+        tx.update(doc.reference,{'status':'accepted','driverUid':user.uid,'driverName':p['name']??user.displayName??'ALLways partner','driverPhone':p['mobileNumber']??'','driverVehicleType':p['vehicleType']??d['rideType'],'acceptedAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+      });
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride accepted. Live tracking is now available.')));
+    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString().replaceFirst('Exception: ',''))));}
+  }
+
+  Future<void> _rejectOnDemand(QueryDocumentSnapshot<Map<String,dynamic>> doc) async {
+    final user=FirebaseAuth.instance.currentUser;if(user==null)return;
+    try{await doc.reference.update({'rejectedBy':FieldValue.arrayUnion([user.uid]),'updatedAt':FieldValue.serverTimestamp()});}
+    catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not reject ride: '+e.toString())));}
+  }
+
   Future<void> _acceptRide(QueryDocumentSnapshot<Map<String,dynamic>> doc) async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null)return;
@@ -2699,6 +2897,24 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
     }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not reject ride: $e')));}
   }
 
+  Future<void> _cancelRideAsPartner(QueryDocumentSnapshot<Map<String,dynamic>> doc) async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)return;
+    try {
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final latest=await tx.get(doc.reference);
+        final d=latest.data()??<String,dynamic>{};
+        final status=(d['status']??'').toString().toLowerCase();
+        if(d['partnerUid']!=user.uid)throw Exception('This ride is not assigned to you.');
+        if(status!='accepted'&&status!='pending_acceptance')throw Exception('This ride can no longer be cancelled.');
+        tx.update(doc.reference,{'status':'Cancelled','cancelledBy':'partner','cancellationReason':'Ride partner cancelled','cancelledAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+      });
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride cancelled.')));
+    } catch(e) {
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString().replaceFirst('Exception: ',''))));
+    }
+  }
+
   Future<void> _setRideOnline(bool value) async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null)return;
@@ -2709,6 +2925,42 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
     final user=FirebaseAuth.instance.currentUser;
     return Scaffold(appBar:AppBar(title:const Text('Book a ride partner')),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
 
+      if(user!=null)
+        StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
+          stream:FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).snapshots(),
+          builder:(context,profileSnapshot){
+            final profile=profileSnapshot.data?.data();
+            final vehicle=(profile?['vehicleType']??'').toString().toLowerCase();
+            if(vehicle!='bike'&&vehicle!='auto')return const SizedBox.shrink();
+            return StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+              stream:FirebaseFirestore.instance.collection('autoRideRequests').where('status',isEqualTo:'searching').snapshots(),
+              builder:(context,snapshot){
+                final docs=(snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[]).where((d){
+                  final data=d.data();
+                  final requested=(data['rideType']??'').toString().toLowerCase();
+                  final rejected=(data['rejectedBy'] is List)?List.from(data['rejectedBy'] as List):<dynamic>[];
+                  return requested==vehicle&&!rejected.contains(user.uid)&&data['customerUid']!=user.uid;
+                }).take(5).toList();
+                if(docs.isEmpty)return const SizedBox.shrink();
+                return Card(child:ExpansionTile(
+                  leading:const Icon(Icons.local_taxi_outlined),
+                  title:const Text('On-demand ride requests',style:TextStyle(fontWeight:FontWeight.w900)),
+                  children:docs.map((doc){
+                    final d=doc.data();
+                    return ListTile(
+                      title:Text((d['rideType']??'ride').toString().toUpperCase()+' request',style:const TextStyle(fontWeight:FontWeight.w800)),
+                      subtitle:Text((d['destination']??'Destination').toString()+' • '+(d['distanceKm']??0).toString()+' km • ₹'+(d['estimatedFare']??0).toString()),
+                      trailing:Wrap(spacing:4,children:[
+                        TextButton(onPressed:()=>_rejectOnDemand(doc),child:const Text('Reject')),
+                        FilledButton(onPressed:()=>_acceptOnDemand(doc),child:const Text('Accept')),
+                      ]),
+                    );
+                  }).toList(),
+                ));
+              },
+            );
+          },
+        ),
       if(user!=null)
         StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
           stream:FirebaseFirestore.instance.collection('rideBookings').where('partnerUid',isEqualTo:user.uid).snapshots(),
@@ -2727,16 +2979,19 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
                   title:Text(accepted?'Accepted ride':'New ride request',style:const TextStyle(fontWeight:FontWeight.w900)),
                   subtitle:Text((d['destination']??'Destination').toString()+' • '+(d['distanceKm']??0).toString()+' km • ₹'+(d['price']??0).toString()),
                   trailing:accepted
-                    ?OutlinedButton(
-                        onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(
-                          collection:'rideBookings',
-                          docId:doc.id,
-                          title:'Live ride tracking',
-                          mode:'ride',
-                          broadcastPrefix:'partner',
-                        ))),
-                        child:const Text('Track'),
-                      )
+                    ?Wrap(spacing:4,children:[
+                        OutlinedButton(
+                          onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(
+                            collection:'rideBookings',
+                            docId:doc.id,
+                            title:'Live ride tracking',
+                            mode:'ride',
+                            broadcastPrefix:'partner',
+                          ))),
+                          child:const Text('Track'),
+                        ),
+                        TextButton(onPressed:()=>_cancelRideAsPartner(doc),child:const Text('Cancel')),
+                      ])
                     :Wrap(spacing:4,children:[
                         TextButton(onPressed:()=>_rejectRide(doc),child:const Text('Reject')),
                         FilledButton(onPressed:()=>_acceptRide(doc),child:const Text('Accept')),
@@ -2848,6 +3103,25 @@ class TravelBookingsSection extends StatelessWidget {
     if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Review/report submitted.')));
   }
 
+  Future<void> _cancelRideAsCustomer(BuildContext context,String bookingId) async {
+    final user=FirebaseAuth.instance.currentUser;
+    if(user==null)return;
+    try {
+      final ref=FirebaseFirestore.instance.collection('rideBookings').doc(bookingId);
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final snap=await tx.get(ref);
+        final d=snap.data()??<String,dynamic>{};
+        final status=(d['status']??'').toString().toLowerCase();
+        if(d['customerUid']!=user.uid)throw Exception('This booking does not belong to you.');
+        if(status=='cancelled'||status=='rejected'||status=='delivered')throw Exception('This ride can no longer be cancelled.');
+        tx.update(ref,{'status':'Cancelled','cancelledBy':'customer','cancellationReason':'Customer cancelled the ride','cancelledAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+      });
+      if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride cancelled.')));
+    } catch(e) {
+      if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString().replaceFirst('Exception: ',''))));
+    }
+  }
+
   @override Widget build(BuildContext context){
     final user=FirebaseAuth.instance.currentUser;
     if(user==null)return const SizedBox.shrink();
@@ -2881,6 +3155,8 @@ class TravelBookingsSection extends StatelessWidget {
                       ))),
                       child:const Text('Track'),
                     ),
+                  if(type=='ride'&&status.toLowerCase()!='rejected'&&status.toLowerCase()!='cancelled'&&status.toLowerCase()!='delivered')
+                    TextButton(onPressed:()=>_cancelRideAsCustomer(context,doc.id),child:const Text('Cancel')),
                   OutlinedButton(onPressed:()=>_reviewReport(context,doc.id),child:const Text('Review / Report')),
                 ]),
               );

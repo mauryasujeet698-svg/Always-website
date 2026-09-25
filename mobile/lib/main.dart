@@ -730,7 +730,7 @@ class _ShopPageState extends State<ShopPage>{
         const SizedBox(height:3),Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900)),Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:9)),Text('₹'+p.price.toString(),style:const TextStyle(fontSize:12,fontWeight:FontWeight.w900)),const Spacer(),
         if(item==null)SizedBox(height:27,width:double.infinity,child:FilledButton(style:FilledButton.styleFrom(padding:EdgeInsets.zero),onPressed:p.stock>0?()=>widget.onAdd(p):null,child:const Text('Add',style:TextStyle(fontSize:10))))
         else Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
-          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),tapTargetSize:MaterialTapTargetSize.shrinkWrap,onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14))),
+          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14))),
           Expanded(child:Center(child:Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)))),
           SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),tapTargetSize:MaterialTapTargetSize.shrinkWrap,onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14))),
         ])),
@@ -1241,7 +1241,8 @@ class TravelPage extends StatelessWidget {
     Container(padding:const EdgeInsets.all(20),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFF311B92),Color(0xFFE91E63)],begin:Alignment.topLeft,end:Alignment.bottomRight),borderRadius:BorderRadius.circular(22)),child:const Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Icon(Icons.travel_explore,color:Colors.white,size:38),SizedBox(height:12),Text('ALLways Mobility',style:TextStyle(color:Colors.white,fontSize:24,fontWeight:FontWeight.w900)),SizedBox(height:6),Text('Local vehicle booking and two-wheeler ride sharing. No commission during the trial.',style:TextStyle(color:Colors.white70,height:1.4))])),
     const SizedBox(height:18),
     _actionCard(context,icon:Icons.directions_car_outlined,title:tr('Book vehicle'),subtitle:'Choose from 25 vehicle categories. Owners set their own price, with Book or Book & negotiate.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage()))),
-    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a Ride',subtitle:'Book a two-wheeler ride partner for your journey. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),\n    _actionCard(context,icon:Icons.local_taxi_outlined,title:'Book Bike / Auto Ride',subtitle:'On-demand ride booking with upfront estimate, driver acceptance, live tracking and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage()))),
+    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a Ride',subtitle:'Book a two-wheeler ride partner for your journey. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),
+    _actionCard(context,icon:Icons.local_taxi_outlined,title:'Book Bike / Auto Ride',subtitle:'On-demand ride booking with upfront estimate, driver acceptance, live tracking and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage()))),
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.info_outline),const SizedBox(width:10),Expanded(child:Text('Trial service: verify the partner and vehicle before travelling. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants.',style:TextStyle(color:Colors.grey,height:1.35)))]))),
   ]);
 }
@@ -2424,21 +2425,6 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
         final started=await broadcaster.start(collection:'vehicleBookings',docId:active.id,prefix:'owner',background:true);
         if(started){_vehicleLocationBroadcaster=broadcaster;_broadcastingVehicleBookingId=active.id;}
       });
-      _autoRideSubscription=FirebaseFirestore.instance.collection('autoRideRequests').where('driverUid',isEqualTo:uid).snapshots().listen((snapshot) async {
-        QueryDocumentSnapshot<Map<String,dynamic>>? active;
-        for(final d in snapshot.docs){
-          final st=(d.data()['status']??'').toString().toLowerCase();
-          if(st=='accepted'||st=='started'){active=d;break;}
-        }
-        if(active==null){await _autoLocationBroadcaster?.stop();_autoLocationBroadcaster=null;_broadcastingAutoRideId=null;return;}
-        if(_broadcastingAutoRideId==active.id)return;
-        await _autoLocationBroadcaster?.stop();
-        final broadcaster=LiveLocationBroadcaster();
-        if(!mounted)return;
-        if(!await ensureBackgroundLocationDisclosure(context))return;
-        final started=await broadcaster.start(collection:'autoRideRequests',docId:active.id,prefix:'driver',background:true);
-        if(started){_autoLocationBroadcaster=broadcaster;_broadcastingAutoRideId=active.id;}
-      });
     }
   }
 
@@ -2763,6 +2749,21 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         if(!await ensureBackgroundLocationDisclosure(context))return;
         final started=await broadcaster.start(collection:'rideBookings',docId:active.id,prefix:'partner',background:true);
         if(started){_rideLocationBroadcaster=broadcaster;_broadcastingRideId=active.id;}
+      });
+      _autoRideSubscription=FirebaseFirestore.instance.collection('autoRideRequests').where('driverUid',isEqualTo:uid).snapshots().listen((snapshot) async {
+        QueryDocumentSnapshot<Map<String,dynamic>>? active;
+        for(final d in snapshot.docs){
+          final st=(d.data()['status']??'').toString().toLowerCase();
+          if(st=='accepted'||st=='started'){active=d;break;}
+        }
+        if(active==null){await _autoLocationBroadcaster?.stop();_autoLocationBroadcaster=null;_broadcastingAutoRideId=null;return;}
+        if(_broadcastingAutoRideId==active.id)return;
+        await _autoLocationBroadcaster?.stop();
+        final broadcaster=LiveLocationBroadcaster();
+        if(!mounted)return;
+        if(!await ensureBackgroundLocationDisclosure(context))return;
+        final started=await broadcaster.start(collection:'autoRideRequests',docId:active.id,prefix:'driver',background:true);
+        if(started){_autoLocationBroadcaster=broadcaster;_broadcastingAutoRideId=active.id;}
       });
     }
   }

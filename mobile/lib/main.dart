@@ -2292,10 +2292,10 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
                       title: Text('#' + (order['id'] ?? d.id).toString()),
                       subtitle: Text((order['phone'] ?? '').toString() + '\n' + itemText),
                       isThreeLine: true,
-                      trailing: IconButton(
-                        onPressed: () => openMaps(context, (order['address'] ?? '').toString()),
-                        icon: const Icon(Icons.map_outlined),
-                      ),
+                      trailing: Wrap(spacing:4,children:[
+                        IconButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(collection:'orders',docId:d.id,title:'Live delivery tracking',mode:'order',broadcastPrefix:'carrier'))),icon:const Icon(Icons.location_searching),tooltip:'Share live location'),
+                        IconButton(onPressed:()=>openMaps(context,(order['address']??'').toString()),icon:const Icon(Icons.map_outlined)),
+                      ]),
                     ),
                   );
                 }).toList(),
@@ -3611,7 +3611,11 @@ class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPa
           return ListTile(
             title:Text('#'+(x['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
             subtitle:Text((x['name']??'Customer').toString()+' • '+(x['status']??'').toString()+(hasCoords?' • Location saved':'')),
-            trailing:((x['status']??'').toString().toLowerCase()=='pending_acceptance')?const Chip(label:Text('Pending Acceptance')):FilledButton(onPressed:()=>_assign(context,d),child:const Text('Assign')),
+            trailing:Wrap(spacing:4,children:[
+              if((x['carrierUid']??'').toString().isNotEmpty)
+                IconButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(collection:'orders',docId:d.id,title:'Live order tracking',mode:'order',readOnly:true))),icon:const Icon(Icons.location_searching),tooltip:'Track'),
+              ((x['status']??'').toString().toLowerCase()=='pending_acceptance')?const Chip(label:Text('Pending Acceptance')):FilledButton(onPressed:()=>_assign(context,d),child:const Text('Assign')),
+            ]),
           );
         }).toList());
       }),

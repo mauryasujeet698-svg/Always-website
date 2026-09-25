@@ -243,18 +243,6 @@ async function assignAvailablePartner(orderId) {
       });
 
       if (assigned) {
-        await sendToUser(
-          partner.id,
-          "New Delivery Offer",
-          "You have a new ALLways delivery offer for order #" + orderId + ". Accept or reject it in the app.",
-          {
-            type: "delivery_offer",
-            orderId,
-            partnerId: partner.id,
-            status: "pending_acceptance",
-          },
-          partner.data.fcmToken || partner.data.fcm_token
-        );
         return true;
       }
     } catch (error) {

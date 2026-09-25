@@ -121,7 +121,8 @@ async function getAvailablePartners() {
     if (
       duty === "online" &&
       data.deliveryAvailable === true &&
-      !data.activeOrderId
+      !data.activeOrderId &&
+      !data.pendingOrderId
     ) {
       result.set(doc.id, { ref: doc.ref, data, collection: "customers" });
     }
@@ -135,7 +136,7 @@ async function getAvailablePartners() {
 
   for (const doc of deliveryPartners.docs) {
     const data = doc.data() || {};
-    if (!data.currentOrderId && !result.has(doc.id)) {
+    if (!data.currentOrderId && !data.pendingOrderId && !result.has(doc.id)) {
       result.set(doc.id, {
         ref: doc.ref,
         data,
@@ -207,11 +208,13 @@ async function assignAvailablePartner(orderId) {
           carrierPhone: phone,
           carrierEmail: String(currentPartner.email || ""),
           carrierAccepted: false,
+          assignmentRejected: false,
           assignmentMode: "auto",
+          pendingAcceptanceAt: FieldValue.serverTimestamp(),
           assignedAt: FieldValue.serverTimestamp(),
-          status: "Assigned",
-          statusNote: "Delivery partner assigned",
-          customerMessage: "Delivery partner assigned",
+          status: "pending_acceptance",
+          statusNote: "Pending delivery partner acceptance",
+          customerMessage: "A delivery partner has been offered this order. Waiting for acceptance.",
           updatedAt: FieldValue.serverTimestamp(),
         });
 
@@ -219,8 +222,7 @@ async function assignAvailablePartner(orderId) {
           tx.set(
             partner.ref,
             {
-              isAvailable: false,
-              currentOrderId: orderId,
+              pendingOrderId: orderId,
               updatedAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
@@ -229,8 +231,7 @@ async function assignAvailablePartner(orderId) {
           tx.set(
             partner.ref,
             {
-              deliveryAvailable: false,
-              activeOrderId: orderId,
+              pendingOrderId: orderId,
               updatedAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
@@ -243,12 +244,13 @@ async function assignAvailablePartner(orderId) {
       if (assigned) {
         await sendToUser(
           partner.id,
-          "New Delivery Assigned",
-          "You have been assigned ALLways order #" + orderId + ".",
+          "New Delivery Offer",
+          "You have a new ALLways delivery offer for order #" + orderId + ". Accept or reject it in the app.",
           {
-            type: "delivery_assignment",
+            type: "delivery_offer",
             orderId,
             partnerId: partner.id,
+            status: "pending_acceptance",
           },
           partner.data.fcmToken || partner.data.fcm_token
         );
@@ -295,15 +297,72 @@ exports.onAllwaysOrderUpdated = onDocumentUpdated(
     if (newCarrier && newCarrier !== oldCarrier) {
       await sendToUser(
         newCarrier,
-        "New Delivery Assigned",
-        "You have been assigned ALLways order #" + orderId + ".",
+        "New Delivery Offer",
+        "You have a new ALLways delivery offer for order #" + orderId + ". Accept or reject it in the app.",
         {
-          type: "delivery_assignment",
+          type: "delivery_offer",
           orderId,
           partnerId: newCarrier,
+          status: newStatus,
         },
         after.carrier_fcm_token || after.partner_fcm_token
       );
+    }
+
+    if (oldStatus === "pending_acceptance" && newStatus === "Assigned" && newCarrier) {
+      const partnerRef = db.collection("customers").doc(newCarrier);
+      const partner = await partnerRef.get();
+      if (partner.exists) {
+        await partnerRef.set({
+          pendingOrderId: null,
+          activeOrderId: orderId,
+          deliveryAvailable: false,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      const requestedPartner = await db.collection("delivery_partners").doc(newCarrier).get();
+      if (requestedPartner.exists) {
+        await requestedPartner.ref.set({
+          pendingOrderId: null,
+          currentOrderId: orderId,
+          isAvailable: false,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      await sendToUser(
+        newCarrier,
+        "Delivery Accepted",
+        "Your ALLways delivery assignment is confirmed.",
+        { type: "delivery_assignment", orderId, partnerId: newCarrier, status: "Assigned" }
+      );
+    }
+
+    if (oldStatus === "pending_acceptance" && newStatus === "unassigned" && oldCarrier) {
+      const partnerRef = db.collection("customers").doc(oldCarrier);
+      const partner = await partnerRef.get();
+      if (partner.exists) {
+        const data = partner.data() || {};
+        const duty = String(data.dutyStatus || "offline").toLowerCase();
+        await partnerRef.set({
+          pendingOrderId: null,
+          activeOrderId: null,
+          deliveryAvailable: duty === "online",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      const requestedPartner = await db.collection("delivery_partners").doc(oldCarrier).get();
+      if (requestedPartner.exists) {
+        const data = requestedPartner.data() || {};
+        await requestedPartner.ref.set({
+          pendingOrderId: null,
+          currentOrderId: null,
+          isAvailable: String(data.status || "offline") === "online",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
     }
 
     if (oldCarrier && (newStatus === "Delivered" || newStatus === "Cancelled")) {
@@ -314,9 +373,9 @@ exports.onAllwaysOrderUpdated = onDocumentUpdated(
         const data = partner.data() || {};
         const duty = String(data.dutyStatus || "offline").toLowerCase();
 
-        // Preserve the partner's manual Online/Offline choice.
         await partnerRef.set(
           {
+            pendingOrderId: null,
             activeOrderId: null,
             deliveryAvailable: duty === "online",
             updatedAt: FieldValue.serverTimestamp(),
@@ -334,6 +393,7 @@ exports.onAllwaysOrderUpdated = onDocumentUpdated(
         const data = requestedPartner.data() || {};
         await requestedPartner.ref.set(
           {
+            pendingOrderId: null,
             currentOrderId: null,
             isAvailable: String(data.status || "offline") === "online",
             updatedAt: FieldValue.serverTimestamp(),

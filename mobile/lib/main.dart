@@ -280,6 +280,30 @@ Future<void> _callNumber(BuildContext context,String phone) async {
   }
 }
 
+class AnimatedLiveMarker extends StatefulWidget {
+  final LatLng point; final IconData icon; final Color color;
+  const AnimatedLiveMarker({super.key,required this.point,required this.icon,required this.color});
+  @override State<AnimatedLiveMarker> createState()=>_AnimatedLiveMarkerState();
+}
+class _AnimatedLiveMarkerState extends State<AnimatedLiveMarker>{
+  LatLng? _from;
+  @override void didUpdateWidget(covariant AnimatedLiveMarker oldWidget){
+    super.didUpdateWidget(oldWidget);
+    if(oldWidget.point.latitude!=widget.point.latitude||oldWidget.point.longitude!=widget.point.longitude)_from=oldWidget.point;
+  }
+  @override Widget build(BuildContext context){
+    final from=_from??widget.point;
+    return TweenAnimationBuilder<LatLng>(
+      tween:LatLngTween(begin:from,end:widget.point),
+      duration:const Duration(milliseconds:900),curve:Curves.easeInOut,
+      onEnd:(){if(mounted&&_from!=null)setState(()=>_from=null);},
+      builder:(context,point,_)=>Marker(point:point,width:60,height:60,child:Container(
+        decoration:BoxDecoration(color:widget.color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:10,color:Colors.black26)]),
+        child:Icon(widget.icon,color:Colors.white,size:29),
+      )),
+    );
+  }
+}
 class LiveTrackingScreen extends StatefulWidget {
   final String collection,docId,title,mode;
   final String? broadcastPrefix;
@@ -291,7 +315,6 @@ class LiveTrackingScreen extends StatefulWidget {
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   final LiveLocationBroadcaster _broadcaster=LiveLocationBroadcaster();
-  LatLng? _lastPartnerPoint;
 
   @override void initState(){
     super.initState();
@@ -407,7 +430,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
         return Stack(children:[
           FlutterMap(
-            options:MapOptions(initialCenter:partner??pickup??customer??points.first,initialZoom:15),
+            options:MapOptions(initialCenter:partner??pickup??customer??points.first,initialZoom:15,maxZoom:19,minZoom:3,initialCameraFit:points.length>1?CameraFit.coordinates(coordinates:points,padding:const EdgeInsets.fromLTRB(45,130,45,190),maxZoom:16,minZoom:12):null),
             children:[
               TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
               if(pickup!=null&&destination!=null)
@@ -419,21 +442,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 if(pickup!=null)Marker(point:pickup,width:54,height:54,child:_marker(Icons.trip_origin,Colors.green)),
                 if(destination!=null)Marker(point:destination,width:54,height:54,child:_marker(Icons.flag,Colors.red)),
                 if(partner!=null)
-                  Marker(
+                  AnimatedLiveMarker(
                     point:partner,
-                    width:58,
-                    height:58,
-                    child:TweenAnimationBuilder<double>(
-                      tween:Tween(begin:0,end:1),
-                      duration:const Duration(milliseconds:350),
-                      curve:Curves.easeOut,
-                      builder:(context,t,_){
-                        return Transform.scale(
-                          scale:.96+(t*.04),
-                          child:_marker(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.deepPurple),
-                        );
-                      },
-                    ),
+                    icon:widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,
+                    color:Colors.deepPurple,
                   ),
               ]),
               const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
@@ -873,10 +885,10 @@ class _ShopPageState extends State<ShopPage>{
         Stack(children:[Container(height:72,width:double.infinity,alignment:Alignment.center,decoration:BoxDecoration(color:Theme.of(c).colorScheme.surfaceContainerHighest,borderRadius:BorderRadius.circular(11)),child:Text(p.icon,style:const TextStyle(fontSize:34))),Positioned(right:0,top:0,child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:28,minHeight:28),onPressed:()=>widget.onWishlist(p),icon:Icon(liked?Icons.favorite:Icons.favorite_border,color:Colors.red,size:18)))]),
         const SizedBox(height:3),Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900)),Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:9)),Text('₹'+p.price.toString(),style:const TextStyle(fontSize:12,fontWeight:FontWeight.w900)),const Spacer(),
         if(item==null)SizedBox(height:27,width:double.infinity,child:FilledButton(style:FilledButton.styleFrom(padding:EdgeInsets.zero),onPressed:p.stock>0?()=>widget.onAdd(p):null,child:const Text('Add',style:TextStyle(fontSize:10))))
-        else Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
-          SizedBox(width:32,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:32,height:27),iconSize:16,onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove))),
+        else Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(children:[
+          Expanded(child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:0,minHeight:27),iconSize:16,onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14))),
           Expanded(child:Center(child:Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)))),
-          SizedBox(width:32,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:32,height:27),iconSize:16,onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add))),
+          Expanded(child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,constraints:const BoxConstraints(minWidth:0,minHeight:27),iconSize:16,onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14))),
         ])),
       ])),
     ));
@@ -983,10 +995,10 @@ class CategoryProductsPage extends StatelessWidget{
             if(item==null)
               SizedBox(width:double.infinity,height:38,child:FilledButton(onPressed:p.stock>0?()=>onAdd(p):null,child:const Text('Add')))
             else
-              Container(height:38,decoration:BoxDecoration(border:Border.all(color:Theme.of(context).colorScheme.primary),borderRadius:BorderRadius.circular(20)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
-                IconButton(padding:EdgeInsets.zero,onPressed:()=>onQty(p.id,item.qty-1),icon:const Icon(Icons.remove,size:18)),
-                Text(item.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w900)),
-                IconButton(padding:EdgeInsets.zero,onPressed:()=>onQty(p.id,item.qty+1),icon:const Icon(Icons.add,size:18)),
+              Container(height:38,decoration:BoxDecoration(border:Border.all(color:Theme.of(context).colorScheme.primary),borderRadius:BorderRadius.circular(20)),child:Row(children:[
+                Expanded(child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,onPressed:()=>onQty(p.id,item.qty-1),icon:const Icon(Icons.remove,size:18))),
+                Expanded(child:Center(child:Text(item.qty.toString(),style:const TextStyle(fontWeight:FontWeight.w900)))),
+                Expanded(child:IconButton(visualDensity:VisualDensity.compact,padding:EdgeInsets.zero,onPressed:()=>onQty(p.id,item.qty+1),icon:const Icon(Icons.add,size:18))),
               ])),
           ])));
         },
@@ -1386,7 +1398,8 @@ class TravelPage extends StatelessWidget {
     const SizedBox(height:18),
     _actionCard(context,icon:Icons.directions_car_outlined,title:tr('Book vehicle'),subtitle:'Choose from 25 vehicle categories. Owners set their own price, with Book or Book & negotiate.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage()))),
     _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a Ride',subtitle:'Book a two-wheeler ride partner for your journey. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),
-    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book Bike / Auto Ride',subtitle:'Rapido-style on-demand bike or auto: pickup, destination, fare estimate, partner acceptance, live tracking, call and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage()))),
+    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book Bike Ride',subtitle:'On-demand bike ride with upfront estimate, driver acceptance, live tracking, calling and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage(rideType:'bike')))),
+    _actionCard(context,icon:Icons.local_taxi_outlined,title:'Book Auto Ride',subtitle:'On-demand auto ride with upfront estimate, driver acceptance, live tracking, calling and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage(rideType:'auto')))),
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.info_outline),const SizedBox(width:10),Expanded(child:Text('Trial service: verify the partner and vehicle before travelling. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants.',style:TextStyle(color:Colors.grey,height:1.35)))]))),
   ]);
 }
@@ -2726,12 +2739,14 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
 }
 
 class OnDemandRidePage extends StatefulWidget {
-  const OnDemandRidePage({super.key});
+  final String rideType;
+  const OnDemandRidePage({super.key,this.rideType='bike'});
   @override State<OnDemandRidePage> createState()=>_OnDemandRidePageState();
 }
 
 class _OnDemandRidePageState extends State<OnDemandRidePage> {
-  String rideType='bike';
+  late String rideType;
+  @override void initState(){super.initState();rideType=widget.rideType=='auto'?'auto':'bike';}
   Position? pickupPosition;
 
   Future<Position?> _currentPosition() async {
@@ -2770,15 +2785,7 @@ class _OnDemandRidePageState extends State<OnDemandRidePage> {
               const SizedBox(height:4),
               Row(children:[const Icon(Icons.two_wheeler_outlined),const SizedBox(width:10),const Expanded(child:Text('Book a Bike / Auto Ride',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900))),IconButton(onPressed:()=>Navigator.pop(c,false),icon:const Icon(Icons.close))]),
               const SizedBox(height:12),
-              SegmentedButton<String>(
-                segments:const [
-                  ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),
-                  ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined)),
-                ],
-                selected:<String>{rideType},
-                onSelectionChanged:(v){if(v.isNotEmpty)setSheetState(()=>rideType=v.first);},
-              ),
-              const SizedBox(height:12),
+
               ListTile(
                 dense:true,
                 leading:const Icon(Icons.my_location,color:Colors.green),
@@ -2864,22 +2871,14 @@ class _OnDemandRidePageState extends State<OnDemandRidePage> {
   }
 
   @override Widget build(BuildContext context)=>Scaffold(
-    appBar:AppBar(title:const Text('Book Bike / Auto Ride')),
+    appBar:AppBar(title:Text(rideType=='bike'?'Book Bike Ride':'Book Auto Ride')),
     body:ListView(padding:const EdgeInsets.fromLTRB(16,10,16,28),children:[
       Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Row(children:[const Icon(Icons.two_wheeler_outlined),const SizedBox(width:10),const Expanded(child:Text('On-demand rides',style:TextStyle(fontSize:21,fontWeight:FontWeight.w900)))]),
         const SizedBox(height:8),
-        const Text('Choose Bike or Auto, use your current location as pickup, enter your destination, see an upfront estimate and request a nearby available partner.',style:TextStyle(color:Colors.grey,height:1.35)),
+        Text(rideType=='bike'?'Choose your destination, see an upfront bike fare estimate and request an available bike partner.':'Choose your destination, see an upfront auto fare estimate and request an available auto partner.',style:const TextStyle(color:Colors.grey,height:1.35)),
         const SizedBox(height:14),
-        SegmentedButton<String>(
-          segments:const [
-            ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),
-            ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined)),
-          ],
-          selected:<String>{rideType},
-          onSelectionChanged:(v){if(v.isNotEmpty)setState(()=>rideType=v.first);},
-        ),
-        const SizedBox(height:14),
+
         SizedBox(width:double.infinity,child:FilledButton.icon(onPressed:_requestRide,icon:const Icon(Icons.search),label:Text('Find a '+(rideType=='bike'?'Bike':'Auto')))),
       ]))),
       const SizedBox(height:12),

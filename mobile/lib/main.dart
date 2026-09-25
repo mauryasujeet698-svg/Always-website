@@ -353,8 +353,12 @@ class _ShellState extends State<Shell> {
             .invokeMethod('createNotificationChannel');
       } catch (_) {}
 
-      // Global ALLways broadcast topic.
-      await FirebaseMessaging.instance.subscribeToTopic('all_users');
+      final announcementsEnabled = prefs.getBool('notification_announcements') ?? true;
+      if (announcementsEnabled) {
+        await FirebaseMessaging.instance.subscribeToTopic('all_users');
+      } else {
+        await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
+      }
 
       final t = await FirebaseMessaging.instance.getToken();
 

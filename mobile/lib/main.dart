@@ -2663,19 +2663,34 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
           stream:FirebaseFirestore.instance.collection('rideBookings').where('partnerUid',isEqualTo:user.uid).snapshots(),
           builder:(context,snapshot){
-            final pending=(snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[]).where((d)=>(d.data()['status']??'').toString().toLowerCase()=='pending_acceptance').toList();
-            if(pending.isEmpty)return const SizedBox.shrink();
-            return Column(children:pending.take(3).map((doc){
+            final requests=(snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[]).where((d){
+              final status=(d.data()['status']??'').toString().toLowerCase();
+              return status=='pending_acceptance'||status=='accepted';
+            }).toList();
+            if(requests.isEmpty)return const SizedBox.shrink();
+            return Column(children:requests.take(3).map((doc){
               final d=doc.data();
+              final accepted=(d['status']??'').toString().toLowerCase()=='accepted';
               return Card(
                 child:ListTile(
-                  leading:const Icon(Icons.notifications_active_outlined),
-                  title:const Text('New ride request',style:TextStyle(fontWeight:FontWeight.w900)),
+                  leading:Icon(accepted?Icons.navigation_outlined:Icons.notifications_active_outlined),
+                  title:Text(accepted?'Accepted ride':'New ride request',style:const TextStyle(fontWeight:FontWeight.w900)),
                   subtitle:Text((d['destination']??'Destination').toString()+' • '+(d['distanceKm']??0).toString()+' km • ₹'+(d['price']??0).toString()),
-                  trailing:Wrap(spacing:4,children:[
-                    TextButton(onPressed:()=>_rejectRide(doc),child:const Text('Reject')),
-                    FilledButton(onPressed:()=>_acceptRide(doc),child:const Text('Accept')),
-                  ]),
+                  trailing:accepted
+                    ?OutlinedButton(
+                        onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(
+                          collection:'rideBookings',
+                          docId:doc.id,
+                          title:'Live ride tracking',
+                          mode:'ride',
+                          broadcastPrefix:'partner',
+                        ))),
+                        child:const Text('Track'),
+                      )
+                    :Wrap(spacing:4,children:[
+                        TextButton(onPressed:()=>_rejectRide(doc),child:const Text('Reject')),
+                        FilledButton(onPressed:()=>_acceptRide(doc),child:const Text('Accept')),
+                      ]),
                 ),
               );
             }).toList());

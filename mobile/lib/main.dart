@@ -24,6 +24,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'firebase_options.dart';
+import 'utils/voice_search_helper.dart';
+import 'controllers/carrier_and_admin_controller.dart';
+import 'screens/live_ride_tracking_screen.dart';
+import 'screens/notifications_settings_screen.dart';
+import 'screens/wishlist_screen.dart';
+import 'screens/order_details_screen.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
 
@@ -190,6 +196,54 @@ class AllwaysApp extends StatelessWidget {
         ),
         themeMode:mode,
         home:const Shell(),
+        onGenerateRoute: (settings) {
+          switch (settings.name) {
+            case '/live-ride-tracking':
+              final args = settings.arguments;
+              final rideId = args is String
+                  ? args
+                  : args is Map ? (args['rideId'] ?? '').toString() : '';
+              final isRider = args is Map && args['isRider'] == true;
+              if (rideId.isEmpty) {
+                return MaterialPageRoute(
+                  builder: (_) => const Scaffold(
+                    body: Center(child: Text('Ride ID is required.')),
+                  ),
+                );
+              }
+              return MaterialPageRoute(
+                builder: (_) => LiveRideTrackingScreen(
+                  rideId: rideId,
+                  isRider: isRider,
+                ),
+              );
+            case '/notifications-settings':
+              return MaterialPageRoute(
+                builder: (_) => const NotificationsSettingsScreen(),
+              );
+            case '/wishlist':
+              return MaterialPageRoute(
+                builder: (_) => const WishlistScreen(),
+              );
+            case '/order-details':
+              final args = settings.arguments;
+              final orderId = args is String
+                  ? args
+                  : args is Map ? (args['orderId'] ?? '').toString() : '';
+              if (orderId.isEmpty) {
+                return MaterialPageRoute(
+                  builder: (_) => const Scaffold(
+                    body: Center(child: Text('Order ID is required.')),
+                  ),
+                );
+              }
+              return MaterialPageRoute(
+                builder: (_) => OrderDetailsScreen(orderId: orderId),
+              );
+            default:
+              return null;
+          }
+        },
       ),
   );
 }

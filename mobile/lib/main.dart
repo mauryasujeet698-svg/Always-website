@@ -671,9 +671,9 @@ class _ShopPageState extends State<ShopPage>{
                   height:27,
                   decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),
                   child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
-                    InkWell(onTap:()=>widget.onQty(p.id,item.qty-1),child:const Icon(Icons.remove,size:14)),
+                    InkWell(onTap:()=>widget.onQty(p.id,-1),child:const Icon(Icons.remove,size:14)),
                     Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)),
-                    InkWell(onTap:()=>widget.onQty(p.id,item.qty+1),child:const Icon(Icons.add,size:14)),
+                    InkWell(onTap:()=>widget.onQty(p.id,1),child:const Icon(Icons.add,size:14)),
                   ]),
                 ),
             ],

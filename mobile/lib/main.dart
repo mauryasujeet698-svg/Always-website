@@ -121,7 +121,7 @@ Future<String> uploadImageToCloudinary(XFile image, {String? folder}) async {
   }
   return secureUrl;
 }
-const shareApkUrl='https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/allways-v1.4.7.apk';
+const shareApkUrl='https://github.com/mauryasujeet698-svg/Always-website/releases/download/allways-latest/allways-v1.4.8.apk';
 
 const inventoryEndpoint='https://script.google.com/macros/s/AKfycbyuAdL6eEIlGiYhoTPFtE70VhyiMLnKgzO1ytctdSCWMtTdw4zIVQvEVwkbYJyJF2Wd/exec';
 const updateManifestUrl='https://raw.githubusercontent.com/mauryasujeet698-svg/Always-website/allways-android-app/mobile/update.json';
@@ -1004,7 +1004,8 @@ class _ShopPageState extends State<ShopPage>{
                 child:Column(children:[
                   Row(children:[
                     Expanded(child:RichText(text:const TextSpan(style:TextStyle(fontSize:31,fontWeight:FontWeight.w900),children:[TextSpan(text:'ALL',style:TextStyle(color:Color(0xFF9B7CFF))),TextSpan(text:'ways',style:TextStyle(color:Colors.white))]))),
-                    ValueListenableBuilder<bool>(valueListenable:unreadNotificationNotifier,builder:(_,u,__)=>IconButton(onPressed:()=>Navigator.push(c,MaterialPageRoute(builder:(_)=>const NotificationsPage())),icon:Badge(isLabelVisible:u,child:const Icon(Icons.notifications_none,color:Colors.white,size:28)))),
+                    ValueListenableBuilder<bool>(valueListenable:unreadNotificationNotifier,builder:(_,u,__)=>IconButton(onPressed:()=>Navigator.pushNamed(c, '/notifications-settings'),icon:Badge(isLabelVisible:u,child:const Icon(Icons.notifications_none,color:Colors.white,size:28)))),
+                    IconButton(onPressed:()=>Navigator.pushNamed(c, '/wishlist'),icon:const Icon(Icons.favorite_border,color:Colors.white,size:28)),
                     IconButton(onPressed:widget.onOpenCart,icon:Badge(isLabelVisible:widget.cart.isNotEmpty,label:Text(widget.cart.length.toString()),child:const Icon(Icons.shopping_cart_outlined,color:Colors.white,size:28))),
                   ]),
                   Align(alignment:Alignment.centerLeft,child:Text('Closer to You, Always',style:TextStyle(color:Colors.white.withOpacity(.82),fontSize:14))),
@@ -3033,13 +3034,9 @@ class _OnDemandRideTrackingPageState extends State<OnDemandRideTrackingPage> {
       final d=snapshot.data?.data()??<String,dynamic>{};
       final status=(d['status']??'searching').toString().toLowerCase();
       if(status=='accepted'||status=='arrived'||status=='started'){
-        return LiveTrackingScreen(
-          collection:'autoRideRequests',
-          docId:widget.requestId,
-          title:'Live '+(widget.rideType=='bike'?'bike':'auto')+' ride',
-          mode:'ride',
-          broadcastPrefix:'customer',
-          allowCancel:true,
+        return LiveRideTrackingScreen(
+          rideId:widget.requestId,
+          isRider:false,
         );
       }
       final created=d['createdAt'];

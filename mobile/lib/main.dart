@@ -264,6 +264,22 @@ class LatLngTween extends Tween<LatLng> {
     return LatLng(a.latitude+(b.latitude-a.latitude)*t,a.longitude+(b.longitude-a.longitude)*t);
   }
 }
+Future<void> _callNumber(BuildContext context,String phone) async {
+  final clean=phone.replaceAll(RegExp(r'[^0-9+]'),'');
+  if(clean.isEmpty){
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Phone number is not available yet.')));
+    return;
+  }
+  try{
+    final uri=Uri(scheme:'tel',path:clean);
+    if(!await launchUrl(uri,mode:LaunchMode.externalApplication)&&context.mounted){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Could not open the phone app.')));
+    }
+  }catch(e){
+    if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not place call: '+e.toString())));
+  }
+}
+
 class LiveTrackingScreen extends StatefulWidget {
   final String collection,docId,title,mode;
   final String? broadcastPrefix;
@@ -2715,42 +2731,81 @@ class OnDemandRidePage extends StatefulWidget {
 
 class _OnDemandRidePageState extends State<OnDemandRidePage> {
   String rideType='bike';
+  Position? pickupPosition;
 
   Future<Position?> _currentPosition() async {
-    try {
+    try{
       if(!await Geolocator.isLocationServiceEnabled())return null;
       var p=await Geolocator.checkPermission();
       if(p==LocationPermission.denied)p=await Geolocator.requestPermission();
       if(p==LocationPermission.denied||p==LocationPermission.deniedForever)return null;
-      return Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high));
-    } catch(_){return null;}
+      return Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high)).timeout(const Duration(seconds:10));
+    }catch(_){return null;}
   }
 
   Future<void> _requestRide() async {
     final user=FirebaseAuth.instance.currentUser;
-    if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
+    if(user==null){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));
+      return;
+    }
     final destination=TextEditingController();
-    try {
+    try{
       final pickup=await _currentPosition();
-      if(pickup==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Turn on location to request a ride.')));return;}
-      final ok=await showDialog<bool>(context:context,builder:(c)=>StatefulBuilder(builder:(c,setDialogState)=>AlertDialog(
-        title:Text(rideType=='bike'?'Book a Bike':'Book an Auto'),
-        content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-          SegmentedButton<String>(
-            segments:const [ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined))],
-            selected:<String>{rideType},
-            onSelectionChanged:(v){if(v.isNotEmpty)setDialogState(()=>rideType=v.first);},
-          ),
-          const SizedBox(height:12),
-          const Text('Pickup uses your current location. Enter the destination below.'),
-          TextField(controller:destination,decoration:const InputDecoration(labelText:'Where to?')),
-        ])),
-        actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('See estimate'))],
-      )))??false;
-      if(!ok)return;
-      if(destination.text.trim().isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter your destination.')));return;}
+      if(pickup==null){
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Turn on location to request a ride.')));
+        return;
+      }
+      pickupPosition=pickup;
       double? dLat,dLng;
-      try {
+      final ok=await showModalBottomSheet<bool>(
+        context:context,
+        isScrollControlled:true,
+        builder:(sheetContext)=>Padding(
+          padding:EdgeInsets.only(left:16,right:16,top:8,bottom:MediaQuery.of(sheetContext).viewInsets.bottom+16),
+          child:StatefulBuilder(builder:(c,setSheetState)=>Column(
+            mainAxisSize:MainAxisSize.min,
+            children:[
+              const SizedBox(height:4),
+              Row(children:[const Icon(Icons.two_wheeler_outlined),const SizedBox(width:10),const Expanded(child:Text('Book a Bike / Auto Ride',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900))),IconButton(onPressed:()=>Navigator.pop(c,false),icon:const Icon(Icons.close))]),
+              const SizedBox(height:12),
+              SegmentedButton<String>(
+                segments:const [
+                  ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),
+                  ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined)),
+                ],
+                selected:<String>{rideType},
+                onSelectionChanged:(v){if(v.isNotEmpty)setSheetState(()=>rideType=v.first);},
+              ),
+              const SizedBox(height:12),
+              ListTile(
+                dense:true,
+                leading:const Icon(Icons.my_location,color:Colors.green),
+                title:const Text('Pickup'),
+                subtitle:Text('Current location • '+pickup.latitude.toStringAsFixed(5)+', '+pickup.longitude.toStringAsFixed(5)),
+              ),
+              TextField(
+                controller:destination,
+                textInputAction:TextInputAction.done,
+                decoration:const InputDecoration(prefixIcon:Icon(Icons.location_on_outlined),labelText:'Where to?',hintText:'Enter destination'),
+              ),
+              const SizedBox(height:12),
+              SizedBox(width:double.infinity,child:FilledButton.icon(
+                onPressed:()=>Navigator.pop(c,true),
+                icon:const Icon(Icons.search),
+                label:const Text('See fare & find partner'),
+              )),
+            ],
+          )),
+        ),
+      )??false;
+      if(!ok)return;
+      if(destination.text.trim().isEmpty){
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Enter your destination.')));
+        return;
+      }
+
+      try{
         final places=await locationFromAddress(destination.text.trim());
         if(places.isNotEmpty){dLat=places.first.latitude;dLng=places.first.longitude;}
       }catch(_){}
@@ -2759,17 +2814,49 @@ class _OnDemandRidePageState extends State<OnDemandRidePage> {
       final perKm=rideType=='bike'?8.0:12.0;
       final minimum=rideType=='bike'?30.0:40.0;
       final estimate=distance<=0?minimum:math.max(minimum,base+(distance*perKm));
-      final confirm=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
-        title:const Text('Ride estimate'),
-        content:Text((rideType=='bike'?'Bike':'Auto')+' • '+(distance>0?distance.toStringAsFixed(1)+' km':'distance unavailable')+'\nEstimated fare: ₹'+estimate.toStringAsFixed(0)),
-        actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Request ride'))],
-      ))??false;
+
+      final customerSnap=await FirebaseFirestore.instance.collection('customers').doc(user.uid).get();
+      final customerData=customerSnap.data()??<String,dynamic>{};
+      final customerPhone=(user.phoneNumber??customerData['phone']??customerData['mobileNumber']??'').toString();
+
+      final confirm=await showDialog<bool>(
+        context:context,
+        builder:(c)=>AlertDialog(
+          title:Text(rideType=='bike'?'Bike ride':'Auto ride'),
+          content:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text('Pickup: Current location'),
+            Text('Drop: '+destination.text.trim()),
+            const SizedBox(height:8),
+            Text(distance>0?'Distance: '+distance.toStringAsFixed(1)+' km':'Distance will be updated after pickup'),
+            const SizedBox(height:8),
+            Text('Estimated fare: ₹'+estimate.toStringAsFixed(0),style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
+            const SizedBox(height:8),
+            const Text('Partner must accept before the ride starts. You can track and call the partner after acceptance.',style:TextStyle(color:Colors.grey,fontSize:12)),
+          ]),
+          actions:[
+            TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),
+            FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Confirm ride')),
+          ],
+        ),
+      )??false;
       if(!confirm)return;
+
       final ref=await FirebaseFirestore.instance.collection('autoRideRequests').add({
-        'customerUid':user.uid,'customerName':user.displayName??'ALLways customer','rideType':rideType,'status':'searching',
-        'pickupLatitude':pickup.latitude,'pickupLongitude':pickup.longitude,'destination':destination.text.trim(),
-        'destinationLatitude':dLat,'destinationLongitude':dLng,'distanceKm':distance,'estimatedFare':estimate,
-        'rejectedBy':<String>[],'createdAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp(),
+        'customerUid':user.uid,
+        'customerName':user.displayName??customerData['name']??'ALLways customer',
+        'customerPhone':customerPhone,
+        'rideType':rideType,
+        'status':'searching',
+        'pickupLatitude':pickup.latitude,
+        'pickupLongitude':pickup.longitude,
+        'destination':destination.text.trim(),
+        'destinationLatitude':dLat,
+        'destinationLongitude':dLng,
+        'distanceKm':distance,
+        'estimatedFare':estimate,
+        'rejectedBy':<String>[],
+        'createdAt':FieldValue.serverTimestamp(),
+        'updatedAt':FieldValue.serverTimestamp(),
       });
       if(mounted)Navigator.push(context,MaterialPageRoute(builder:(_)=>OnDemandRideTrackingPage(requestId:ref.id,rideType:rideType)));
     }finally{destination.dispose();}
@@ -2779,74 +2866,101 @@ class _OnDemandRidePageState extends State<OnDemandRidePage> {
     appBar:AppBar(title:const Text('Book Bike / Auto Ride')),
     body:ListView(padding:const EdgeInsets.fromLTRB(16,10,16,28),children:[
       Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        const Text('Choose your ride',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),
-        const SizedBox(height:12),
-        SegmentedButton<String>(
-          segments:const [ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined))],
-          selected:<String>{rideType},onSelectionChanged:(v){if(v.isNotEmpty)setState(()=>rideType=v.first);},
-        ),
-        const SizedBox(height:12),
-        const Text('Enter your destination, see an upfront estimate, request an available partner, then track the accepted partner live.',style:TextStyle(color:Colors.grey,height:1.35)),
+        Row(children:[const Icon(Icons.two_wheeler_outlined),const SizedBox(width:10),const Expanded(child:Text('On-demand rides',style:TextStyle(fontSize:21,fontWeight:FontWeight.w900)))]),
+        const SizedBox(height:8),
+        const Text('Choose Bike or Auto, use your current location as pickup, enter your destination, see an upfront estimate and request a nearby available partner.',style:TextStyle(color:Colors.grey,height:1.35)),
         const SizedBox(height:14),
-        FilledButton.icon(onPressed:_requestRide,icon:const Icon(Icons.search),label:const Text('Find a ride')),
-        ]))),
-      const SizedBox(height:12),
-      const Card(
-        child:Padding(
-          padding:EdgeInsets.all(16),
-          child:Text(
-            'Before starting, verify the partner photo and vehicle details. Live GPS tracking is available during an accepted ride. You can cancel an eligible request and report an issue afterward.',
-            style:TextStyle(color:Colors.grey,height:1.35),
-          ),
+        SegmentedButton<String>(
+          segments:const [
+            ButtonSegment(value:'bike',label:Text('Bike'),icon:Icon(Icons.two_wheeler)),
+            ButtonSegment(value:'auto',label:Text('Auto'),icon:Icon(Icons.local_taxi_outlined)),
+          ],
+          selected:<String>{rideType},
+          onSelectionChanged:(v){if(v.isNotEmpty)setState(()=>rideType=v.first);},
         ),
-      ),
+        const SizedBox(height:14),
+        SizedBox(width:double.infinity,child:FilledButton.icon(onPressed:_requestRide,icon:const Icon(Icons.search),label:Text('Find a '+(rideType=='bike'?'Bike':'Auto')))),
+      ]))),
+      const SizedBox(height:12),
+      Card(child:ListTile(
+        leading:const Icon(Icons.location_searching),
+        title:const Text('Live tracking'),
+        subtitle:const Text('After acceptance, customer and partner can see each other moving on the map. The partner marker uses a moving bike/vehicle icon.'),
+      )),
+      Card(child:ListTile(
+        leading:const Icon(Icons.call_outlined),
+        title:const Text('Contact after acceptance'),
+        subtitle:const Text('Customer and partner can call each other after the ride is accepted.'),
+      )),
+      Card(child:ListTile(
+        leading:const Icon(Icons.cancel_outlined),
+        title:const Text('Cancellation'),
+        subtitle:const Text('Customer can cancel while waiting or during an active ride. Partner can reject requests and cancel an accepted ride when necessary.'),
+      )),
     ]),
   );
 }
 
-class OnDemandRideTrackingPage extends StatelessWidget {
+class OnDemandRideTrackingPage extends StatefulWidget {
   final String requestId,rideType;
   const OnDemandRideTrackingPage({super.key,required this.requestId,required this.rideType});
+  @override State<OnDemandRideTrackingPage> createState()=>_OnDemandRideTrackingPageState();
+}
+
+class _OnDemandRideTrackingPageState extends State<OnDemandRideTrackingPage> {
+  Timer? timer;
+  @override void initState(){super.initState();timer=Timer.periodic(const Duration(seconds:1),(_){if(mounted)setState((){});});}
+  @override void dispose(){timer?.cancel();super.dispose();}
+
+  Future<void> _cancel(BuildContext context,String reason) async {
+    final user=FirebaseAuth.instance.currentUser;if(user==null)return;
+    final ref=FirebaseFirestore.instance.collection('autoRideRequests').doc(widget.requestId);
+    try{
+      await FirebaseFirestore.instance.runTransaction((tx)async{
+        final latest=await tx.get(ref);final d=latest.data()??<String,dynamic>{};
+        if(d['customerUid']!=user.uid)return;
+        final st=(d['status']??'').toString().toLowerCase();
+        if(st=='searching'||st=='accepted'||st=='started'){
+          tx.update(ref,{'status':'cancelled','cancelledBy':'customer','cancellationReason':reason,'cancelledAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+        }
+      });
+      if(context.mounted)Navigator.pop(context);
+    }catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not cancel ride: '+e.toString())));}
+  }
 
   @override Widget build(BuildContext context)=>StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
-    stream:FirebaseFirestore.instance.collection('autoRideRequests').doc(requestId).snapshots(),
+    stream:FirebaseFirestore.instance.collection('autoRideRequests').doc(widget.requestId).snapshots(),
     builder:(context,snapshot){
       final d=snapshot.data?.data()??<String,dynamic>{};
       final status=(d['status']??'searching').toString().toLowerCase();
       if(status=='accepted'||status=='started'){
         return LiveTrackingScreen(
           collection:'autoRideRequests',
-          docId:requestId,
-          title:'Live '+(rideType=='bike'?'bike':'auto')+' ride tracking',
+          docId:widget.requestId,
+          title:'Live '+(widget.rideType=='bike'?'bike':'auto')+' ride',
           mode:'ride',
           broadcastPrefix:'customer',
           allowCancel:true,
         );
       }
+      final created=d['createdAt'];
+      DateTime? createdAt=created is Timestamp?created.toDate():null;
+      final waited=createdAt==null?0:DateTime.now().difference(createdAt).inSeconds;
+      final waitingLong=waited>=60;
+      final cancelled=status=='cancelled'||status=='completed';
       return Scaffold(
-        appBar:AppBar(title:const Text('Finding a ride…')),
+        appBar:AppBar(title:Text(status=='searching'?'Finding a ride…':'Ride request')),
         body:Column(children:[
-          const Expanded(child:Center(child:Padding(padding:EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[
-            Icon(Icons.search,size:56),
-            SizedBox(height:12),
-            Text('Searching for an available partner…',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),
-            SizedBox(height:6),
-            Text('You can cancel while the request is still searching.',textAlign:TextAlign.center,style:TextStyle(color:Colors.grey)),
+          Expanded(child:Center(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[
+            Icon(widget.rideType=='bike'?Icons.two_wheeler:Icons.local_taxi_outlined,size:64),
+            const SizedBox(height:12),
+            Text(status=='searching'?'Looking for an available '+(widget.rideType=='bike'?'bike':'auto')+' partner…':'Ride '+status,style:const TextStyle(fontSize:19,fontWeight:FontWeight.w900),textAlign:TextAlign.center),
+            const SizedBox(height:8),
+            Text(waitingLong?'Waiting longer than usual. You can cancel and try again.':'Searching nearby available partners.'),
+            if(waited>0)Padding(padding:const EdgeInsets.only(top:8),child:Text('Waiting: '+(waited~/60).toString().padLeft(2,'0')+':'+(waited%60).toString().padLeft(2,'0'),style:const TextStyle(color:Colors.grey))),
+            const SizedBox(height:18),
+            if(!cancelled)OutlinedButton.icon(onPressed:()=>_cancel(context,waitingLong?'Waiting too long':'Customer cancelled before acceptance'),icon:const Icon(Icons.close),label:Text(waitingLong?'Cancel request':'Cancel ride')),
           ])))),
-          Padding(padding:const EdgeInsets.fromLTRB(16,8,16,18),child:OutlinedButton.icon(
-            onPressed:status=='cancelled'||status=='completed'?null:()async{
-              final u=FirebaseAuth.instance.currentUser;if(u==null)return;
-              try{
-                await FirebaseFirestore.instance.runTransaction((tx)async{
-                  final ref=FirebaseFirestore.instance.collection('autoRideRequests').doc(requestId);final latest=await tx.get(ref);final current=latest.data()??<String,dynamic>{};
-                  if(current['customerUid']==u.uid&&current['status']=='searching')tx.update(ref,{'status':'cancelled','cancelledBy':'customer','cancellationReason':'Customer cancelled before partner acceptance','cancelledAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
-                });
-                if(context.mounted)Navigator.pop(context);
-              }catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not cancel ride: '+e.toString())));}
-            },
-            icon:const Icon(Icons.close),
-            label:const Text('Cancel ride'),
-          )),
         ]),
       );
     },
@@ -3101,6 +3215,30 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
                 ));
               },
             );
+          },
+        ),
+      if(user!=null)
+        StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+          stream:FirebaseFirestore.instance.collection('autoRideRequests').where('driverUid',isEqualTo:user.uid).snapshots(),
+          builder:(context,snapshot){
+            final docs=(snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[]).where((d){
+              final st=(d.data()['status']??'').toString().toLowerCase();
+              return st=='accepted'||st=='started';
+            }).toList();
+            if(docs.isEmpty)return const SizedBox.shrink();
+            return Column(children:docs.take(2).map((doc){
+              final d=doc.data();
+              final phone=(d['customerPhone']??'').toString();
+              return Card(child:ListTile(
+                leading:const Icon(Icons.two_wheeler_outlined),
+                title:Text('Active '+(d['rideType']??'bike').toString().toUpperCase()+' ride',style:const TextStyle(fontWeight:FontWeight.w900)),
+                subtitle:Text((d['destination']??'Destination').toString()+' • ₹'+(d['estimatedFare']??0).toString()),
+                trailing:Wrap(spacing:4,children:[
+                  if(phone.isNotEmpty)IconButton(onPressed:()=>_callNumber(context,phone),icon:const Icon(Icons.call),tooltip:'Call customer'),
+                  OutlinedButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(collection:'autoRideRequests',docId:doc.id,title:'Live ride tracking',mode:'ride',broadcastPrefix:'partner',allowCancel:true))),child:const Text('Track')),
+                ]),
+              );
+            }).toList());
           },
         ),
       if(user!=null)

@@ -3027,6 +3027,7 @@ class _RiderLoginPageState extends State<RiderLoginPage> {
   final Map<String,double> _distances={};
   bool _online=false;
   bool _loading=true;
+  bool _hadActiveRide=false;
   static const double maxRadiusKm=7.0;
 
   @override void initState(){super.initState();_load();}
@@ -3095,8 +3096,22 @@ class _RiderLoginPageState extends State<RiderLoginPage> {
       if(active==null){
         await _locationBroadcaster?.stop();
         _locationBroadcaster=null;
+        if(_hadActiveRide && _online){
+          _hadActiveRide=false;
+          final u=FirebaseAuth.instance.currentUser;
+          if(u!=null){
+            await FirebaseFirestore.instance.collection('ridePartners').doc(u.uid).set({
+              'status':'online',
+              'availableForRides':true,
+              'activeRideId':FieldValue.delete(),
+              'statusUpdatedAt':FieldValue.serverTimestamp(),
+            },SetOptions(merge:true));
+            await _goOnline();
+          }
+        }
         return;
       }
+      _hadActiveRide=true;
       if(_locationBroadcaster!=null)return;
       final b=LiveLocationBroadcaster();
       if(!mounted)return;

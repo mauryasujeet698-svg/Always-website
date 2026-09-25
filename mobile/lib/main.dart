@@ -296,7 +296,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   @override void initState(){
     super.initState();
     if(!widget.readOnly&&widget.broadcastPrefix!=null){
-      _broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!,background:true);
+      final needsBackground = widget.broadcastPrefix=='partner' || widget.broadcastPrefix=='carrier';
+      _broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!,background:needsBackground);
     }
   }
 
@@ -3111,6 +3112,8 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         final rejected=(d['rejectedBy'] is List)?List.from(d['rejectedBy'] as List):<dynamic>[];
         if(rejected.contains(user.uid))throw Exception('You already rejected this ride.');
         tx.update(doc.reference,{'status':'accepted','driverUid':user.uid,'driverName':p['name']??user.displayName??'ALLways partner','driverPhone':p['mobileNumber']??'','driverVehicleType':p['vehicleType']??d['rideType'],'acceptedAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+        final partnerRef=FirebaseFirestore.instance.collection('ridePartners').doc(user.uid);
+        tx.set(partnerRef,{'status':'offline','activeRideId':doc.id,'statusUpdatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
       });
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride accepted. Live tracking is now available.')));
     }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e.toString().replaceFirst('Exception: ',''))));}
@@ -3132,6 +3135,8 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         if((d['status']??'').toString().toLowerCase()!='pending_acceptance')throw Exception('Ride already accepted or no longer available.');
         if((d['partnerUid']??'').toString()!=user.uid)throw Exception('This ride is not assigned to you.');
         tx.update(doc.reference,{'status':'Accepted','partnerAccepted':true,'acceptedAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+        final partnerRef=FirebaseFirestore.instance.collection('ridePartners').doc(user.uid);
+        tx.set(partnerRef,{'status':'offline','activeRideId':doc.id,'statusUpdatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
       });
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride accepted. Live tracking is now available.')));
     }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not accept ride: $e')));}

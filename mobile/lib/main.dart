@@ -3950,6 +3950,23 @@ class _AdminScreenState extends State<AdminScreen> {
                     doc.reference.update({'status': value, 'statusNote': message, 'customerMessage': message, 'updatedAt': DateTime.now().millisecondsSinceEpoch});
                   },
                 ),
+                if ((order['carrierUid'] ?? '').toString().isNotEmpty &&
+                    status.toLowerCase() != 'delivered' &&
+                    status.toLowerCase() != 'cancelled')
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LiveTrackingScreen(
+                        collection: 'orders',
+                        docId: doc.id,
+                        title: 'Live delivery tracking',
+                        mode: 'order',
+                        readOnly: true,
+                      ))),
+                      icon: const Icon(Icons.location_searching),
+                      label: const Text('Track delivery partner'),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 ListTile(
                   contentPadding: EdgeInsets.zero,

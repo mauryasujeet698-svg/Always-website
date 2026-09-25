@@ -2396,7 +2396,7 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
                 Row(children:[
                   Expanded(child:OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage())),icon:const Icon(Icons.directions_car_outlined),label:const Text('Book vehicle'))),
                   const SizedBox(width:10),
-                  Expanded(child:OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage())),icon:const Icon(Icons.two_wheeler_outlined),label:const Text('Book a Ride'))),
+                  Expanded(child:OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RiderLoginPage())),icon:const Icon(Icons.two_wheeler_outlined),label:const Text('Rider login'))),
                 ]),
                 const SizedBox(height: 6),
                 const Text('Service Partner includes vehicle booking and two-wheeler ride sharing. Contact details unlock only after a confirmed booking.',style:TextStyle(color:Colors.grey,fontSize:12)),
@@ -3137,7 +3137,7 @@ class _RiderLoginPageState extends State<RiderLoginPage> {
     if(!await ensureBackgroundLocationDisclosure(context))return;
     if(await b.start(collection:'ridePartners',docId:u.uid,prefix:'rider',background:true))_locationBroadcaster=b;
     _listenRequests();
-    if(mounted)setState(()=>{});
+    if(mounted)setState(() {});
   }
 
   Future<void> _setOnline(bool value) async {

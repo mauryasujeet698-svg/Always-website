@@ -33,4 +33,4 @@ jobs:
             echo "FIREBASE_TOKEN GitHub secret is required for deployment."
             exit 1
           fi
-          firebase deploy --only functions --project allways-web --token "$FIREBASE_TOKEN"
+          firebase deploy --only firestore:rules,functions --project allways-web --token "$FIREBASE_TOKEN"

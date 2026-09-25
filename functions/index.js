@@ -65,10 +65,34 @@ async function getUserToken(uid) {
   return String(snap.data()?.token || "").trim();
 }
 
+function preferenceKeyForType(type = "") {
+  const t = String(type).toLowerCase();
+  if (t.includes("delivery")) return "deliveryUpdates";
+  if (t.includes("order")) return "orderUpdates";
+  if (t.includes("ride") || t.includes("vehicle") || t.includes("travel")) return "travelUpdates";
+  if (t.includes("offer") || t.includes("promotion")) return "offers";
+  return "announcements";
+}
+
+async function notificationAllowed(uid, type = "") {
+  if (!uid) return false;
+  const snap = await db.collection("fcmTokens").doc(String(uid)).get();
+  if (!snap.exists) return false;
+  const data = snap.data() || {};
+  if (data.notificationsEnabled === false) return false;
+  const preferences = data.notificationPreferences || {};
+  const key = preferenceKeyForType(type);
+  return preferences[key] !== false;
+}
+
 async function sendToUser(uid, title, body, data = {}, fallbackToken = "") {
   const token = (await getUserToken(uid)) || String(fallbackToken || "").trim();
   if (!token) {
     console.log("No FCM token for user:", uid);
+    return false;
+  }
+  if (!(await notificationAllowed(uid, data.type || ""))) {
+    console.log("Notification category disabled for user:", uid, data.type || "");
     return false;
   }
   return sendToToken(token, title, body, data);
@@ -420,7 +444,7 @@ exports.onAllwaysOrderUpdated = onDocumentUpdated(
           title,
           body,
           {
-            type: "order_update",
+            type: normalized === "out_for_delivery" ? "delivery_update" : "order_update",
             orderId,
             status: newStatus,
           },

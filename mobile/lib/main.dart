@@ -3514,7 +3514,7 @@ class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPa
     final online=partners.docs.where((d){
       final x=d.data();
       final duty=(x['dutyStatus']??'offline').toString().toLowerCase();
-      return duty=='online' && x['deliveryAvailable']!=false && (x['activeOrderId']??'').toString().isEmpty;
+      return duty=='online' && x['deliveryAvailable']!=false && (x['activeOrderId']??'').toString().isEmpty && (x['pendingOrderId']??'').toString().isEmpty;
     }).toList();
     if(online.isEmpty){
       if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('No available delivery partner is online right now.')));
@@ -3541,7 +3541,7 @@ class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPa
         final od=latestOrder.data()??{};
         final pd=latestPartner.data()??{};
         if((od['carrierUid']??'').toString().isNotEmpty) throw Exception('Order is already assigned.');
-        if((pd['dutyStatus']??'offline').toString().toLowerCase()!='online'||pd['deliveryAvailable']==false||(pd['activeOrderId']??'').toString().isNotEmpty) throw Exception('This partner is no longer available.');
+        if((pd['dutyStatus']??'offline').toString().toLowerCase()!='online'||pd['deliveryAvailable']==false||(pd['activeOrderId']??'').toString().isNotEmpty||(pd['pendingOrderId']??'').toString().isNotEmpty) throw Exception('This partner is no longer available.');
         tx.update(order.reference,{
           'carrierUid':selected.id,
           'assignedPartnerId':selected.id,

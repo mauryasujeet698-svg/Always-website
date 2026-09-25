@@ -244,7 +244,12 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   @override void initState(){super.initState();if(!widget.readOnly&&widget.broadcastPrefix!=null){_broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!);}}
   @override void dispose(){_broadcaster.stop();super.dispose();}
   double? _n(dynamic v)=>v is num?v.toDouble():double.tryParse(v?.toString()??'');
-  LatLng? _point(Map<String,dynamic> d,String p){final lat=_n(d['\${p}Lat']),lng=_n(d['\${p}Lng']);if(lat==null||lng==null||lat.isNaN||lng.isNaN)return null;return LatLng(lat,lng);}
+  LatLng? _point(Map<String,dynamic> d,String p){
+    final lat=_n(d['${p}Lat']??d['${p}Latitude']);
+    final lng=_n(d['${p}Lng']??d['${p}Longitude']);
+    if(lat==null||lng==null||lat.isNaN||lng.isNaN)return null;
+    return LatLng(lat,lng);
+  }
   Widget _icon(IconData icon,Color color)=>Container(decoration:BoxDecoration(color:color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:8,color:Colors.black26)]),child:Icon(icon,color:Colors.white,size:26));
   @override Widget build(BuildContext context)=>Scaffold(
     appBar:AppBar(title:Text(widget.title)),

@@ -732,7 +732,7 @@ class _ShopPageState extends State<ShopPage>{
         else Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
           SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14))),
           Expanded(child:Center(child:Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)))),
-          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),tapTargetSize:MaterialTapTargetSize.shrinkWrap,onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14))),
+          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14))),
         ])),
       ])),
     ));
@@ -2664,7 +2664,7 @@ class _OnDemandRidePageState extends State<OnDemandRidePage> {
         FilledButton.icon(onPressed:_requestRide,icon:const Icon(Icons.search),label:const Text('Find a ride')),
       ])),
       const SizedBox(height:12),
-      const Card(child:Padding(padding:EdgeInsets.all(16),child:Text('Before starting, verify the partner photo and vehicle details. Live GPS tracking is available during an accepted ride. You can cancel an eligible request and report an issue afterward.',style:TextStyle(color:Colors.grey,height:1.35)))),
+      const Card(child:Padding(padding:EdgeInsets.all(16),child:Text('Before starting, verify the partner photo and vehicle details. Live GPS tracking is available during an accepted ride. You can cancel an eligible request and report an issue afterward.',style:TextStyle(color:Colors.grey,height:1.35))),),
     ]),
   );
 }

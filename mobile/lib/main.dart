@@ -413,7 +413,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         LatLng? partner;
         if(widget.mode=='order')partner=_point(d,'carrier');
         else if(widget.mode=='vehicle')partner=_point(d,'owner');
-        else partner=_point(d,'partner');
+        else partner=_point(d,'partner')??_point(d,'driver');
         final pickup=_point(d,'pickup');
         final destination=_point(d,'destination');
         final points=<LatLng>[if(customer!=null)customer,if(partner!=null)partner,if(pickup!=null)pickup,if(destination!=null)destination];
@@ -3016,7 +3016,7 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
         final broadcaster=LiveLocationBroadcaster();
         if(!mounted)return;
         if(!await ensureBackgroundLocationDisclosure(context))return;
-        final started=await broadcaster.start(collection:'autoRideRequests',docId:active.id,prefix:'partner',background:true);
+        final started=await broadcaster.start(collection:'autoRideRequests',docId:active.id,prefix:'driver',background:true);
         if(started){_autoLocationBroadcaster=broadcaster;_broadcastingAutoRideId=active.id;}
       });
     }

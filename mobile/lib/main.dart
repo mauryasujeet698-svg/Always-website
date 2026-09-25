@@ -265,38 +265,100 @@ class LatLngTween extends Tween<LatLng> {
   }
 }
 class LiveTrackingScreen extends StatefulWidget {
-  final String collection,docId,title,mode; final String? broadcastPrefix; final bool readOnly; final bool allowCancel;
+  final String collection,docId,title,mode;
+  final String? broadcastPrefix;
+  final bool readOnly;
+  final bool allowCancel;
   const LiveTrackingScreen({super.key,required this.collection,required this.docId,required this.title,required this.mode,this.broadcastPrefix,this.readOnly=false,this.allowCancel=false});
   @override State<LiveTrackingScreen> createState()=>_LiveTrackingScreenState();
 }
+
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   final LiveLocationBroadcaster _broadcaster=LiveLocationBroadcaster();
-  @override void initState(){super.initState();if(!widget.readOnly&&widget.broadcastPrefix!=null){_broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!);}}
+  LatLng? _lastPartnerPoint;
+
+  @override void initState(){
+    super.initState();
+    if(!widget.readOnly&&widget.broadcastPrefix!=null){
+      _broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!,background:true);
+    }
+  }
+
   @override void dispose(){_broadcaster.stop();super.dispose();}
+
   double? _n(dynamic v)=>v is num?v.toDouble():double.tryParse(v?.toString()??'');
+
   LatLng? _point(Map<String,dynamic> d,String p){
     final lat=_n(d['${p}Lat']??d['${p}Latitude']);
     final lng=_n(d['${p}Lng']??d['${p}Longitude']);
     if(lat==null||lng==null||lat.isNaN||lng.isNaN)return null;
     return LatLng(lat,lng);
   }
-  Widget _icon(IconData icon,Color color)=>Container(decoration:BoxDecoration(color:color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:8,color:Colors.black26)]),child:Icon(icon,color:Colors.white,size:26));
+
+  Future<void> _call(BuildContext context,String phone) async {
+    final clean=phone.replaceAll(RegExp(r'[^0-9+]'),'');
+    if(clean.isEmpty){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Phone number is not available yet.')));
+      return;
+    }
+    final uri=Uri(scheme:'tel',path:clean);
+    try{
+      if(!await launchUrl(uri,mode:LaunchMode.externalApplication)&&context.mounted){
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Could not open the phone app.')));
+      }
+    }catch(e){
+      if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not place call: '+e.toString())));
+    }
+  }
+
+  Widget _marker(IconData icon,Color color){
+    return Container(
+      decoration:BoxDecoration(color:color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:10,color:Colors.black26)]),
+      child:Icon(icon,color:Colors.white,size:27),
+    );
+  }
+
   Future<void> _cancelActiveTrip() async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null)return;
     final ref=FirebaseFirestore.instance.collection(widget.collection).doc(widget.docId);
+    final reason=await showDialog<String>(
+      context:context,
+      builder:(c)=>SimpleDialog(
+        title:const Text('Cancel ride'),
+        children:[
+          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Waiting too long'),child:const Text('Waiting too long')),
+          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Partner/customer not responding'),child:const Text('Not responding')),
+          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Changed my mind'),child:const Text('Changed my mind')),
+          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Other'),child:const Text('Other')),
+        ],
+      ),
+    );
+    if(reason==null)return;
     try{
       await FirebaseFirestore.instance.runTransaction((tx)async{
-        final latest=await tx.get(ref);final d=latest.data()??<String,dynamic>{};
+        final latest=await tx.get(ref);
+        final d=latest.data()??<String,dynamic>{};
         final status=(d['status']??'').toString().toLowerCase();
         final isCustomer=d['customerUid']==user.uid;
         final isPartner=d['partnerUid']==user.uid||d['driverUid']==user.uid;
-        if(!isCustomer&&!isPartner)return;
-        if(status=='cancelled'||status=='completed'||status=='delivered')return;
-        tx.update(ref,{'status':'cancelled','cancelledBy':isCustomer?'customer':'partner','cancellationReason':isCustomer?'Customer cancelled the ride':'Ride partner cancelled the ride','cancelledAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
+        if(!isCustomer&&!isPartner)throw Exception('You are not part of this ride.');
+        if(['cancelled','completed','delivered'].contains(status))return;
+        tx.update(ref,{
+          'status':'cancelled',
+          'cancelledBy':isCustomer?'customer':'partner',
+          'cancellationReason':reason,
+          'cancelledAt':FieldValue.serverTimestamp(),
+          'updatedAt':FieldValue.serverTimestamp(),
+        });
       });
-      if(mounted){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride cancelled.')));Navigator.pop(context);}
-    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not cancel ride: '+e.toString())));}
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride cancelled.')));
+        Navigator.pop(context);
+      }
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not cancel ride: '+e.toString().replaceFirst('Exception: ',''))));
+    }
   }
 
   @override Widget build(BuildContext context)=>Scaffold(
@@ -304,7 +366,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     body:StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
       stream:FirebaseFirestore.instance.collection(widget.collection).doc(widget.docId).snapshots(),
       builder:(context,snapshot){
-        if(snapshot.hasError)return Center(child:Text('Tracking unavailable: \${snapshot.error}'));
+        if(snapshot.hasError)return Center(child:Text('Tracking unavailable: ${snapshot.error}'));
         if(!snapshot.hasData)return const Center(child:CircularProgressIndicator());
         final d=snapshot.data!.data()??<String,dynamic>{};
         final customer=_point(d,'customer');
@@ -312,28 +374,54 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         if(widget.mode=='order')partner=_point(d,'carrier');
         else if(widget.mode=='vehicle')partner=_point(d,'owner');
         else partner=_point(d,'partner');
-        final pickup=_point(d,'pickup'),destination=_point(d,'destination');
+        final pickup=_point(d,'pickup');
+        final destination=_point(d,'destination');
         final points=<LatLng>[if(customer!=null)customer,if(partner!=null)partner,if(pickup!=null)pickup,if(destination!=null)destination];
-        if(points.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Text('Waiting for live location. Keep location enabled and allow ALLways to access it.',textAlign:TextAlign.center)));
-        final activeLabel = widget.mode=='order' ? 'Live delivery tracking' : widget.mode=='vehicle' ? 'Live vehicle tracking' : 'Live ride tracking';
+        if(points.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Text('Waiting for live location. Keep location enabled during the active trip.',textAlign:TextAlign.center)));
+
+        final activeLabel=widget.mode=='order'?'Live delivery tracking':widget.mode=='vehicle'?'Live vehicle tracking':'Live ride tracking';
+        final currentUser=FirebaseAuth.instance.currentUser;
+        final isCustomer=currentUser!=null&&d['customerUid']==currentUser.uid;
+        final callPhone=(isCustomer
+            ? (d['partnerPhone']??d['driverPhone']??d['carrierPhone']??'')
+            : (d['customerPhone']??'' )).toString();
+
+        if(partner!=null)_lastPartnerPoint=partner;
+
         return Stack(children:[
-          FlutterMap(options:MapOptions(initialCenter:points.first,initialZoom:15),children:[
-            TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
-            TweenAnimationBuilder<LatLng>(
-              tween:LatLngTween(end:partner),
-              duration:const Duration(milliseconds:850),
-              curve:Curves.easeOut,
-              builder:(context,animatedPartner,_){
-                return MarkerLayer(markers:[
-                  if(customer!=null)Marker(point:customer,width:52,height:52,child:_icon(Icons.person_pin_circle,Colors.blue)),
-                  if(animatedPartner!=null)Marker(point:animatedPartner,width:52,height:52,child:_icon(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.purple)),
-                  if(pickup!=null)Marker(point:pickup,width:52,height:52,child:_icon(Icons.trip_origin,Colors.green)),
-                  if(destination!=null)Marker(point:destination,width:52,height:52,child:_icon(Icons.flag,Colors.red)),
-                ]);
-              },
-            ),
-            const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
-          ]),
+          FlutterMap(
+            options:MapOptions(initialCenter:partner??pickup??customer??points.first,initialZoom:15),
+            children:[
+              TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
+              if(pickup!=null&&destination!=null)
+                PolylineLayer(polylines:[
+                  Polyline(points:[pickup,destination],strokeWidth:4,color:Theme.of(context).colorScheme.primary),
+                ]),
+              MarkerLayer(markers:[
+                if(customer!=null)Marker(point:customer,width:54,height:54,child:_marker(Icons.person_pin_circle,Colors.blue)),
+                if(pickup!=null)Marker(point:pickup,width:54,height:54,child:_marker(Icons.trip_origin,Colors.green)),
+                if(destination!=null)Marker(point:destination,width:54,height:54,child:_marker(Icons.flag,Colors.red)),
+                if(partner!=null)
+                  Marker(
+                    point:partner,
+                    width:58,
+                    height:58,
+                    child:TweenAnimationBuilder<double>(
+                      tween:Tween(begin:0,end:1),
+                      duration:const Duration(milliseconds:350),
+                      curve:Curves.easeOut,
+                      builder:(context,t,_){
+                        return Transform.scale(
+                          scale:.96+(t*.04),
+                          child:_marker(widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,Colors.deepPurple),
+                        );
+                      },
+                    ),
+                  ),
+              ]),
+              const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
+            ],
+          ),
           Positioned(top:12,left:12,right:12,child:SafeArea(bottom:false,child:Card(margin:EdgeInsets.zero,child:Padding(
             padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
             child:Row(children:[
@@ -343,14 +431,17 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 Text(activeLabel,style:const TextStyle(fontWeight:FontWeight.w900)),
                 Text(partner==null?'Waiting for partner location':'Partner location is updating live',style:const TextStyle(color:Colors.grey,fontSize:12)),
               ])),
+              if(callPhone.isNotEmpty)IconButton(onPressed:()=>_call(context,callPhone),icon:const Icon(Icons.call),tooltip:'Call'),
               const Icon(Icons.gps_fixed,size:20),
             ]),
           )))),
           Positioned(left:12,right:12,bottom:18,child:SafeArea(top:false,child:Card(margin:EdgeInsets.zero,child:Padding(
             padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
             child:Row(children:[
-              const Icon(Icons.info_outline,size:20),const SizedBox(width:8),
-              Expanded(child:Text(widget.mode=='ride'?'Green = pickup • Red = destination • Purple = ride partner':'Blue = customer • Purple = partner',style:const TextStyle(fontSize:12))),
+              const Icon(Icons.two_wheeler_outlined,size:20),const SizedBox(width:8),
+              Expanded(child:Text(widget.mode=='ride'
+                  ?'Green pickup • Red destination • Purple moving bike'
+                  :'Blue customer • Purple moving partner',style:const TextStyle(fontSize:12))),
               if(widget.allowCancel)TextButton(onPressed:_cancelActiveTrip,child:const Text('Cancel')),
             ]),
           )))),
@@ -572,8 +663,25 @@ class _ShellState extends State<Shell> {
     setState(()=>cart[p.id]=CartItem(p,q+1));msg(p.name+' added to cart');
   }
   void qty(String id,int d){
-    final x=cart[id];if(x==null)return;final n=x.qty+d;
-    if(n<=0)setState(()=>cart.remove(id));else if(n<=x.product.stock)setState(()=>x.qty=n);else msg('Only '+x.product.stock.toString()+' available.');
+    final item=cart[id];
+    if(item==null)return;
+    final current=item.qty;
+    final next=current+d;
+    if(d<0){
+      if(current>1){
+        setState(()=>item.qty=current-1);
+      }else{
+        setState(()=>cart.remove(id));
+      }
+      return;
+    }
+    if(d>0){
+      if(next<=item.product.stock){
+        setState(()=>item.qty=next);
+      }else{
+        msg('Only '+item.product.stock.toString()+' available.');
+      }
+    }
   }
   void msg(String s){if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s)));}
   void login(){Navigator.push(context,MaterialPageRoute(builder:(_)=>const AuthScreen()));}
@@ -749,9 +857,9 @@ class _ShopPageState extends State<ShopPage>{
         const SizedBox(height:3),Text(p.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w900)),Text(p.category,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.grey,fontSize:9)),Text('₹'+p.price.toString(),style:const TextStyle(fontSize:12,fontWeight:FontWeight.w900)),const Spacer(),
         if(item==null)SizedBox(height:27,width:double.infinity,child:FilledButton(style:FilledButton.styleFrom(padding:EdgeInsets.zero),onPressed:p.stock>0?()=>widget.onAdd(p):null,child:const Text('Add',style:TextStyle(fontSize:10))))
         else Container(height:27,decoration:BoxDecoration(border:Border.all(color:Theme.of(c).colorScheme.primary),borderRadius:BorderRadius.circular(14)),child:Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
-          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove,size:14))),
+          SizedBox(width:32,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:32,height:27),iconSize:16,onPressed:()=>widget.onQty(p.id,-1),icon:const Icon(Icons.remove))),
           Expanded(child:Center(child:Text(item.qty.toString(),style:const TextStyle(fontSize:10,fontWeight:FontWeight.w900)))),
-          SizedBox(width:27,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:27,height:27),onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add,size:14))),
+          SizedBox(width:32,height:27,child:IconButton(padding:EdgeInsets.zero,constraints:const BoxConstraints.tightFor(width:32,height:27),iconSize:16,onPressed:p.stock>item.qty?()=>widget.onQty(p.id,1):null,icon:const Icon(Icons.add))),
         ])),
       ])),
     ));
@@ -1261,7 +1369,7 @@ class TravelPage extends StatelessWidget {
     const SizedBox(height:18),
     _actionCard(context,icon:Icons.directions_car_outlined,title:tr('Book vehicle'),subtitle:'Choose from 25 vehicle categories. Owners set their own price, with Book or Book & negotiate.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage()))),
     _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book a Ride',subtitle:'Book a two-wheeler ride partner for your journey. Pickup is from the main road.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RidePartnerPage()))),
-    _actionCard(context,icon:Icons.local_taxi_outlined,title:'Book Bike / Auto Ride',subtitle:'On-demand ride booking with upfront estimate, driver acceptance, live tracking and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage()))),
+    _actionCard(context,icon:Icons.two_wheeler_outlined,title:'Book Bike / Auto Ride',subtitle:'Rapido-style on-demand bike or auto: pickup, destination, fare estimate, partner acceptance, live tracking, call and cancellation.',onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const OnDemandRidePage()))),
     Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.info_outline),const SizedBox(width:10),Expanded(child:Text('Trial service: verify the partner and vehicle before travelling. ALLways is not currently responsible for conduct, safety, vehicle condition, payment, loss, injury or disputes between ride participants.',style:TextStyle(color:Colors.grey,height:1.35)))]))),
   ]);
 }

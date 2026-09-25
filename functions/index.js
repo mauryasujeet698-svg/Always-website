@@ -538,6 +538,52 @@ exports.onVehicleBookingCreated = onDocumentCreated(
   }
 );
 
+async function getAvailableRidePartners(rideType) {
+  const snap = await db.collection("ridePartners").where("status", "==", "online").get();
+  return snap.docs.filter((doc) => {
+    const data = doc.data() || {};
+    const type = String(data.vehicleType || "").toLowerCase();
+    return (type === rideType || (rideType === "bike" && type === "two_wheeler"));
+  });
+}
+
+exports.onAutoRideRequestCreated = onDocumentCreated(
+  "autoRideRequests/{requestId}",
+  async (event) => {
+    const ride = event.data?.data();
+    if (!ride || String(ride.status || "").toLowerCase() !== "searching") return;
+
+    const rideType = String(ride.rideType || "bike").toLowerCase();
+    const partners = await getAvailableRidePartners(rideType);
+    const pickupLat = Number(ride.pickupLatitude);
+    const pickupLng = Number(ride.pickupLongitude);
+
+    for (const partner of partners) {
+      const data = partner.data() || {};
+      const pLat = Number(data.latitude);
+      const pLng = Number(data.longitude);
+      if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng) ||
+          !Number.isFinite(pLat) || !Number.isFinite(pLng)) continue;
+
+      const distance = distanceKm(pickupLat, pickupLng, pLat, pLng);
+      if (distance > 10) continue;
+
+      await sendToUser(
+        partner.id,
+        "New " + (rideType === "auto" ? "Auto" : "Bike") + " Ride",
+        "A nearby ALLways ride request is waiting for acceptance.",
+        {
+          type: "ride_request",
+          rideId: event.params.requestId,
+          rideType,
+          distanceKm: distance.toFixed(1),
+        },
+        data.fcmToken || data.fcm_token || ""
+      );
+    }
+  }
+);
+
 exports.notifyNearbyRidePartners = onDocumentCreated(
   "rides/{rideId}",
   async (event) => {

@@ -98,6 +98,31 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
 
+    match /ridePartners/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    match /travelReviews/{reviewId} {
+      allow create: if signedIn() && request.resource.data.userUid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.userUid == request.auth.uid || isAdmin());
+      allow update, delete: if signedIn() && (resource.data.userUid == request.auth.uid || isAdmin());
+    }
+
+    match /travelReports/{reportId} {
+      allow create: if signedIn() && request.resource.data.userUid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.userUid == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /notificationBroadcasts/{notificationId} {
+      allow create: if isAdmin();
+      allow read: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     match /settings/banners {
       allow read: if true;
       allow write: if isAdmin();

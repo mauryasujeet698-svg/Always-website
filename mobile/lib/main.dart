@@ -2673,6 +2673,7 @@ class _OnDemandRidePageState extends State<OnDemandRidePage> {
           ),
         ),
       ),
+    ]),
   );
 }
 

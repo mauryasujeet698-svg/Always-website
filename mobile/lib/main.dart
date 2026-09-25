@@ -2473,6 +2473,42 @@ class RidePartnerPage extends StatefulWidget {
 }
 
 class _RidePartnerPageState extends State<RidePartnerPage> {
+  StreamSubscription<QuerySnapshot<Map<String,dynamic>>>? _rideOrderSubscription;
+  LiveLocationBroadcaster? _rideLocationBroadcaster;
+  String? _broadcastingRideId;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid=FirebaseAuth.instance.currentUser?.uid;
+    if(uid!=null){
+      _rideOrderSubscription=FirebaseFirestore.instance.collection('rideBookings').where('partnerUid',isEqualTo:uid).snapshots().listen((snapshot) async {
+        QueryDocumentSnapshot<Map<String,dynamic>>? active;
+        for(final d in snapshot.docs){
+          final status=(d.data()['status']??'').toString().toLowerCase();
+          if(status=='accepted'){active=d;break;}
+        }
+        if(active==null){
+          await _rideLocationBroadcaster?.stop();
+          _rideLocationBroadcaster=null;_broadcastingRideId=null;
+          return;
+        }
+        if(_broadcastingRideId==active.id)return;
+        await _rideLocationBroadcaster?.stop();
+        final broadcaster=LiveLocationBroadcaster();
+        final started=await broadcaster.start(collection:'rideBookings',docId:active.id,prefix:'partner');
+        if(started){_rideLocationBroadcaster=broadcaster;_broadcastingRideId=active.id;}
+      });
+    }
+  }
+
+  @override
+  void dispose(){
+    _rideOrderSubscription?.cancel();
+    _rideLocationBroadcaster?.stop();
+    super.dispose();
+  }
+
   Future<void> _bookRide() async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}

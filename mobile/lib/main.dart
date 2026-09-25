@@ -2963,7 +2963,8 @@ class _RidePartnerPageState extends State<RidePartnerPage> {
           stream:FirebaseFirestore.instance.collection('ridePartners').doc(user.uid).snapshots(),
           builder:(context,profileSnapshot){
             final profile=profileSnapshot.data?.data();
-            final vehicle=(profile?['vehicleType']??'').toString().toLowerCase();
+            final rawVehicle=(profile?['vehicleType']??'').toString().toLowerCase();
+            final vehicle=rawVehicle=='two_wheeler'?'bike':rawVehicle;
             if(vehicle!='bike'&&vehicle!='auto')return const SizedBox.shrink();
             return StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
               stream:FirebaseFirestore.instance.collection('autoRideRequests').where('status',isEqualTo:'searching').snapshots(),

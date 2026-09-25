@@ -2057,11 +2057,39 @@ class CarrierDashboard extends StatefulWidget {
 class _CarrierDashboardState extends State<CarrierDashboard> {
   bool online = false;
   bool loadingDuty = true;
+  StreamSubscription<QuerySnapshot<Map<String,dynamic>>>? _carrierOrderSubscription;
+  LiveLocationBroadcaster? _carrierLocationBroadcaster;
+  String? _broadcastingOrderId;
 
   @override
   void initState() {
     super.initState();
     _loadDutyStatus();
+    _carrierOrderSubscription=FirebaseFirestore.instance.collection('orders').where('carrierUid',isEqualTo:widget.user.uid).snapshots().listen((snapshot) async {
+      QueryDocumentSnapshot<Map<String,dynamic>>? active;
+      for(final d in snapshot.docs){
+        final status=(d.data()['status']??'').toString().toLowerCase();
+        if(status=='assigned'||status=='picked up'||status=='out for delivery'){active=d;break;}
+      }
+      if(active==null){
+        await _carrierLocationBroadcaster?.stop();
+        _carrierLocationBroadcaster=null;
+        _broadcastingOrderId=null;
+        return;
+      }
+      if(_broadcastingOrderId==active.id)return;
+      await _carrierLocationBroadcaster?.stop();
+      final broadcaster=LiveLocationBroadcaster();
+      final started=await broadcaster.start(collection:'orders',docId:active.id,prefix:'carrier');
+      if(started){_carrierLocationBroadcaster=broadcaster;_broadcastingOrderId=active.id;}
+    });
+  }
+
+  @override
+  void dispose() {
+    _carrierOrderSubscription?.cancel();
+    _carrierLocationBroadcaster?.stop();
+    super.dispose();
   }
 
   Future<void> _loadDutyStatus() async {
@@ -2220,6 +2248,50 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
                   },
                 ),
                 const SizedBox(height: 14),
+
+                StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+                  stream:FirebaseFirestore.instance.collection('orders').where('carrierUid',isEqualTo:widget.user.uid).snapshots(),
+                  builder:(context,snapshot){
+                    final pending=(snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[]).where((d)=>(d.data()['status']??'').toString().toLowerCase()=='pending_acceptance').toList();
+                    if(pending.isEmpty)return const SizedBox.shrink();
+                    return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                      Align(alignment:Alignment.centerLeft,child:Text('Delivery Offers',style:Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight:FontWeight.w900))),
+                      const SizedBox(height:8),
+                      ...pending.take(5).map((doc){
+                        final o=doc.data();
+                        Future<void> respond(bool accept) async {
+                          try{
+                            await FirebaseFirestore.instance.runTransaction((tx) async {
+                              final latest=await tx.get(doc.reference);
+                              final d=latest.data()??{};
+                              if((d['status']??'').toString().toLowerCase()!='pending_acceptance')throw Exception('This delivery offer is no longer available.');
+                              if((d['carrierUid']??'').toString()!=widget.user.uid)throw Exception('This offer is not assigned to this account.');
+                              final partnerRef=FirebaseFirestore.instance.collection('customers').doc(widget.user.uid);
+                              if(accept){
+                                tx.update(doc.reference,{'status':'Assigned','carrierAccepted':true,'assignmentRejected':false,'statusNote':'Delivery partner accepted the assignment','customerMessage':'Delivery partner accepted the assignment','updatedAt':FieldValue.serverTimestamp()});
+                                tx.set(partnerRef,{'pendingOrderId':null,'activeOrderId':doc.id,'deliveryAvailable':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+                              }else{
+                                tx.update(doc.reference,{'carrierUid':null,'assignedPartnerId':null,'carrierAccepted':false,'assignmentRejected':true,'status':'unassigned','statusNote':'Delivery partner rejected the assignment','customerMessage':'The offered delivery partner rejected the assignment. We are finding another partner.','updatedAt':FieldValue.serverTimestamp()});
+                                tx.set(partnerRef,{'pendingOrderId':null,'activeOrderId':null,'deliveryAvailable':online,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+                              }
+                            });
+                            if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(accept?'Delivery accepted.':'Delivery offer rejected.')));
+                          }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not respond: $e')));}
+                        }
+                        return Card(margin:const EdgeInsets.only(bottom:8),child:ListTile(
+                          leading:const Icon(Icons.local_shipping_outlined),
+                          title:Text('#'+(o['id']??doc.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
+                          subtitle:Text((o['address']??'Customer location unavailable').toString()),
+                          trailing:Wrap(spacing:4,children:[
+                            TextButton(onPressed:()=>respond(false),child:const Text('Reject')),
+                            FilledButton(onPressed:()=>respond(true),child:const Text('Accept')),
+                          ]),
+                        ));
+                      }),
+                      const SizedBox(height:12),
+                    ]);
+                  },
+                ),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text('New Pickup Requests', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
@@ -2244,10 +2316,26 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
                             title: Text('#' + (o['id'] ?? d.id).toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
                             subtitle: Text((itemText.isEmpty ? 'Order ready for pickup' : itemText) + '\nCOD: ₹' + _number(o['total']).toStringAsFixed(0)),
                             isThreeLine: true,
-                            trailing: IconButton(
-                              onPressed: () => openMaps(context, (o['address'] ?? '').toString()),
-                              icon: const Icon(Icons.navigation_outlined),
-                              tooltip: 'Navigate',
+                            trailing: Wrap(
+                              spacing: 4,
+                              children: [
+                                IconButton(
+                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LiveTrackingScreen(
+                                    collection: 'orders',
+                                    docId: d.id,
+                                    title: 'Live delivery tracking',
+                                    mode: 'order',
+                                    readOnly: true,
+                                  ))),
+                                  icon: const Icon(Icons.location_searching),
+                                  tooltip: 'Track customer',
+                                ),
+                                IconButton(
+                                  onPressed: () => openMaps(context, (o['address'] ?? '').toString()),
+                                  icon: const Icon(Icons.navigation_outlined),
+                                  tooltip: 'Navigate',
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -3456,18 +3544,20 @@ class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPa
         if((pd['dutyStatus']??'offline').toString().toLowerCase()!='online'||pd['deliveryAvailable']==false||(pd['activeOrderId']??'').toString().isNotEmpty) throw Exception('This partner is no longer available.');
         tx.update(order.reference,{
           'carrierUid':selected.id,
+          'assignedPartnerId':selected.id,
           'carrierName':(pd['displayName']??pd['email']??selected.id).toString(),
           'carrierEmail':(pd['email']??'').toString(),
-          'status':'Assigned',
-          'statusNote':'Delivery partner assigned',
-          'customerMessage':'Delivery partner assigned',
+          'carrierAccepted':false,
+          'assignmentRejected':false,
+          'status':'pending_acceptance',
+          'statusNote':'Pending delivery partner acceptance',
+          'customerMessage':'A delivery partner has been offered this order. Waiting for acceptance.',
           'assignedAt':FieldValue.serverTimestamp(),
           'assignmentMode':'manual',
           'updatedAt':FieldValue.serverTimestamp(),
         });
         tx.set(selected.reference,{
-          'deliveryAvailable':false,
-          'activeOrderId':order.id,
+          'pendingOrderId':order.id,
           'updatedAt':FieldValue.serverTimestamp(),
         },SetOptions(merge:true));
       });
@@ -3481,7 +3571,7 @@ class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPa
     return Card(child:ExpansionTile(leading:const Icon(Icons.assignment_ind_outlined),title:const Text('Delivery Assignment',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Assign available online delivery partners to orders'),children:[
       StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').snapshots(),builder:(context,snapshot){
         if(!snapshot.hasData)return const Padding(padding:EdgeInsets.all(16),child:CircularProgressIndicator());
-        final docs=snapshot.data!.docs.where((d){final x=d.data();return (x['carrierUid']??'').toString().isEmpty&&(x['status']??'')!='Delivered'&&(x['status']??'')!='Cancelled';}).take(30).toList();
+        final docs=snapshot.data!.docs.where((d){final x=d.data();final status=(x['status']??'').toString().toLowerCase();final assigned=(x['carrierUid']??'').toString().isNotEmpty;return (!assigned||status=='pending_acceptance')&&status!='delivered'&&status!='cancelled';}).take(30).toList();
         if(docs.isEmpty)return const Padding(padding:EdgeInsets.all(16),child:Text('No unassigned active orders.'));
         return Column(children:docs.map((d){
           final x=d.data();
@@ -3489,7 +3579,7 @@ class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPa
           return ListTile(
             title:Text('#'+(x['id']??d.id).toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
             subtitle:Text((x['name']??'Customer').toString()+' • '+(x['status']??'').toString()+(hasCoords?' • Location saved':'')),
-            trailing:FilledButton(onPressed:()=>_assign(context,d),child:const Text('Assign')),
+            trailing:((x['status']??'').toString().toLowerCase()=='pending_acceptance')?const Chip(label:Text('Pending Acceptance')):FilledButton(onPressed:()=>_assign(context,d),child:const Text('Assign')),
           );
         }).toList());
       }),

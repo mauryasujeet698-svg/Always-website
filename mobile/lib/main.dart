@@ -2339,6 +2339,42 @@ class VehicleBookingPage extends StatefulWidget {
 }
 
 class _VehicleBookingPageState extends State<VehicleBookingPage> {
+  StreamSubscription<QuerySnapshot<Map<String,dynamic>>>? _vehicleBookingSubscription;
+  LiveLocationBroadcaster? _vehicleLocationBroadcaster;
+  String? _broadcastingVehicleBookingId;
+
+  @override
+  void initState(){
+    super.initState();
+    final uid=FirebaseAuth.instance.currentUser?.uid;
+    if(uid!=null){
+      _vehicleBookingSubscription=FirebaseFirestore.instance.collection('vehicleBookings').where('ownerUid',isEqualTo:uid).snapshots().listen((snapshot) async {
+        QueryDocumentSnapshot<Map<String,dynamic>>? active;
+        for(final d in snapshot.docs){
+          final status=(d.data()['status']??'').toString().toLowerCase();
+          if(status!='rejected'&&status!='cancelled'&&status!='delivered'){active=d;break;}
+        }
+        if(active==null){
+          await _vehicleLocationBroadcaster?.stop();
+          _vehicleLocationBroadcaster=null;_broadcastingVehicleBookingId=null;
+          return;
+        }
+        if(_broadcastingVehicleBookingId==active.id)return;
+        await _vehicleLocationBroadcaster?.stop();
+        final broadcaster=LiveLocationBroadcaster();
+        final started=await broadcaster.start(collection:'vehicleBookings',docId:active.id,prefix:'owner');
+        if(started){_vehicleLocationBroadcaster=broadcaster;_broadcastingVehicleBookingId=active.id;}
+      });
+    }
+  }
+
+  @override
+  void dispose(){
+    _vehicleBookingSubscription?.cancel();
+    _vehicleLocationBroadcaster?.stop();
+    super.dispose();
+  }
+
   Future<void> _publishVehicle() async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Please sign in first.')));return;}
@@ -2449,6 +2485,24 @@ class _VehicleBookingPageState extends State<VehicleBookingPage> {
         final docs=snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[];
         return ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
           Card(child:ListTile(leading:const Icon(Icons.add_business_outlined),title:const Text('Offer your vehicle',style:TextStyle(fontWeight:FontWeight.w900)),subtitle:const Text('Vehicle owners choose their own price and can allow negotiation.'),trailing:const Icon(Icons.chevron_right),onTap:user==null?null:_publishVehicle)),
+          if(user!=null)
+            StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(
+              stream:FirebaseFirestore.instance.collection('vehicleBookings').where('ownerUid',isEqualTo:user.uid).snapshots(),
+              builder:(context,snapshot){
+                final docs=snapshot.data?.docs??const <QueryDocumentSnapshot<Map<String,dynamic>>>[];
+                final active=docs.where((d){final st=(d.data()['status']??'').toString().toLowerCase();return st!='rejected'&&st!='cancelled'&&st!='delivered';}).toList();
+                if(active.isEmpty)return const SizedBox.shrink();
+                return Card(child:ExpansionTile(
+                  leading:const Icon(Icons.assignment_outlined),
+                  title:const Text('Vehicle booking requests',style:TextStyle(fontWeight:FontWeight.w900)),
+                  children:active.take(10).map((doc){final d=doc.data();return ListTile(
+                    title:Text((d['customerName']??'Customer').toString(),style:const TextStyle(fontWeight:FontWeight.w800)),
+                    subtitle:Text((d['status']??'Booking').toString()+' • ₹'+(d['listedPrice']??0).toString()),
+                    trailing:OutlinedButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>LiveTrackingScreen(collection:'vehicleBookings',docId:doc.id,title:'Live vehicle tracking',mode:'vehicle',readOnly:true)),),child:const Text('Track')),
+                  );}).toList(),
+                ));
+              },
+            ),
           const SizedBox(height:10),const Text('Available vehicles',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:8),
           if(snapshot.hasError)const InfoCard(title:'Could not load vehicles',detail:'Please try again later.'),
           if(!snapshot.hasData)const Padding(padding:EdgeInsets.all(20),child:Center(child:CircularProgressIndicator())),

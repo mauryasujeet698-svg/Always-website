@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -20,6 +23,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
   final MapController _mapController = MapController();
   List<LatLng> _routePoints = const [];
   LatLng? _driverLocation;
+  LatLng? _customerLocation;
   LatLng? _pickupLocation;
   LatLng? _destinationLocation;
   double _markerRotation = 0.0;
@@ -27,11 +31,21 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
   String _rideStatus = 'searching';
   bool _cameraFitted = false;
   bool _mapReady = false;
+  StreamSubscription<Position>? _customerLocationSubscription;
+  bool _customerLocationStarted = false;
+  double? _distanceToOtherKm;
+  String _etaText = 'Updating…';
 
   @override
   void initState() {
     super.initState();
     _initRideStream();
+  }
+
+  @override
+  void dispose() {
+    _customerLocationSubscription?.cancel();
+    super.dispose();
   }
 
   void _initRideStream() {
@@ -41,6 +55,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
       LatLng? newPickup;
       LatLng? newDestination;
       LatLng? newDriver;
+      LatLng? newCustomer;
 
       if (data['pickupLat'] is num && data['pickupLng'] is num) {
         newPickup = LatLng((data['pickupLat'] as num).toDouble(), (data['pickupLng'] as num).toDouble());
@@ -50,6 +65,11 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
       }
       if (data['driverLat'] is num && data['driverLng'] is num) {
         newDriver = LatLng((data['driverLat'] as num).toDouble(), (data['driverLng'] as num).toDouble());
+      }
+      if (data['customerLat'] is num && data['customerLng'] is num) {
+        newCustomer = LatLng((data['customerLat'] as num).toDouble(), (data['customerLng'] as num).toDouble());
+      } else if (data['pickupLatitude'] is num && data['pickupLongitude'] is num) {
+        newCustomer = LatLng((data['pickupLatitude'] as num).toDouble(), (data['pickupLongitude'] as num).toDouble());
       }
 
       final routeChanged = _pickupLocation?.latitude != newPickup?.latitude ||
@@ -66,13 +86,43 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
           if (_driverLocation != null) _markerRotation = _getBearing(_driverLocation!, newDriver);
           _driverLocation = newDriver;
         }
+        _customerLocation = newCustomer;
+        final other = widget.isRider ? newCustomer : newDriver;
+        final me = widget.isRider ? newDriver : newCustomer;
+        if (other != null && me != null) {
+          final meters = Geolocator.distanceBetween(me.latitude, me.longitude, other.latitude, other.longitude);
+          _distanceToOtherKm = meters / 1000;
+          final minutes = math.max(1, (meters / 1000 / 25 * 60).round());
+          _etaText = minutes < 60 ? minutes.toString() + ' min' : (minutes ~/ 60).toString() + 'h ' + (minutes % 60).toString() + 'm';
+        }
       });
+      if (!widget.isRider && !_customerLocationStarted) _startCustomerLocationBroadcast();
 
       if (newPickup != null && newDestination != null && (_routePoints.isEmpty || routeChanged)) {
         _loadOSRMRoute(newPickup, newDestination);
       }
       _fitCameraIfReady();
     });
+  }
+
+  Future<void> _startCustomerLocationBroadcast() async {
+    _customerLocationStarted = true;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
+      final settings = Platform.isAndroid
+          ? AndroidSettings(accuracy: LocationAccuracy.high, distanceFilter: 10, intervalDuration: const Duration(seconds: 10), foregroundNotificationConfig: const ForegroundNotificationConfig(notificationTitle: 'ALLways live ride tracking', notificationText: 'ALLways is sharing your live location for this active ride.', notificationChannelName: 'ALLways Live Ride Tracking', enableWakeLock: true, setOngoing: true))
+          : const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10);
+      final first = await Geolocator.getCurrentPosition(locationSettings: settings);
+      await FirebaseFirestore.instance.collection('autoRideRequests').doc(widget.rideId).set({'customerLat': first.latitude, 'customerLng': first.longitude, 'customerLocationUpdatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+      _customerLocationSubscription = Geolocator.getPositionStream(locationSettings: settings).listen((position) async {
+        try {
+          await FirebaseFirestore.instance.collection('autoRideRequests').doc(widget.rideId).set({'customerLat': position.latitude, 'customerLng': position.longitude, 'customerLocationUpdatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+        } catch (_) {}
+      });
+    } catch (_) {}
   }
 
   double _getBearing(LatLng start, LatLng end) {
@@ -113,6 +163,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
       if (_pickupLocation != null) _pickupLocation!,
       if (_destinationLocation != null) _destinationLocation!,
       if (_driverLocation != null) _driverLocation!,
+      if (_customerLocation != null) _customerLocation!,
     ];
     if (points.isEmpty) return;
     if (points.length == 1) {
@@ -158,6 +209,8 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
           child: _circleMarker(color: const Color(0xFF673AB7), icon: Icons.two_wheeler),
         ),
       ),
+    if (_customerLocation != null)
+      Marker(point: _customerLocation!, width: 70, height: 70, child: Container(decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white, boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 7)]), padding: const EdgeInsets.all(4), child: Container(decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF1976D2)), child: const Icon(Icons.person, color: Colors.white, size: 30)))),
     if (_destinationLocation != null)
       Marker(point: _destinationLocation!, width: 62, height: 62, child: _circleMarker(color: Colors.red, icon: Icons.flag)),
   ];
@@ -215,7 +268,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
                   SizedBox(width: 8),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('Live ride tracking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    Text('Partner location is updating live', style: TextStyle(color: Colors.black54, fontSize: 12)),
+                    Text(widget.isRider ? 'Customer location is updating live' : 'Partner location is updating live', style: TextStyle(color: Colors.black54, fontSize: 12)),
                   ])),
                   Icon(Icons.my_location, color: Colors.black87),
                 ],
@@ -233,16 +286,14 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.two_wheeler, color: Colors.black87, size: 28),
+                  Icon(widget.isRider ? Icons.person : Icons.two_wheeler, color: Colors.black87, size: 28),
                   const SizedBox(width: 12),
-                  const Expanded(child: Text(
-                    'Green pickup • Red destination • Purple moving bike',
-                    style: TextStyle(color: Colors.black87, fontSize: 14),
-                  )),
-                  TextButton(
-                    onPressed: () => CarrierAndAdminController.triggerPhoneCall(_contactPhone),
-                    child: const Text('Cancel', style: TextStyle(color: Color(0xFF8E5A73))),
-                  ),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(widget.isRider ? 'Blue person = customer • Purple bike = you' : 'Purple bike = partner • Blue person = you', style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w700)),
+                    if (_distanceToOtherKm != null)
+                      Text((widget.isRider ? 'Customer' : 'Partner') + ' • ' + (_distanceToOtherKm! < 1 ? (_distanceToOtherKm! * 1000).round().toString() + ' m' : _distanceToOtherKm!.toStringAsFixed(1) + ' km') + ' away • ETA ' + _etaText, style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                  ])),
+                  TextButton(onPressed: () => CarrierAndAdminController.triggerPhoneCall(_contactPhone), child: const Text('Call', style: TextStyle(color: Color(0xFF8E5A73)))),
                 ],
               ),
             ),

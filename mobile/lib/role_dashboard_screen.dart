@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'role_workspace_screen.dart';
 
 class RoleDashboardScreen extends StatefulWidget {
   final String role;
@@ -101,16 +102,18 @@ class _RoleDashboardScreenState extends State<RoleDashboardScreen> {
   };
 
   Future<void> openWorkspace(String section) async {
-    if(admin) {
-      await Navigator.push(context,MaterialPageRoute(builder:(_)=>widget.child));
-    } else {
-      await Navigator.push(context,MaterialPageRoute(builder:(_)=>Scaffold(
-        backgroundColor:const Color(0xFFFFF8FA),
-        appBar:AppBar(backgroundColor:const Color(0xFFFFF8FA),elevation:0,title:Text(section,style:const TextStyle(fontWeight:FontWeight.w800)),iconTheme:IconThemeData(color:accent)),
-        body:SafeArea(child:SingleChildScrollView(padding:const EdgeInsets.all(12),child:widget.child)),
-      )));
-    }
-    if(mounted)_loadProfile();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RoleFeatureScreen(
+          role: widget.role,
+          feature: section,
+          user: widget.user,
+          accent: accent,
+        ),
+      ),
+    );
+    if (mounted) _loadProfile();
   }
 
   void account() {
@@ -249,16 +252,109 @@ class _RoleDashboardScreenState extends State<RoleDashboardScreen> {
 
   Widget liveMap()=>_RoleLiveMap(accent:accent,carrier:carrier,onOpen:()=>openWorkspace(carrier?'Ride Requests':'Delivery Requests'));
 
-  Widget section(String label)=>Center(child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[
-    Icon(icon,size:58,color:accent),const SizedBox(height:14),Text(label,style:const TextStyle(fontSize:24,fontWeight:FontWeight.w900)),const SizedBox(height:8),
-    const Text('Everything for this role stays inside this workspace.',textAlign:TextAlign.center),const SizedBox(height:20),
-    FilledButton.icon(onPressed:()=>openWorkspace(label),icon:const Icon(Icons.open_in_new),label:const Text('Open workspace')),
-  ]));
+  Widget section(String label) {
+    final List<_Action> sectionActions;
+    if (admin) {
+      sectionActions = label == 'Live Operations'
+          ? const [
+              _Action('Manage Orders', Icons.receipt_long),
+              _Action('Manage Delivery Partners', Icons.delivery_dining),
+              _Action('Manage Carriers', Icons.two_wheeler),
+              _Action('Manage Sellers', Icons.storefront),
+            ]
+          : label == 'Reports & Analytics'
+              ? const [
+                  _Action('Reports & Analytics', Icons.analytics),
+                  _Action('Users & Roles', Icons.manage_accounts),
+                ]
+              : const [
+                  _Action('Users & Roles', Icons.manage_accounts),
+                  _Action('App Settings', Icons.settings),
+                ];
+    } else if (seller) {
+      sectionActions = label == 'Orders'
+          ? const [_Action('Orders', Icons.receipt_long), _Action('Inventory', Icons.fact_check)]
+          : label == 'Sales Analytics'
+              ? const [_Action('Sales Analytics', Icons.bar_chart), _Action('Payouts', Icons.account_balance_wallet)]
+              : const [
+                  _Action('Shop Profile', Icons.storefront),
+                  _Action('Products', Icons.inventory_2),
+                  _Action('Offers', Icons.local_offer),
+                  _Action('Help & Support', Icons.support_agent),
+                ];
+    } else if (delivery) {
+      sectionActions = label == 'Deliveries'
+          ? const [_Action('Delivery Requests', Icons.local_shipping), _Action('My Deliveries', Icons.assignment_turned_in)]
+          : label == 'Earnings'
+              ? const [_Action('Earnings', Icons.currency_rupee), _Action('Performance', Icons.bar_chart), _Action('Incentives', Icons.card_giftcard)]
+              : const [
+                  _Action('Documents', Icons.description),
+                  _Action('Safety & SOS', Icons.shield),
+                  _Action('Help & Support', Icons.support_agent),
+                  _Action('Profile & Settings', Icons.person),
+                ];
+    } else {
+      sectionActions = label == 'Rides'
+          ? const [_Action('Ride Requests', Icons.two_wheeler), _Action('My Rides', Icons.route), _Action('Ride History', Icons.history)]
+          : label == 'Earnings'
+              ? const [_Action('Earnings', Icons.currency_rupee), _Action('Ratings', Icons.star)]
+              : const [
+                  _Action('Vehicle & Documents', Icons.description),
+                  _Action('Safety & SOS', Icons.shield),
+                  _Action('Help & Support', Icons.support_agent),
+                  _Action('Profile & Settings', Icons.person),
+                ];
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 24, 18, 28),
+      children: [
+        Icon(icon, size: 54, color: accent),
+        const SizedBox(height: 12),
+        Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        Text(
+          'Choose exactly what you want to manage.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.black54),
+        ),
+        const SizedBox(height: 20),
+        ...sectionActions.map(
+          (a) => Card(
+            elevation: 0,
+            color: soft,
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+              leading: CircleAvatar(
+                backgroundColor: accent.withOpacity(.10),
+                child: Icon(a.icon, color: accent),
+              ),
+              title: Text(a.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: const Text('Open this section separately'),
+              trailing: Icon(Icons.chevron_right, color: accent),
+              onTap: () => openWorkspace(a.title),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget navigation(){
     final labels=admin?const['Home','Operations','Analytics','Users']:seller?const['Home','Orders','Analytics','Profile']:delivery?const['Home','Deliveries','Earnings','Profile']:const['Home','Rides','Earnings','Profile'];
     final icons=admin?const[Icons.home,Icons.tune,Icons.analytics,Icons.manage_accounts]:seller?const[Icons.home,Icons.receipt_long,Icons.bar_chart,Icons.person]:delivery?const[Icons.home,Icons.local_shipping,Icons.account_balance_wallet,Icons.person]:const[Icons.home,Icons.two_wheeler,Icons.account_balance_wallet,Icons.person];
-    return NavigationBar(selectedIndex:tab,onDestinationSelected:(v){setState(()=>tab=v);if(v==3&&!admin)account();},destinations:List.generate(4,(i)=>NavigationDestination(icon:Icon(icons[i]),selectedIcon:Icon(icons[i],color:accent),label:labels[i])));
+    return NavigationBar(
+      selectedIndex: tab,
+      onDestinationSelected: (v) => setState(() => tab = v),
+      destinations: List.generate(
+        4,
+        (i) => NavigationDestination(
+          icon: Icon(icons[i]),
+          selectedIcon: Icon(icons[i], color: accent),
+          label: labels[i],
+        ),
+      ),
+    );
   }
 }
 

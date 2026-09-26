@@ -56,7 +56,7 @@ class _NotificationsSettingsScreenState
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF141416),
+      backgroundColor: const Color(0xFFFAF7F8),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -66,20 +66,20 @@ class _NotificationsSettingsScreenState
             Text(
               'Notifications',
               style: TextStyle(
-                color: Colors.white,
+                color: Colors.black87,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
             ),
             Text(
               'Stay updated with your ALLways activity',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
+              style: TextStyle(color: Colors.black54, fontSize: 12),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.white70),
+            icon: const Icon(Icons.close, color: Colors.black54),
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -101,7 +101,7 @@ class _NotificationsSettingsScreenState
           const Text(
             'ORDER & DELIVERY',
             style: TextStyle(
-              color: Colors.white54,
+              color: Colors.black54,
               fontSize: 11,
               fontWeight: FontWeight.bold,
             ),
@@ -142,7 +142,7 @@ class _NotificationsSettingsScreenState
           const Text(
             'TRAVEL & OFFERS',
             style: TextStyle(
-              color: Colors.white54,
+              color: Colors.black54,
               fontSize: 11,
               fontWeight: FontWeight.bold,
             ),
@@ -194,7 +194,7 @@ class _NotificationsSettingsScreenState
           const Text(
             'NOTIFICATION HISTORY',
             style: TextStyle(
-              color: Colors.white54,
+              color: Colors.black54,
               fontSize: 11,
               fontWeight: FontWeight.bold,
             ),
@@ -237,7 +237,7 @@ class _NotificationsSettingsScreenState
                     child: Center(
                       child: Text(
                         'No notifications yet.',
-                        style: TextStyle(color: Colors.white38),
+                        style: TextStyle(color: Colors.black45),
                       ),
                     ),
                   );
@@ -257,7 +257,7 @@ class _NotificationsSettingsScreenState
                     child: Center(
                       child: Text(
                         'No notifications in this category.',
-                        style: TextStyle(color: Colors.white38),
+                        style: TextStyle(color: Colors.black45),
                       ),
                     ),
                   );
@@ -273,16 +273,16 @@ class _NotificationsSettingsScreenState
                     return Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF202026),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Row(
                         children: [
                           const CircleAvatar(
-                            backgroundColor: Color(0xFF2C2C36),
+                            backgroundColor: Color(0xFFE8D0D5),
                             child: Icon(
                               Icons.notifications_active,
-                              color: Colors.white70,
+                              color: Colors.black54,
                               size: 20,
                             ),
                           ),
@@ -294,14 +294,14 @@ class _NotificationsSettingsScreenState
                                 Text(
                                   item['title'] ?? 'Notification',
                                   style: const TextStyle(
-                                    color: Colors.white,
+                                    color: Colors.black87,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 Text(
                                   item['body'] ?? '',
                                   style: const TextStyle(
-                                    color: Colors.white54,
+                                    color: Colors.black54,
                                     fontSize: 12,
                                   ),
                                 ),

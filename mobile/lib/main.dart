@@ -661,6 +661,8 @@ class _ShellState extends State<Shell> {
   String? updateVersion;
   String? updateUrl;
   String? updateNotes;
+  String? workspaceRole;
+  bool workspaceLoading = false;
 
   @override void initState(){
     super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();

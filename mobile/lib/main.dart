@@ -1088,6 +1088,7 @@ class _ShellState extends State<Shell> {
         'carrier' => const RiderLoginPage(),
         _ => const SizedBox.shrink(),
       };
+      if (role == 'admin') return workspace;
       return RoleDashboardScreen(
         role: role,
         user: user!,

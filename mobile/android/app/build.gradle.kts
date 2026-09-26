@@ -34,9 +34,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
-    }
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
@@ -66,4 +63,11 @@ dependencies {
 
 flutter {
     source = "../.."
+}
+
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_11)
+    }
 }

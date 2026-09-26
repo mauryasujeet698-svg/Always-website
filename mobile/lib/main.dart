@@ -1474,42 +1474,119 @@ class _OrdersPageState extends State<OrdersPage> {
     );
   }
 
-  Widget _productThumbs(List items) {
-    final list = items.take(4).toList();
+  Widget _productThumbs(BuildContext context, List items) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final list = items.take(3).toList();
+    final extra = items.length - list.length;
     if (list.isEmpty) {
       return Container(
-        width: 88, height: 88,
-        decoration: BoxDecoration(color: const Color(0xFFF5F5F5), borderRadius: BorderRadius.circular(8)),
-        child: const Icon(Icons.shopping_bag_outlined, color: Colors.grey),
+        width: 62,
+        height: 62,
+        decoration: BoxDecoration(
+          color: dark ? const Color(0xFF24262C) : const Color(0xFFF7F5F6),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(Icons.inventory_2_outlined, color: dark ? const Color(0xFFB8BBC3) : Colors.grey),
       );
     }
     return SizedBox(
-      width: 88,
-      height: 88,
-      child: GridView.count(
-        crossAxisCount: 2,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 3,
-        crossAxisSpacing: 3,
-        children: list.map((item) {
-          final m = item is Map ? Map<String,dynamic>.from(item) : <String,dynamic>{};
-          final img = (m['imageUrl'] ?? m['image'] ?? m['icon'] ?? '').toString();
-          return Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFEEEEEE)),
+      width: 62,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < list.length; i++) ...[
+            _singleThumb(context, list[i]),
+            if (i < list.length - 1 || extra > 0) const SizedBox(height: 6),
+          ],
+          if (extra > 0)
+            Container(
+              width: 62,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: dark ? const Color(0xFF2C1B23) : const Color(0xFFFFE8EF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '+$extra more',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: dark ? const Color(0xFFFF9CBD) : const Color(0xFFB3134A),
+                ),
+              ),
             ),
-            child: img.isNotEmpty && img.startsWith('http')
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: Image.network(img, fit: BoxFit.cover,
-                      errorBuilder: (_,__,___) => const Icon(Icons.shopping_bag_outlined, size: 18, color: Colors.grey)),
-                  )
-                : const Icon(Icons.shopping_bag_outlined, size: 18, color: Colors.grey),
-          );
-        }).toList(),
+        ],
       ),
+    );
+  }
+
+  Widget _singleThumb(BuildContext context, dynamic item) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final m = item is Map ? Map<String,dynamic>.from(item) : <String,dynamic>{};
+    final img = (m['imageUrl'] ?? m['image'] ?? '').toString();
+    final fallback = m['icon']?.toString() ?? '';
+    final background = dark ? const Color(0xFF24262C) : const Color(0xFFF7F5F6);
+    final border = dark ? const Color(0xFF343740) : const Color(0xFFE8E6E8);
+    return Container(
+      width: 62,
+      height: 62,
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(14), border: Border.all(color: border)),
+      child: img.startsWith('http')
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(13),
+              child: Image.network(
+                img,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(Icons.inventory_2_outlined, color: dark ? const Color(0xFFB8BBC3) : Colors.grey),
+              ),
+            )
+          : Center(
+              child: Text(
+                fallback.isNotEmpty ? fallback : '🛍️',
+                style: const TextStyle(fontSize: 22),
+              ),
+            ),
+    );
+  }
+
+  Widget _itemSummary(BuildContext context, List items) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final names = items.take(3).map((item) {
+      final m = item is Map ? Map<String,dynamic>.from(item) : <String,dynamic>{};
+      return (m['name'] ?? 'Item').toString();
+    }).toList();
+    if (names.isEmpty) return Text('Order items', style: TextStyle(color: dark ? const Color(0xFFA7A9B0) : const Color(0xFF666971), fontSize: 13));
+    final remaining = items.length - names.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final name in names)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Text(
+              name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: dark ? const Color(0xFFF0F1F3) : const Color(0xFF33353D),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        if (remaining > 0)
+          Text(
+            '+$remaining more items',
+            style: TextStyle(
+              color: dark ? const Color(0xFFFF9CBD) : const Color(0xFFB3134A),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+      ],
     );
   }
 
@@ -1574,18 +1651,18 @@ class _OrdersPageState extends State<OrdersPage> {
       return const Scaffold(body: Center(child: InfoCard(title: 'Your orders', detail: 'Sign in to place and track your ALLways orders.')));
     }
     return Scaffold(
-      backgroundColor: const Color(0xFFFAF7F8),
+      backgroundColor: dark ? const Color(0xFF101114) : const Color(0xFFFAF7F8),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: dark ? const Color(0xFF101114) : Colors.white,
         elevation: 0.5,
         centerTitle: true,
-        title: const Text('My Orders', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w800, fontSize: 18)),
-        iconTheme: const IconThemeData(color: Colors.black87),
+        title: Text('My Orders', style: TextStyle(color: dark ? const Color(0xFFF5F5F7) : Colors.black87, fontWeight: FontWeight.w800, fontSize: 18)),
+        iconTheme: IconThemeData(color: dark ? const Color(0xFFF5F5F7) : Colors.black87),
       ),
       body: Column(
         children: [
           Container(
-            color: Colors.white,
+            color: dark ? const Color(0xFF101114) : Colors.white,
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -1598,12 +1675,12 @@ class _OrdersPageState extends State<OrdersPage> {
                       label: Text(f, style: TextStyle(
                         fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                         fontSize: 13,
-                        color: selected ? Colors.white : Colors.black87,
+                        color: selected ? Colors.white : (dark ? const Color(0xFFD9DBE1) : Colors.black87),
                       )),
                       selected: selected,
-                      selectedColor: Colors.black87,
-                      backgroundColor: Colors.white,
-                      side: BorderSide(color: selected ? Colors.black87 : const Color(0xFFDDDDDD)),
+                      selectedColor: dark ? const Color(0xFFB3134A) : Colors.black87,
+                      backgroundColor: dark ? const Color(0xFF191B20) : Colors.white,
+                      side: BorderSide(color: selected ? (dark ? const Color(0xFFB3134A) : Colors.black87) : (dark ? const Color(0xFF3A3D45) : const Color(0xFFDDDDDD))),
                       onSelected: (_) => setState(() => _filter = f),
                     ),
                   );
@@ -1621,7 +1698,7 @@ class _OrdersPageState extends State<OrdersPage> {
                 if (snapshot.hasError) {
                   return Center(child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Text('Could not load orders.\n${snapshot.error}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+                    child: Text('Could not load orders.\n${snapshot.error}', textAlign: TextAlign.center, style: TextStyle(color: dark ? const Color(0xFFA7A9B0) : Colors.black54)),
                   ));
                 }
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -1671,11 +1748,13 @@ class _OrdersPageState extends State<OrdersPage> {
         final canCancel = ['new order', 'confirmed', 'preparing'].any((s) => status.toLowerCase().contains(s));
         final canReorder = status.toLowerCase().contains('delivered') && items.isNotEmpty;
 
+        final dark = Theme.of(context).brightness == Brightness.dark;
+
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           elevation: 0,
-          color: const Color(0xFFFFF5F7),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFEEEEEE))),
+          color: dark ? const Color(0xFF191B20) : const Color(0xFFFFF5F7),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: dark ? const Color(0xFF303239) : const Color(0xFFEEEEEE))),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: () => _openOrderDetails(context, o['id']?.toString() ?? d.id, o),
@@ -1687,7 +1766,7 @@ class _OrdersPageState extends State<OrdersPage> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _productThumbs(items),
+                      _productThumbs(context, items),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -1702,20 +1781,13 @@ class _OrdersPageState extends State<OrdersPage> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              items.isNotEmpty
-                                  ? (items.length == 1
-                                      ? (items.first is Map ? (items.first['name'] ?? 'Item').toString() : '1 item')
-                                      : 'ALLways Basket (${items.length} items)')
-                                  : 'Order items',
-                              style: const TextStyle(color: Colors.black54, fontSize: 13),
-                            ),
+                            _itemSummary(context, items),
                             const SizedBox(height: 6),
-                            Text('₹$total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                            Text('₹$total', style: TextStyle(color: dark ? const Color(0xFFF0F1F3) : const Color(0xFF24262C), fontWeight: FontWeight.w800, fontSize: 15)),
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right, color: Colors.black38),
+                      Icon(Icons.chevron_right, color: dark ? const Color(0xFF8D9098) : Colors.black38),
                     ],
                   ),
                   if (canReorder) ...[
@@ -1739,8 +1811,8 @@ class _OrdersPageState extends State<OrdersPage> {
                       alignment: Alignment.centerRight,
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFC62828),
-                          side: const BorderSide(color: Color(0xFFEF9A9A)),
+                          foregroundColor: dark ? const Color(0xFFFF8A8A) : const Color(0xFFC62828),
+                          side: BorderSide(color: dark ? const Color(0xFF6B3030) : const Color(0xFFEF9A9A)),
                         ),
                         onPressed: () => _confirmCancel(context, o['id']?.toString() ?? d.id),
                         child: const Text('Cancel order'),

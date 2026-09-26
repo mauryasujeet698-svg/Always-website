@@ -697,7 +697,14 @@ class _ShellState extends State<Shell> {
         final data = customerSnap.data() ?? <String,dynamic>{};
         final raw = (data['role'] ?? '').toString().trim().toLowerCase();
         if (raw == 'admin' || raw == 'seller' || raw == 'delivery_partner' || raw == 'carrier' || raw == 'rider') {
-          role = raw == 'rider' ? 'carrier' : raw;
+          if (raw == 'rider') {
+            role = 'carrier';
+          } else if (raw == 'carrier') {
+            final rideProfile = await FirebaseFirestore.instance.collection('ridePartners').doc(u.uid).get();
+            role = rideProfile.exists ? 'carrier' : 'delivery_partner';
+          } else {
+            role = raw;
+          }
         }
         if (role == null) {
           final sellerSnap = await FirebaseFirestore.instance.collection('sellers').doc(u.uid).get();

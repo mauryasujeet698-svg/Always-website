@@ -3522,12 +3522,12 @@ class _OnDemandRideTrackingPageState extends State<OnDemandRideTrackingPage> {
   );
 }
 
-class CarrierLoginPage extends StatefulWidget {
-  const CarrierLoginPage({super.key});
-  @override State<CarrierLoginPage> createState()=>_CarrierLoginPageState();
+class RiderLoginPage extends StatefulWidget {
+  const RiderLoginPage({super.key});
+  @override State<RiderLoginPage> createState()=>_RiderLoginPageState();
 }
 
-class _CarrierLoginPageState extends State<CarrierLoginPage> {
+class _RiderLoginPageState extends State<RiderLoginPage> {
   StreamSubscription<QuerySnapshot<Map<String,dynamic>>>? _requestsSub;
   StreamSubscription<QuerySnapshot<Map<String,dynamic>>>? _activeSub;
   LiveLocationBroadcaster? _locationBroadcaster;

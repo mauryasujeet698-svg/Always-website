@@ -493,7 +493,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
           FlutterMap(
             options:MapOptions(initialCenter:partner??pickup??customer??points.first,initialZoom:15,maxZoom:19,minZoom:3,initialCameraFit:points.length>1?CameraFit.coordinates(coordinates:points,padding:const EdgeInsets.fromLTRB(45,130,45,190),maxZoom:16,minZoom:12):null),
             children:[
-              TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',userAgentPackageName:'com.allways.app'),
+              TileLayer(
+                urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+                subdomains: const ['a', 'b', 'c', 'd'],
+                userAgentPackageName: 'com.allways.app',
+              ),
               if(pickup!=null&&destination!=null)
                 PolylineLayer(polylines:[
                   Polyline(points:[pickup,destination],strokeWidth:4,color:Theme.of(context).colorScheme.primary),
@@ -1270,10 +1274,19 @@ class _CartScreenState extends State<CartScreen>{
   }
 }
 
-class OrdersPage extends StatelessWidget {
+class OrdersPage extends StatefulWidget {
   final User? user;
-  final Future<void> Function(String) onCancel; final Future<void> Function(List<Map<String,dynamic>>) onReorder;
+  final Future<void> Function(String) onCancel;
+  final Future<void> Function(List<Map<String,dynamic>>) onReorder;
   const OrdersPage({super.key, required this.user, required this.onCancel, required this.onReorder});
+
+  @override
+  State<OrdersPage> createState() => _OrdersPageState();
+}
+
+class _OrdersPageState extends State<OrdersPage> {
+  String _filter = 'All';
+  final List<String> _filters = ['All', 'Flipkart', 'Grocery', 'Minutes'];
 
   DateTime _createdAt(Map<String, dynamic> o) {
     final value = o['createdAt'];
@@ -1283,152 +1296,269 @@ class OrdersPage extends StatelessWidget {
     return DateTime.tryParse((o['time'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  String _dateTime(Map<String, dynamic> o) {
+  String _dateLabel(Map<String, dynamic> o) {
     final d = _createdAt(o);
     if (d.millisecondsSinceEpoch == 0) return 'Date unavailable';
-    final hour = d.hour == 0 ? 12 : (d.hour > 12 ? d.hour - 12 : d.hour);
-    final minute = d.minute.toString().padLeft(2, '0');
-    final ampm = d.hour >= 12 ? 'PM' : 'AM';
-    return d.day.toString().padLeft(2, '0') + '/' + d.month.toString().padLeft(2, '0') + '/' + d.year.toString() + ' • ' + hour.toString() + ':' + minute + ' ' + ampm;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return 'Delivered on ${months[d.month-1]} ${d.day}';
   }
 
   Color _statusColor(String status) {
     final s = status.toLowerCase();
-    if (s.contains('delivered')) return Colors.green;
-    if (s.contains('out for delivery') || s.contains('ready for pickup')) return Colors.orange;
-    if (s.contains('cancel')) return Colors.red;
-    if (s.contains('confirm') || s.contains('prepar')) return Colors.blue;
+    if (s.contains('delivered')) return const Color(0xFF2E7D32);
+    if (s.contains('out for delivery') || s.contains('ready')) return const Color(0xFFEF6C00);
+    if (s.contains('cancel')) return const Color(0xFFC62828);
+    if (s.contains('confirm') || s.contains('prepar') || s.contains('new')) return const Color(0xFF1565C0);
     return Colors.grey;
   }
 
   Widget _statusChip(String status) {
     final color = _statusColor(status);
+    final isCancel = status.toLowerCase().contains('cancel');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(.14),
+        color: isCancel ? const Color(0xFFFFEBEE) : color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(.45)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 6),
-          Text(status, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800)),
+          Text(status, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
         ],
+      ),
+    );
+  }
+
+  Widget _productThumbs(List items) {
+    final list = items.take(4).toList();
+    return SizedBox(
+      width: 88,
+      height: 88,
+      child: GridView.count(
+        crossAxisCount: 2,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 3,
+        crossAxisSpacing: 3,
+        children: list.map((item) {
+          final m = item is Map ? Map<String,dynamic>.from(item) : <String,dynamic>{};
+          final img = (m['imageUrl'] ?? m['image'] ?? '').toString();
+          return Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFEEEEEE)),
+            ),
+            child: img.isNotEmpty
+                ? ClipRRect(borderRadius: BorderRadius.circular(7), child: Image.network(img, fit: BoxFit.cover, errorBuilder: (_,__,___) => const Icon(Icons.shopping_bag_outlined, size: 18, color: Colors.grey)))
+                : const Icon(Icons.shopping_bag_outlined, size: 18, color: Colors.grey),
+          );
+        }).toList(),
       ),
     );
   }
 
   @override
   Widget build(BuildContext c) {
-    if (user == null) return const InfoCard(title: 'Your orders', detail: 'Sign in to place and track your ALLways orders.');
+    if (widget.user == null) {
+      return const Scaffold(body: Center(child: InfoCard(title: 'Your orders', detail: 'Sign in to place and track your ALLways orders.')));
+    }
     return Scaffold(
+      backgroundColor: const Color(0xFFFAF7F8),
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0.5,
         centerTitle: true,
-        title: const Text('Your Orders', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('My Orders', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w800, fontSize: 18)),
+        iconTheme: const IconThemeData(color: Colors.black87),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('orders').where('customerId', isEqualTo: user!.uid).snapshots(),
-        builder: (c, s) {
-          if (s.hasError) return const InfoCard(title: 'Orders unavailable', detail: 'Please check your connection.');
-          if (!s.hasData) return const Center(child: CircularProgressIndicator());
-          final docs = [...s.data!.docs]..sort((a, b) => _createdAt(b.data()).compareTo(_createdAt(a.data())));
-          if (docs.isEmpty) return const Center(child: InfoCard(title: 'No orders yet', detail: 'Your placed orders will appear here.'));
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final d = docs[index];
-              final o = d.data();
-              final status = (o['status'] ?? 'New Order').toString();
-              final canCancel = status == 'New Order' || status == 'Confirmed';
-              final total = o['total'] is num ? (o['total'] as num).toDouble() : double.tryParse((o['total'] ?? 0).toString()) ?? 0;
-              final rawItems = o['items'];
-              final items = rawItems is List ? rawItems.map((x) => x is Map ? (x['name'].toString() + ' × ' + x['qty'].toString()) : x.toString()).join(', ') : '';
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                clipBehavior: Clip.antiAlias,
-                child: ExpansionTile(
-                  tilePadding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
-                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  title: Row(
-                    children: [
-                      Expanded(child: Text('#' + (o['id'] ?? d.id).toString(), style: const TextStyle(fontWeight: FontWeight.w900))),
-                      _statusChip(status),
-                    ],
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(_dateTime(o) + '\n₹' + total.toStringAsFixed(0), style: const TextStyle(color: Colors.grey)),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  children: [
-                    const Divider(height: 1),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          StatusView(status: status),
-                          if ((o['eta'] ?? o['estimatedDelivery'] ?? '').toString().isNotEmpty)
-                            Card(margin: const EdgeInsets.only(top: 10, bottom: 8), child: ListTile(leading: const Icon(Icons.schedule), title: const Text('Estimated delivery', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text((o['eta'] ?? o['estimatedDelivery']).toString(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)))),
-                          if ((o['customerMessage'] ?? o['statusNote'] ?? '').toString().isNotEmpty)
-                            Card(margin: const EdgeInsets.only(bottom: 10), child: ListTile(leading: const Icon(Icons.message_outlined), title: const Text('Message from ALLways', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text((o['customerMessage'] ?? o['statusNote']).toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
-                          Text(items),
-                          const SizedBox(height: 6),
-                          Text('Address: ' + (o['address'] ?? '').toString()),
-                          if ((o['carrierUid'] ?? '').toString().isNotEmpty &&
-                              (status.toLowerCase() == 'assigned' || status.toLowerCase() == 'picked up' || status.toLowerCase() == 'out for delivery'))
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: FilledButton.icon(
-                                onPressed: () => Navigator.push(c, MaterialPageRoute(builder: (_) => LiveTrackingScreen(
-                                  collection: 'orders',
-                                  docId: d.id,
-                                  title: 'Live order tracking',
-                                  mode: 'order',
-                                  broadcastPrefix: 'customer',
-                                ))),
-                                icon: const Icon(Icons.location_searching),
-                                label: const Text('Track live'),
-                              ),
-                            ),
-                          if (status.toLowerCase() == 'delivered' && rawItems is List)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: OutlinedButton.icon(
-                                onPressed: () => onReorder(rawItems.whereType<Map>().map((x) => Map<String,dynamic>.from(x)).toList()),
-                                icon: const Icon(Icons.replay),
-                                label: const Text('Reorder'),
-                              ),
-                            ),
-                          if ((o['cancellationReason'] ?? '').toString().isNotEmpty)
-                            Padding(padding: const EdgeInsets.only(top: 8), child: Text('Cancellation reason: ' + o['cancellationReason'].toString())),
-                          if (canCancel)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: OutlinedButton.icon(
-                                onPressed: () => _confirmCancel(c, o['id']?.toString() ?? d.id, onCancel),
-                                icon: const Icon(Icons.cancel_outlined),
-                                label: const Text('Cancel order'),
-                              ),
-                            ),
-                        ],
-                      ),
+      body: Column(
+        children: [
+          // Horizontal filter chips (Flipkart style)
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _filters.map((f) {
+                  final selected = _filter == f;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(f, style: TextStyle(fontWeight: selected ? FontWeight.w800 : FontWeight.w600, fontSize: 13, color: selected ? Colors.white : Colors.black87)),
+                      selected: selected,
+                      selectedColor: Colors.black87,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: selected ? Colors.black87 : const Color(0xFFDDDDDD)),
+                      onSelected: (_) => setState(() => _filter = f),
                     ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('orders')
+                  .where('customerId', isEqualTo: widget.user!.uid)
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  // fallback without orderBy
+                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('orders')
+                        .where('customerId', isEqualTo: widget.user!.uid)
+                        .snapshots(),
+                    builder: (context, snap2) {
+                      if (!snap2.hasData) return const Center(child: CircularProgressIndicator());
+                      return _buildList(snap2.data!.docs);
+                    },
+                  );
+                }
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                return _buildList(snapshot.data!.docs);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _confirmCancel(BuildContext c, String id, Future<void> Function(String) cancel) async {
+  Widget _buildList(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    var list = docs;
+    if (_filter == 'Grocery' || _filter == 'Minutes') {
+      list = docs.where((d) {
+        final cat = (d.data()['category'] ?? d.data()['orderType'] ?? '').toString().toLowerCase();
+        return cat.contains('grocery') || cat.contains('minutes') || cat.contains('basket') || true;
+      }).toList();
+    } else if (_filter == 'Flipkart') {
+      list = docs.where((d) {
+        final cat = (d.data()['category'] ?? d.data()['orderType'] ?? '').toString().toLowerCase();
+        return cat.contains('flipkart') || cat.contains('fashion') || cat.contains('electronics');
+      }).toList();
+    }
+    // For demo/All show all; filters are soft
+
+    if (list.isEmpty) {
+      return const Center(child: Text('No orders yet.', style: TextStyle(color: Colors.black54)));
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+      itemCount: list.length,
+      itemBuilder: (context, i) {
+        final d = list[i];
+        final o = d.data();
+        final status = (o['status'] ?? 'New Order').toString();
+        final rawItems = o['items'];
+        final items = rawItems is List ? rawItems : <dynamic>[];
+        final total = o['total'] ?? o['grandTotal'] ?? 0;
+        final canCancel = ['New Order', 'Confirmed', 'Preparing'].any((s) => status.toLowerCase().contains(s.toLowerCase()));
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFEEEEEE))),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () {
+              // optional: open order details
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _productThumbs(items),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              status.toLowerCase().contains('delivered')
+                                  ? _dateLabel(o)
+                                  : status,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                                color: status.toLowerCase().contains('delivered') ? Colors.black87 : _statusColor(status),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              items.isNotEmpty
+                                  ? (items.length == 1
+                                      ? (items.first is Map ? (items.first['name'] ?? 'Item').toString() : '1 item')
+                                      : 'Minutes Basket (${items.length} items)')
+                                  : 'Order items',
+                              style: const TextStyle(color: Colors.black54, fontSize: 13),
+                            ),
+                            const SizedBox(height: 6),
+                            Text('₹$total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, color: Colors.black38),
+                    ],
+                  ),
+                  if (status.toLowerCase().contains('delivered')) ...[
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Text('Rate & Review', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const Spacer(),
+                        ...List.generate(5, (s) => const Icon(Icons.star_border, size: 22, color: Colors.amber)),
+                      ],
+                    ),
+                  ],
+                  if (canCancel) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFC62828),
+                          side: const BorderSide(color: Color(0xFFEF9A9A)),
+                        ),
+                        onPressed: () => _confirmCancel(context, o['id']?.toString() ?? d.id),
+                        child: const Text('Cancel order'),
+                      ),
+                    ),
+                  ],
+                  if (status.toLowerCase() == 'delivered' && items.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => widget.onReorder(items.whereType<Map>().map((x) => Map<String,dynamic>.from(x)).toList()),
+                        icon: const Icon(Icons.replay, size: 18),
+                        label: const Text('Reorder'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmCancel(BuildContext c, String id) async {
     final reason = TextEditingController();
     final ok = await showDialog<bool>(
       context: c,
@@ -1443,9 +1573,11 @@ class OrdersPage extends StatelessWidget {
     ) ?? false;
     final clean = reason.text.trim();
     reason.dispose();
-    if (ok) await cancel(id + '||' + clean);
+    if (ok) await widget.onCancel(id + '||' + clean);
   }
 }
+
+
 
 class StatusView extends StatelessWidget{final String status;const StatusView({super.key,required this.status});Widget build(BuildContext c){
   const s=['New Order','Confirmed','Preparing','Out for delivery','Delivered'];final i=s.indexOf(status)<0?0:s.indexOf(status);
@@ -1655,7 +1787,7 @@ class _ProfilePageState extends State<ProfilePage>{
                 ),
               ),
               if(role=='seller')SellerDashboard(user:u),
-              if(role=='carrier')CarrierDashboard(user:u),
+              if(role=='carrier' || role=='rider')CarrierDashboard(user:u),
             ]);
           },
         ),

@@ -57,11 +57,15 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
       LatLng? newDriver;
       LatLng? newCustomer;
 
-      if (data['pickupLat'] is num && data['pickupLng'] is num) {
-        newPickup = LatLng((data['pickupLat'] as num).toDouble(), (data['pickupLng'] as num).toDouble());
+      final pickupLat = data['pickupLat'] ?? data['pickupLatitude'];
+      final pickupLng = data['pickupLng'] ?? data['pickupLongitude'];
+      final destLat = data['destLat'] ?? data['destinationLatitude'];
+      final destLng = data['destLng'] ?? data['destinationLongitude'];
+      if (pickupLat is num && pickupLng is num) {
+        newPickup = LatLng(pickupLat.toDouble(), pickupLng.toDouble());
       }
-      if (data['destLat'] is num && data['destLng'] is num) {
-        newDestination = LatLng((data['destLat'] as num).toDouble(), (data['destLng'] as num).toDouble());
+      if (destLat is num && destLng is num) {
+        newDestination = LatLng(destLat.toDouble(), destLng.toDouble());
       }
       if (data['driverLat'] is num && data['driverLng'] is num) {
         newDriver = LatLng((data['driverLat'] as num).toDouble(), (data['driverLng'] as num).toDouble());

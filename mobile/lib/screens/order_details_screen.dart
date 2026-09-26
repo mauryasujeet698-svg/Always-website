@@ -147,7 +147,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
     final center = _carrier ?? _customer ?? _destination ?? const LatLng(25.9123, 81.9876);
     final map = points.isEmpty
-        ? Container(color: dark?const Color(0xFF202227):const Color(0xFFF2F3F5), alignment: Alignment.center, child: Text('Waiting for the rider location…',style:TextStyle(color:dark?const Color(0xFFA7A9B0):null))
+        ? Container(color: dark?const Color(0xFF202227):const Color(0xFFF2F3F5), alignment: Alignment.center, child: Text('Waiting for the rider location…',style:TextStyle(color:dark?const Color(0xFFA7A9B0):null)))
         : FlutterMap(
             mapController: _mapController,
             options: MapOptions(initialCenter: center, initialZoom: 14.5, onMapReady: () => _mapReady = true),

@@ -152,8 +152,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.allways.app',
               ),
               if (_routePoints.isNotEmpty)

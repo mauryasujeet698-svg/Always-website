@@ -31,23 +31,45 @@ class _NotificationsSettingsScreenState
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _allwaysNotifications = prefs.getBool('notif_master') ?? true;
-      _orderUpdates = prefs.getBool('notif_orders') ?? true;
-      _deliveryUpdates = prefs.getBool('notif_delivery') ?? true;
-      _travelUpdates = prefs.getBool('notif_travel') ?? true;
-      _offersPromotions = prefs.getBool('notif_offers') ?? false;
-      _announcements = prefs.getBool('notif_announcements') ?? false;
+      _allwaysNotifications = prefs.getBool('allways_notifications_enabled') ?? true;
+      _orderUpdates = prefs.getBool('notification_orderUpdates') ?? true;
+      _deliveryUpdates = prefs.getBool('notification_deliveryUpdates') ?? true;
+      _travelUpdates = prefs.getBool('notification_travelUpdates') ?? true;
+      _offersPromotions = prefs.getBool('notification_offers') ?? false;
+      _announcements = prefs.getBool('notification_announcements') ?? false;
     });
   }
 
   Future<void> _setPreference(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
+    // Keep master flag in sync with main.dart FCM logic
+    if (key == 'allways_notifications_enabled') {
+      await prefs.setBool('notifications_enabled', value);
+    }
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      await FirebaseFirestore.instance.collection('customers').doc(user.uid).set({
-        'notification_preferences': {key: value},
-      }, SetOptions(merge: true));
+      try {
+        await FirebaseFirestore.instance.collection('customers').doc(user.uid).set({
+          'notification_preferences': {key: value},
+          'notificationsEnabled': key == 'allways_notifications_enabled' ? value : null,
+        }, SetOptions(merge: true));
+        // Also update fcmTokens doc so Cloud Functions respect preferences
+        await FirebaseFirestore.instance.collection('fcmTokens').doc(user.uid).set({
+          'uid': user.uid,
+          'notificationPreferences': {
+            'orderUpdates': prefs.getBool('notification_orderUpdates') ?? true,
+            'deliveryUpdates': prefs.getBool('notification_deliveryUpdates') ?? true,
+            'travelUpdates': prefs.getBool('notification_travelUpdates') ?? true,
+            'offers': prefs.getBool('notification_offers') ?? false,
+            'announcements': prefs.getBool('notification_announcements') ?? false,
+          },
+          'notificationsEnabled': prefs.getBool('allways_notifications_enabled') ?? true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('ALLways notif pref save: $e');
+      }
     }
   }
 
@@ -94,7 +116,7 @@ class _NotificationsSettingsScreenState
             value: _allwaysNotifications,
             onChanged: (v) {
               setState(() => _allwaysNotifications = v);
-              _setPreference('notif_master', v);
+              _setPreference('allways_notifications_enabled', v);
             },
           ),
           const SizedBox(height: 16),
@@ -121,7 +143,7 @@ class _NotificationsSettingsScreenState
                   _orderUpdates,
                   (v) {
                     setState(() => _orderUpdates = v);
-                    _setPreference('notif_orders', v);
+                    _setPreference('notification_orderUpdates', v);
                   },
                 ),
                 const Divider(height: 1, color: Colors.black12),
@@ -132,7 +154,7 @@ class _NotificationsSettingsScreenState
                   _deliveryUpdates,
                   (v) {
                     setState(() => _deliveryUpdates = v);
-                    _setPreference('notif_delivery', v);
+                    _setPreference('notification_deliveryUpdates', v);
                   },
                 ),
               ],
@@ -162,7 +184,7 @@ class _NotificationsSettingsScreenState
                   _travelUpdates,
                   (v) {
                     setState(() => _travelUpdates = v);
-                    _setPreference('notif_travel', v);
+                    _setPreference('notification_travelUpdates', v);
                   },
                 ),
                 const Divider(height: 1, color: Colors.black12),
@@ -173,7 +195,7 @@ class _NotificationsSettingsScreenState
                   _offersPromotions,
                   (v) {
                     setState(() => _offersPromotions = v);
-                    _setPreference('notif_offers', v);
+                    _setPreference('notification_offers', v);
                   },
                 ),
                 const Divider(height: 1, color: Colors.black12),
@@ -184,7 +206,7 @@ class _NotificationsSettingsScreenState
                   _announcements,
                   (v) {
                     setState(() => _announcements = v);
-                    _setPreference('notif_announcements', v);
+                    _setPreference('notification_announcements', v);
                   },
                 ),
               ],
@@ -228,9 +250,20 @@ class _NotificationsSettingsScreenState
                   .collection('customers')
                   .doc(user.uid)
                   .collection('notifications')
-                  .orderBy('timestamp', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        'Notifications unavailable. Pull to refresh or check connection.',
+                        style: TextStyle(color: Colors.black45),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),

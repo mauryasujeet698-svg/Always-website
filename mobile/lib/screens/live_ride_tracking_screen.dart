@@ -71,6 +71,11 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
         );
       }
 
+      final routeChanged = _pickupLocation?.latitude != newPickup?.latitude ||
+          _pickupLocation?.longitude != newPickup?.longitude ||
+          _destinationLocation?.latitude != newDestination?.latitude ||
+          _destinationLocation?.longitude != newDestination?.longitude;
+
       setState(() {
         _rideStatus = (data['status'] ?? 'searching').toString();
         _contactPhone = widget.isRider
@@ -90,9 +95,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
 
       if (newPickup != null &&
           newDestination != null &&
-          (_routePoints.isEmpty ||
-              _pickupLocation != newPickup ||
-              _destinationLocation != newDestination)) {
+          (_routePoints.isEmpty || routeChanged)) {
         _loadOSRMRoute(newPickup, newDestination);
       }
 

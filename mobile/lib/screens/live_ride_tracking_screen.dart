@@ -266,7 +266,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
               ),
-              child: const Row(
+              child: Row(
                 children: [
                   Icon(Icons.circle, color: Colors.green, size: 12),
                   SizedBox(width: 8),

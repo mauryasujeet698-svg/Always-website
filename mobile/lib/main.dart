@@ -683,7 +683,7 @@ class _ShellState extends State<Shell> {
       saveIncomingNotification(title,body,type:(m.data['type']??'announcement').toString());
     });
     messages=FirebaseMessaging.onMessage.listen((m)async{final title=m.notification?.title??m.data['title']??'ALLways';final body=m.notification?.body??m.data['body']??m.data['message']??'New update';await saveIncomingNotification(title,body,type:(m.data['type']??'announcement').toString());if(!mounted)return;ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(title+': '+body)));});
-    if(user!=null){setupNotifications();loadAddresses();loadWishlist();}
+    if(user!=null){setupNotifications();loadAddresses();loadWishlist();workspaceLoading=true;_loadWorkspaceRole(user!);}
   }
   @override void dispose(){timer?.cancel();auth?.cancel();messages?.cancel();super.dispose();}
 

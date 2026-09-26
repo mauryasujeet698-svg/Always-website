@@ -22,7 +22,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-undefinedimport 'firebase_options.dart';
+import 'firebase_options.dart';
 import 'utils/voice_search_helper.dart';
 import 'controllers/carrier_and_admin_controller.dart';
 import 'screens/live_ride_tracking_screen.dart';

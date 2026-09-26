@@ -494,8 +494,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             options:MapOptions(initialCenter:partner??pickup??customer??points.first,initialZoom:15,maxZoom:19,minZoom:3,initialCameraFit:points.length>1?CameraFit.coordinates(coordinates:points,padding:const EdgeInsets.fromLTRB(45,130,45,190),maxZoom:16,minZoom:12):null),
             children:[
               TileLayer(
-                urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.allways.app',
               ),
               if(pickup!=null&&destination!=null)
@@ -1286,7 +1285,7 @@ class OrdersPage extends StatefulWidget {
 
 class _OrdersPageState extends State<OrdersPage> {
   String _filter = 'All';
-  final List<String> _filters = ['All', 'Flipkart', 'Grocery', 'Minutes'];
+  final List<String> _filters = ['All', 'Out for delivery', 'Reorder', 'Local seller orders'];
 
   DateTime _createdAt(Map<String, dynamic> o) {
     final value = o['createdAt'];
@@ -1334,6 +1333,13 @@ class _OrdersPageState extends State<OrdersPage> {
 
   Widget _productThumbs(List items) {
     final list = items.take(4).toList();
+    if (list.isEmpty) {
+      return Container(
+        width: 88, height: 88,
+        decoration: BoxDecoration(color: const Color(0xFFF5F5F5), borderRadius: BorderRadius.circular(8)),
+        child: const Icon(Icons.shopping_bag_outlined, color: Colors.grey),
+      );
+    }
     return SizedBox(
       width: 88,
       height: 88,
@@ -1344,20 +1350,79 @@ class _OrdersPageState extends State<OrdersPage> {
         crossAxisSpacing: 3,
         children: list.map((item) {
           final m = item is Map ? Map<String,dynamic>.from(item) : <String,dynamic>{};
-          final img = (m['imageUrl'] ?? m['image'] ?? '').toString();
+          final img = (m['imageUrl'] ?? m['image'] ?? m['icon'] ?? '').toString();
           return Container(
             decoration: BoxDecoration(
               color: const Color(0xFFF5F5F5),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0xFFEEEEEE)),
             ),
-            child: img.isNotEmpty
-                ? ClipRRect(borderRadius: BorderRadius.circular(7), child: Image.network(img, fit: BoxFit.cover, errorBuilder: (_,__,___) => const Icon(Icons.shopping_bag_outlined, size: 18, color: Colors.grey)))
+            child: img.isNotEmpty && img.startsWith('http')
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Image.network(img, fit: BoxFit.cover,
+                      errorBuilder: (_,__,___) => const Icon(Icons.shopping_bag_outlined, size: 18, color: Colors.grey)),
+                  )
                 : const Icon(Icons.shopping_bag_outlined, size: 18, color: Colors.grey),
           );
         }).toList(),
       ),
     );
+  }
+
+  bool _matchesFilter(Map<String, dynamic> o) {
+    final status = (o['status'] ?? '').toString().toLowerCase();
+    final source = (o['source'] ?? o['orderType'] ?? o['category'] ?? o['sellerType'] ?? '').toString().toLowerCase();
+    final sellerId = (o['sellerId'] ?? o['sellerUid'] ?? '').toString();
+    final isLocalSeller = source.contains('local') || source.contains('seller') || sellerId.isNotEmpty && !source.contains('minutes') && !source.contains('admin');
+
+    switch (_filter) {
+      case 'Out for delivery':
+        return status.contains('out for delivery') || status.contains('assigned') || status.contains('picked');
+      case 'Reorder':
+        return status.contains('delivered');
+      case 'Local seller orders':
+        return isLocalSeller || source.contains('local') || (o['isLocalSeller'] == true);
+      case 'All':
+      default:
+        return true;
+    }
+  }
+
+  void _openOrderDetails(BuildContext context, String orderId, Map<String, dynamic> order) {
+    try {
+      Navigator.pushNamed(context, '/order-details', arguments: {'orderId': orderId});
+    } catch (_) {
+      // Fallback: show a simple details dialog
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Order #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Status: ${order['status'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Text('Total: ₹${order['total'] ?? order['grandTotal'] ?? 0}'),
+                if ((order['items'] is List) && (order['items'] as List).isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text('Items:', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ...(order['items'] as List).take(10).map((it) {
+                    final m = it is Map ? Map<String,dynamic>.from(it) : <String,dynamic>{};
+                    return Text('• ${m['name'] ?? 'Item'} × ${m['qty'] ?? 1}');
+                  }),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          ],
+        ),
+      );
+    }
   }
 
   @override
@@ -1376,7 +1441,6 @@ class _OrdersPageState extends State<OrdersPage> {
       ),
       body: Column(
         children: [
-          // Horizontal filter chips (Flipkart style)
           Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -1388,7 +1452,11 @@ class _OrdersPageState extends State<OrdersPage> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(f, style: TextStyle(fontWeight: selected ? FontWeight.w800 : FontWeight.w600, fontSize: 13, color: selected ? Colors.white : Colors.black87)),
+                      label: Text(f, style: TextStyle(
+                        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                        fontSize: 13,
+                        color: selected ? Colors.white : Colors.black87,
+                      )),
                       selected: selected,
                       selectedColor: Colors.black87,
                       backgroundColor: Colors.white,
@@ -1405,21 +1473,13 @@ class _OrdersPageState extends State<OrdersPage> {
               stream: FirebaseFirestore.instance
                   .collection('orders')
                   .where('customerId', isEqualTo: widget.user!.uid)
-                  .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  // fallback without orderBy
-                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('orders')
-                        .where('customerId', isEqualTo: widget.user!.uid)
-                        .snapshots(),
-                    builder: (context, snap2) {
-                      if (!snap2.hasData) return const Center(child: CircularProgressIndicator());
-                      return _buildList(snap2.data!.docs);
-                    },
-                  );
+                  return Center(child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text('Could not load orders.\n${snapshot.error}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+                  ));
                 }
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                 return _buildList(snapshot.data!.docs);
@@ -1432,22 +1492,27 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   Widget _buildList(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    var list = docs;
-    if (_filter == 'Grocery' || _filter == 'Minutes') {
-      list = docs.where((d) {
-        final cat = (d.data()['category'] ?? d.data()['orderType'] ?? '').toString().toLowerCase();
-        return cat.contains('grocery') || cat.contains('minutes') || cat.contains('basket') || true;
-      }).toList();
-    } else if (_filter == 'Flipkart') {
-      list = docs.where((d) {
-        final cat = (d.data()['category'] ?? d.data()['orderType'] ?? '').toString().toLowerCase();
-        return cat.contains('flipkart') || cat.contains('fashion') || cat.contains('electronics');
-      }).toList();
-    }
-    // For demo/All show all; filters are soft
+    // Sort by createdAt desc client-side (avoids composite index requirement)
+    final sorted = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+    sorted.sort((a, b) {
+      final da = _createdAt(a.data());
+      final db = _createdAt(b.data());
+      return db.compareTo(da);
+    });
+
+    final list = sorted.where((d) => _matchesFilter(d.data())).toList();
 
     if (list.isEmpty) {
-      return const Center(child: Text('No orders yet.', style: TextStyle(color: Colors.black54)));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            _filter == 'All' ? 'No orders yet.' : 'No orders in "$_filter".',
+            style: const TextStyle(color: Colors.black54, fontSize: 15),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
 
     return ListView.builder(
@@ -1460,17 +1525,17 @@ class _OrdersPageState extends State<OrdersPage> {
         final rawItems = o['items'];
         final items = rawItems is List ? rawItems : <dynamic>[];
         final total = o['total'] ?? o['grandTotal'] ?? 0;
-        final canCancel = ['New Order', 'Confirmed', 'Preparing'].any((s) => status.toLowerCase().contains(s.toLowerCase()));
+        final canCancel = ['new order', 'confirmed', 'preparing'].any((s) => status.toLowerCase().contains(s));
+        final canReorder = status.toLowerCase().contains('delivered') && items.isNotEmpty;
 
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           elevation: 0,
+          color: const Color(0xFFFFF5F7),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFEEEEEE))),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
-            onTap: () {
-              // optional: open order details
-            },
+            onTap: () => _openOrderDetails(context, o['id']?.toString() ?? d.id, o),
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
@@ -1486,9 +1551,7 @@ class _OrdersPageState extends State<OrdersPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              status.toLowerCase().contains('delivered')
-                                  ? _dateLabel(o)
-                                  : status,
+                              status.toLowerCase().contains('delivered') ? _dateLabel(o) : status,
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 14,
@@ -1500,7 +1563,7 @@ class _OrdersPageState extends State<OrdersPage> {
                               items.isNotEmpty
                                   ? (items.length == 1
                                       ? (items.first is Map ? (items.first['name'] ?? 'Item').toString() : '1 item')
-                                      : 'Minutes Basket (${items.length} items)')
+                                      : 'ALLways Basket (${items.length} items)')
                                   : 'Order items',
                               style: const TextStyle(color: Colors.black54, fontSize: 13),
                             ),
@@ -1512,20 +1575,23 @@ class _OrdersPageState extends State<OrdersPage> {
                       const Icon(Icons.chevron_right, color: Colors.black38),
                     ],
                   ),
-                  if (status.toLowerCase().contains('delivered')) ...[
+                  if (canReorder) ...[
                     const SizedBox(height: 12),
                     const Divider(height: 1),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Text('Rate & Review', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const Spacer(),
-                        ...List.generate(5, (s) => const Icon(Icons.star_border, size: 22, color: Colors.amber)),
-                      ],
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => widget.onReorder(
+                          items.whereType<Map>().map((x) => Map<String,dynamic>.from(x)).toList(),
+                        ),
+                        icon: const Icon(Icons.replay, size: 18),
+                        label: const Text('Reorder'),
+                      ),
                     ),
                   ],
                   if (canCancel) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerRight,
                       child: OutlinedButton(
@@ -1535,17 +1601,6 @@ class _OrdersPageState extends State<OrdersPage> {
                         ),
                         onPressed: () => _confirmCancel(context, o['id']?.toString() ?? d.id),
                         child: const Text('Cancel order'),
-                      ),
-                    ),
-                  ],
-                  if (status.toLowerCase() == 'delivered' && items.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () => widget.onReorder(items.whereType<Map>().map((x) => Map<String,dynamic>.from(x)).toList()),
-                        icon: const Icon(Icons.replay, size: 18),
-                        label: const Text('Reorder'),
                       ),
                     ),
                   ],
@@ -1576,7 +1631,6 @@ class _OrdersPageState extends State<OrdersPage> {
     if (ok) await widget.onCancel(id + '||' + clean);
   }
 }
-
 
 
 class StatusView extends StatelessWidget{final String status;const StatusView({super.key,required this.status});Widget build(BuildContext c){

@@ -105,12 +105,16 @@ class WishlistScreen extends StatelessWidget {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 foregroundColor: Colors.black87,
-                                elevation: 0,
+                                elevation: 2,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              onPressed: () {},
+                              onPressed: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Added to cart!')),
+                                );
+                              },
                               icon: const Icon(Icons.add_shopping_cart, size: 14),
                               label: const Text(
                                 'Add to Cart',

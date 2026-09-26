@@ -2149,6 +2149,12 @@ class _ProfilePageState extends State<ProfilePage>{
           subtitle:const Text('Apply to deliver ALLways orders'),
           onTap:(){Navigator.pop(sheet);showDialog(context:c,builder:(_)=>CarrierApplicationDialog(user:u,type:'delivery_partner'));},
         ),
+        ListTile(
+          leading:const Icon(Icons.two_wheeler_outlined),
+          title:const Text('Become an ALLways Carrier'),
+          subtitle:const Text('Create a profile to accept nearby ride requests'),
+          onTap:(){Navigator.pop(sheet);showDialog(context:c,builder:(_)=>CarrierApplicationDialog(user:u,type:'carrier'));},
+        ),
       ])),
     );
   }
@@ -2355,7 +2361,7 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
       await FirebaseFirestore.instance.collection('onboarding_requests').add(data);
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(seller ? 'Seller request submitted.' : 'Delivery partner request submitted.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(seller ? 'Seller request submitted.' : (widget.type == 'carrier' ? 'ALLways Carrier request submitted.' : 'Delivery partner request submitted.'))));
     } catch (e) {
       if (mounted) {
         setState(() => busy = false);
@@ -2367,7 +2373,7 @@ class _CarrierApplicationDialogState extends State<CarrierApplicationDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(seller ? 'Become a Seller' : 'Become a Delivery Partner'),
+      title: Text(seller ? 'Become a Seller' : (widget.type == 'carrier' ? 'Become an ALLways Carrier' : 'Become a Delivery Partner')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: fullName, decoration: const InputDecoration(labelText: 'Full name')),
@@ -4433,6 +4439,22 @@ class AdminRolesPanel extends StatelessWidget {
           'status': 'approved',
         }, SetOptions(merge: true));
       }
+      if (role == 'carrier') {
+        await FirebaseFirestore.instance.collection('ridePartners').doc(uid).set({
+          'uid': uid,
+          'name': data['fullName'] ?? '',
+          'mobileNumber': data['mobileNumber'] ?? '',
+          'dob': data['dob'] ?? '',
+          'photoUrl': data['photoUrl'] ?? '',
+          'bikePhotoUrl': data['bikePhotoUrl'] ?? '',
+          'vehicleType': 'bike',
+          'ridePartnerService': 'on_demand_bike_auto',
+          'status': 'offline',
+          'availableForRides': false,
+          'profileCompleted': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
 
       await doc.reference.update({'status': 'approved', 'approvedRole': role, 'reviewedAt': FieldValue.serverTimestamp()});
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Onboarded as ' + role + '.')));
@@ -4472,7 +4494,7 @@ class AdminRolesPanel extends StatelessWidget {
       if(!context.mounted)return;
       final photo=(data['photoUrl']??'').toString(), bike=(data['bikePhotoUrl']??'').toString();
       final title=role=='seller'?(data['businessName']??data['name']??'Seller').toString():(data['fullName']??data['name']??'Delivery partner').toString();
-      await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:Text(role=='seller'?'Seller details':'Delivery partner details'),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      await showDialog<void>(context:context,builder:(dialog)=>AlertDialog(title:Text(role=='seller'?'Seller details':(role=='carrier'?'ALLways Carrier details':'Delivery partner details')),content:SizedBox(width:420,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         if(photo.isNotEmpty)ClipRRect(borderRadius:BorderRadius.circular(12),child:LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(photo, width: constraints.maxWidth, height: 160),height:160,width:double.infinity,fit:BoxFit.cover))),
         if(bike.isNotEmpty)...[const SizedBox(height:10),ClipRRect(borderRadius:BorderRadius.circular(12),child:LayoutBuilder(builder: (context, constraints) => Image.network(cloudinaryImageUrl(bike, width: constraints.maxWidth, height: 150),height:150,width:double.infinity,fit:BoxFit.cover)))],
         const SizedBox(height:12),Text(title,style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:8),

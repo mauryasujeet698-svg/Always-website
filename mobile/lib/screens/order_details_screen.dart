@@ -105,26 +105,28 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     );
   }
 
-  Widget _hero(String status) {
+  Widget _hero(BuildContext context, String status) {
     final cancelled=status.toLowerCase()=='cancelled';
-    return Container(padding:const EdgeInsets.fromLTRB(22,20,18,20),decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFFFFF0F5),Color(0xFFFFE7EF)]),borderRadius:BorderRadius.circular(28),boxShadow:const[BoxShadow(color:Color(0x16000000),blurRadius:18,offset:Offset(0,7))]),child:Row(children:[
+    final dark=Theme.of(context).brightness==Brightness.dark;
+    return Container(padding:const EdgeInsets.fromLTRB(22,20,18,20),decoration:BoxDecoration(gradient:LinearGradient(colors:dark?[const Color(0xFF2A1821),const Color(0xFF21151B)]:[const Color(0xFFFFF0F5),const Color(0xFFFFE7EF)]),borderRadius:BorderRadius.circular(28),boxShadow:const[BoxShadow(color:Color(0x16000000),blurRadius:18,offset:Offset(0,7))]),child:Row(children:[
       Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Container(padding:const EdgeInsets.symmetric(horizontal:14,vertical:9),decoration:BoxDecoration(color:cancelled?Colors.grey.shade700:const Color(0xFFB3134A),borderRadius:BorderRadius.circular(24)),child:Text(cancelled?'Cancelled':status,style:const TextStyle(color:Colors.white,fontWeight:FontWeight.w800,fontSize:13))),
         const SizedBox(height:17),
-        Text(cancelled?'Your order was cancelled.':'Your essentials are\non the way!',style:const TextStyle(fontSize:26,height:1.05,fontWeight:FontWeight.w900,color:Color(0xFF161821))),
+        Text(cancelled?'Your order was cancelled.':'Your essentials are\non the way!',style:TextStyle(fontSize:26,height:1.05,fontWeight:FontWeight.w900,color:dark?const Color(0xFFF5F5F7):const Color(0xFF161821))),
         const SizedBox(height:9),
-        const Text('Your order is tracked in realtime',style:TextStyle(fontSize:14,color:Color(0xFF60636E))),
+        Text('Your order is tracked in realtime',style:TextStyle(fontSize:14,color:dark?const Color(0xFFA7A9B0):const Color(0xFF60636E))),
       ])),
-      Container(width:92,height:92,decoration:BoxDecoration(color:Colors.white.withValues(alpha:.6),shape:BoxShape.circle),child:Icon(cancelled?Icons.cancel_outlined:Icons.delivery_dining,size:54,color:const Color(0xFFB3134A))),
+      Container(width:92,height:92,decoration:BoxDecoration(color:dark?const Color(0xFF3A252E):Colors.white.withValues(alpha:.6),shape:BoxShape.circle),child:Icon(cancelled?Icons.cancel_outlined:Icons.delivery_dining,size:54,color:const Color(0xFFB3134A))),
     ]));
   }
 
   Widget _marker(Color color,IconData icon)=>Container(decoration:BoxDecoration(color:color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:4),boxShadow:const[BoxShadow(color:Color(0x33000000),blurRadius:7,offset:Offset(0,2))]),child:Icon(icon,color:Colors.white,size:23));
 
-  Widget _mapCard(Map<String,dynamic> d) {
+  Widget _mapCard(BuildContext context, Map<String,dynamic> d) {
     _customer = _point(d, ['customer','pickup']);
     _carrier = _point(d, ['carrier','driver','partner','owner']);
     _destination = _point(d, ['destination','delivery']);
+    final dark=Theme.of(context).brightness==Brightness.dark;
     final points = <LatLng>[
       if (_customer != null) _customer!,
       if (_carrier != null) _carrier!,
@@ -145,7 +147,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
     final center = _carrier ?? _customer ?? _destination ?? const LatLng(25.9123, 81.9876);
     final map = points.isEmpty
-        ? Container(color: const Color(0xFFF2F3F5), alignment: Alignment.center, child: const Text('Waiting for the rider location…'))
+        ? Container(color: dark?const Color(0xFF202227):const Color(0xFFF2F3F5), alignment: Alignment.center, child: Text('Waiting for the rider location…',style:TextStyle(color:dark?const Color(0xFFA7A9B0):null))
         : FlutterMap(
             mapController: _mapController,
             options: MapOptions(initialCenter: center, initialZoom: 14.5, onMapReady: () => _mapReady = true),
@@ -160,19 +162,19 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
           );
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 18, offset: Offset(0, 7))]),
+      decoration: BoxDecoration(color: dark?const Color(0xFF191B20):Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 18, offset: Offset(0, 7))]),
       child: Column(
         children: [
           Row(children: [
             Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF18A957), shape: BoxShape.circle)),
             const SizedBox(width: 10),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Live Tracking', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 19)),
-              Text('Your rider is on the way', style: TextStyle(color: Color(0xFF777B85))),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Live Tracking', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 19,color:dark?const Color(0xFFF5F5F7):const Color(0xFF252731))),
+              Text('Your rider is on the way', style: TextStyle(color:dark?const Color(0xFFA7A9B0):const Color(0xFF777B85))),
             ])),
-            const Icon(Icons.schedule, color: Color(0xFF252A36)),
+            Icon(Icons.schedule, color: dark?const Color(0xFFE0E1E5):const Color(0xFF252A36)),
             const SizedBox(width: 5),
-            const Text('Live', style: TextStyle(fontWeight: FontWeight.w800)),
+            Text('Live', style: TextStyle(fontWeight: FontWeight.w800,color:dark?const Color(0xFFF0F1F3):const Color(0xFF252731))),
           ]),
           const SizedBox(height: 14),
           SizedBox(height: 210, child: ClipRRect(borderRadius: BorderRadius.circular(22), child: map)),
@@ -191,37 +193,39 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     );
   }
 
-  Widget _rider(Map<String,dynamic> d) {
-    final phone=_phone(d); final name=_name(d); final rating=(d['carrierRating']??d['driverRating']??d['partnerRating']??'').toString();
-    return Container(padding:const EdgeInsets.all(16),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(26),boxShadow:const[BoxShadow(color:Color(0x12000000),blurRadius:18,offset:Offset(0,7))]),child:Row(children:[
+  Widget _rider(BuildContext context, Map<String,dynamic> d) {
+    final dark=Theme.of(context).brightness==Brightness.dark; final phone=_phone(d); final name=_name(d); final rating=(d['carrierRating']??d['driverRating']??d['partnerRating']??'').toString();
+    return Container(padding:const EdgeInsets.all(16),decoration:BoxDecoration(color:dark?const Color(0xFF191B20):Colors.white,borderRadius:BorderRadius.circular(26),boxShadow:const[BoxShadow(color:Color(0x12000000),blurRadius:18,offset:Offset(0,7))]),child:Row(children:[
       const CircleAvatar(radius:30,backgroundColor:Color(0xFFFFE8F0),child:Icon(Icons.person,color:Color(0xFFB3134A),size:32)),
       const SizedBox(width:13),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Row(children:[Flexible(child:Text(name,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:17,fontWeight:FontWeight.w900))),if(rating.isNotEmpty)...[const SizedBox(width:7),const Icon(Icons.star,color:Color(0xFFFFB000),size:18),Text(' $rating',style:const TextStyle(fontWeight:FontWeight.w700))]]),
-        const Text('Your delivery partner',style:TextStyle(color:Color(0xFF777B85))),if(phone.isNotEmpty)Text(phone,style:const TextStyle(color:Color(0xFF4F535D))),
+        Text('Your delivery partner',style:TextStyle(color:dark?const Color(0xFFA7A9B0):const Color(0xFF777B85))),if(phone.isNotEmpty)Text(phone,style:TextStyle(color:dark?const Color(0xFFCFD1D7):const Color(0xFF4F535D))),
       ])),
       IconButton(tooltip:'Chat',onPressed:phone.isEmpty?null:()=>_chat(phone),icon:const Icon(Icons.chat_bubble_outline,color:Color(0xFFB3134A))),
       IconButton(tooltip:'Call',onPressed:phone.isEmpty?null:()=>_call(phone),icon:const Icon(Icons.phone_outlined,color:Color(0xFFB3134A))),
     ]));
   }
 
-  Widget _items(List<dynamic> items) => Container(padding:const EdgeInsets.fromLTRB(18,17,18,8),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(26),boxShadow:const[BoxShadow(color:Color(0x12000000),blurRadius:18,offset:Offset(0,7))]),child:Column(children:[
-    Row(children:[const Text('Items in Order',style:TextStyle(fontSize:19,fontWeight:FontWeight.w900)),const Spacer(),Text('${items.length} items',style:const TextStyle(color:Color(0xFF777B85)))]),const Divider(height:24),
-    ...items.map((raw){final m=raw is Map?Map<String,dynamic>.from(raw):<String,dynamic>{};final name=(m['name']??m['title']??'Item').toString();final q=(m['quantity']??m['qty']??1) is num?(m['quantity']??m['qty']??1).toInt():1;final p=(m['price']??m['amount']??0) is num?(m['price']??m['amount']??0).toDouble():double.tryParse((m['price']??m['amount']??0).toString())??0;return Padding(padding:const EdgeInsets.only(bottom:12),child:Row(children:[Container(width:66,height:66,decoration:BoxDecoration(color:const Color(0xFFF7F0F3),borderRadius:BorderRadius.circular(15)),child:const Icon(Icons.shopping_bag_outlined,color:Color(0xFFB3134A),size:30)),const SizedBox(width:13),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(name,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w800)),Text('$q × ₹${p.toStringAsFixed(p%1==0?0:2)}',style:const TextStyle(color:Color(0xFF777B85)))])),Text('₹${(p*q).toStringAsFixed(p*q%1==0?0:2)}',style:const TextStyle(fontSize:16,fontWeight:FontWeight.w900))]));}),
+  Widget _items(BuildContext context, List<dynamic> items) {
+    final dark=Theme.of(context).brightness==Brightness.dark;
+    return Container(padding:const EdgeInsets.fromLTRB(18,17,18,8),decoration:BoxDecoration(color:dark?const Color(0xFF191B20):Colors.white,borderRadius:BorderRadius.circular(26),boxShadow:const[BoxShadow(color:Color(0x12000000),blurRadius:18,offset:Offset(0,7))]),child:Column(children:[
+    Row(children:[Text('Items in Order',style:TextStyle(fontSize:19,fontWeight:FontWeight.w900,color:dark?const Color(0xFFF5F5F7):const Color(0xFF171920))),const Spacer(),Text('${items.length} items',style:TextStyle(color:dark?const Color(0xFFA7A9B0):const Color(0xFF777B85)))]),const Divider(height:24),
+    ...items.map((raw){final m=raw is Map?Map<String,dynamic>.from(raw):<String,dynamic>{};final name=(m['name']??m['title']??'Item').toString();final q=(m['quantity']??m['qty']??1) is num?(m['quantity']??m['qty']??1).toInt():1;final p=(m['price']??m['amount']??0) is num?(m['price']??m['amount']??0).toDouble():double.tryParse((m['price']??m['amount']??0).toString())??0;return Padding(padding:const EdgeInsets.only(bottom:12),child:Row(children:[Container(width:66,height:66,decoration:BoxDecoration(color:dark?const Color(0xFF2A2025):const Color(0xFFF7F0F3),borderRadius:BorderRadius.circular(15)),child:const Icon(Icons.shopping_bag_outlined,color:Color(0xFFB3134A),size:30)),const SizedBox(width:13),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(name,style:TextStyle(fontSize:16,fontWeight:FontWeight.w800,color:dark?const Color(0xFFF0F1F3):const Color(0xFF171920))),Text('$q × ₹${p.toStringAsFixed(p%1==0?0:2)}',style:const TextStyle(color:Color(0xFF777B85)))])),Text('₹${(p*q).toStringAsFixed(p*q%1==0?0:2)}',style:TextStyle(fontSize:16,fontWeight:FontWeight.w900,color:dark?const Color(0xFFF0F1F3):const Color(0xFF171920)))]));}),
   ]));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFCFBFC),
+      backgroundColor: Theme.of(context).brightness==Brightness.dark?const Color(0xFF101114):const Color(0xFFFCFBFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFCFBFC),
+        backgroundColor: Theme.of(context).brightness==Brightness.dark?const Color(0xFF101114):const Color(0xFFFCFBFC),
         elevation: 0,
         leading: IconButton(
           tooltip: 'Back',
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF171920), size: 30),
+          icon: Icon(Icons.arrow_back, color: Theme.of(context).brightness==Brightness.dark?const Color(0xFFF5F5F7):const Color(0xFF171920), size: 30),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Order Details', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF171920))),
+        title: Text('Order Details', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Theme.of(context).brightness==Brightness.dark?const Color(0xFFF5F5F7):const Color(0xFF171920))),
         actions: [
           TextButton.icon(
             onPressed: () async {
@@ -254,25 +258,25 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
             children: [
               Row(
                 children: [
-                  Expanded(child: Text('Order #${widget.orderId}', overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
+                  Expanded(child: Text('Order #${widget.orderId}', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Theme.of(context).brightness==Brightness.dark?const Color(0xFFF5F5F7):const Color(0xFF171920)))),
                   IconButton(tooltip: 'Copy order ID', onPressed: _copy, icon: const Icon(Icons.copy_outlined, size: 19)),
                 ],
               ),
-              Text('Placed on ${_placed(d['placedAt'] ?? d['createdAt'])}', style: const TextStyle(fontSize: 14, color: Color(0xFF777B85))),
+              Text('Placed on ${_placed(d['placedAt'] ?? d['createdAt'])}', style: TextStyle(fontSize: 14, color: Theme.of(context).brightness==Brightness.dark?const Color(0xFFA7A9B0):const Color(0xFF777B85))),
               const SizedBox(height: 16),
-              _hero(status),
+              _hero(context, status),
               const SizedBox(height: 22),
               _timeline(status),
               if (showTracking) ...[
                 const SizedBox(height: 8),
-                _mapCard(d),
+                _mapCard(context, d),
               ],
               if (hasCarrier || phone.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                _rider(d),
+                _rider(context, d),
               ],
               const SizedBox(height: 18),
-              _items(items),
+              _items(context, items),
               const SizedBox(height: 14),
               InkWell(
                 borderRadius: BorderRadius.circular(24),
@@ -309,7 +313,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-                  decoration: BoxDecoration(color: const Color(0xFFFFEFF4), borderRadius: BorderRadius.circular(24)),
+                  decoration: BoxDecoration(color: Theme.of(context).brightness==Brightness.dark?const Color(0xFF2A1821):const Color(0xFFFFEFF4), borderRadius: BorderRadius.circular(24)),
                   child: Row(
                     children: [
                       const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFFB3134A)),
@@ -324,7 +328,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                           ],
                         ),
                       ),
-                      Text('₹$total', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900)),
+                      Text('₹$total', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900,color: Theme.of(context).brightness==Brightness.dark?const Color(0xFFF0F1F3):const Color(0xFF171920))),
                       const Icon(Icons.keyboard_arrow_down, color: Color(0xFFB3134A)),
                     ],
                   ),

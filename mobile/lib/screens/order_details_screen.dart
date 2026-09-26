@@ -209,60 +209,131 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     ...items.map((raw){final m=raw is Map?Map<String,dynamic>.from(raw):<String,dynamic>{};final name=(m['name']??m['title']??'Item').toString();final q=(m['quantity']??m['qty']??1) is num?(m['quantity']??m['qty']??1).toInt():1;final p=(m['price']??m['amount']??0) is num?(m['price']??m['amount']??0).toDouble():double.tryParse((m['price']??m['amount']??0).toString())??0;return Padding(padding:const EdgeInsets.only(bottom:12),child:Row(children:[Container(width:66,height:66,decoration:BoxDecoration(color:const Color(0xFFF7F0F3),borderRadius:BorderRadius.circular(15)),child:const Icon(Icons.shopping_bag_outlined,color:Color(0xFFB3134A),size:30)),const SizedBox(width:13),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(name,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w800)),Text('$q × ₹${p.toStringAsFixed(p%1==0?0:2)}',style:const TextStyle(color:Color(0xFF777B85)))])),Text('₹${(p*q).toStringAsFixed(p*q%1==0?0:2)}',style:const TextStyle(fontSize:16,fontWeight:FontWeight.w900))]));}),
   ]));
 
-  @override Widget build(BuildContext context)=>Scaffold(backgroundColor:const Color(0xFFFCFBFC),appBar:AppBar(backgroundColor:const Color(0xFFFCFBFC),elevation:0,leading:IconButton(tooltip:'Back',icon:const Icon(Icons.arrow_back,color:Color(0xFF171920),size:30),onPressed:()=>Navigator.pop(context)),title:const Text('Order Details',style:TextStyle(fontSize:21,fontWeight:FontWeight.w900,color:Color(0xFF171920))),actions:[TextButton.icon(onPressed:()=>FirebaseFirestore.instance.collection('orders').doc(widget.orderId).get().then((s){if(s.exists)_help(s.data()!);}),icon:const Icon(Icons.headset_mic_outlined,size:18,color:Color(0xFFB3134A)),label:const Text('Help',style:TextStyle(color:Color(0xFFB3134A),fontWeight:FontWeight.w800))),const SizedBox(width:8)]),body:StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(stream:FirebaseFirestore.instance.collection('orders').doc(widget.orderId).snapshots(),builder:(context,s){if(s.hasError)return Center(child:Text('Could not load this order.\n${s.error}',textAlign:TextAlign.center));if(!s.hasData)return const Center(child:CircularProgressIndicator());if(!s.data!.exists)return const Center(child:Text('This order could not be found.'));final d=s.data!.data()!;final status=_status(d);final items=(d['items'] as List<dynamic>?)??const[];final total=d['totalAmount']??d['total']??0;final phone=_phone(d);final showTracking=status.toLowerCase()=='out for delivery'||status.toLowerCase()=='assigned'||_point(d,['carrier','driver','partner'])!=null;return ListView(padding:const EdgeInsets.fromLTRB(16,8,16,28),children:[
-    Row(children:[Expanded(child:Text('Order #${widget.orderId}',overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900))),IconButton(tooltip:'Copy order ID',onPressed:_copy,icon:const Icon(Icons.copy_outlined,size:19))]),
-    Text('Placed on ${_placed(d['placedAt']??d['createdAt'])}',style:const TextStyle(fontSize:14,color:Color(0xFF777B85))),const SizedBox(height:16),_hero(status),const SizedBox(height:22),_timeline(status),
-    if(showTracking)...[const SizedBox(height:8),_mapCard(d)],if(_carrier!=null||phone.isNotEmpty)...[const SizedBox(height:14),_rider(d)],const SizedBox(height:18),_items(items),const SizedBox(height:14),
-    InkWell(
-      borderRadius: BorderRadius.circular(24),
-      onTap: () {
-        showModalBottomSheet(
-          context: context,
-          showDragHandle: true,
-          builder: (c) => SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFCFBFC),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFFCFBFC),
+        elevation: 0,
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF171920), size: 30),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Order Details', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF171920))),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              final s = await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).get();
+              if (s.exists && s.data() != null) _help(s.data()!);
+            },
+            icon: const Icon(Icons.headset_mic_outlined, size: 18, color: Color(0xFFB3134A)),
+            label: const Text('Help', style: TextStyle(color: Color(0xFFB3134A), fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance.collection('orders').doc(widget.orderId).snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Could not load this order.\\n${snapshot.error}', textAlign: TextAlign.center));
+          }
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.data!.exists) return const Center(child: Text('This order could not be found.'));
+          final d = snapshot.data!.data()!;
+          final status = _status(d);
+          final items = (d['items'] as List<dynamic>?) ?? const [];
+          final total = d['totalAmount'] ?? d['total'] ?? 0;
+          final phone = _phone(d);
+          final hasCarrier = _point(d, ['carrier','driver','partner']) != null;
+          final showTracking = status.toLowerCase() == 'out for delivery' || status.toLowerCase() == 'assigned' || hasCarrier;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            children: [
+              Row(
                 children: [
-                  const Text('Payment details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 14),
-                  const ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.payments_outlined, color: Color(0xFFB3134A)),
-                    title: Text('Payment method'),
-                    subtitle: Text('Cash on Delivery'),
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.receipt_long_outlined, color: Color(0xFFB3134A)),
-                    title: const Text('Order total'),
-                    trailing: Text('₹$total', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-                  ),
+                  Expanded(child: Text('Order #${widget.orderId}', overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
+                  IconButton(tooltip: 'Copy order ID', onPressed: _copy, icon: const Icon(Icons.copy_outlined, size: 19)),
                 ],
               ),
-            ),
-          ),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        decoration: BoxDecoration(color: const Color(0xFFFFEFF4), borderRadius: BorderRadius.circular(24)),
-        child: Row(
-          children: [
-            const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFFB3134A)),
-            const SizedBox(width: 14),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Order Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-              SizedBox(height: 4),
-              Text('Cash on Delivery', style: TextStyle(color: Color(0xFF777B85))),
-            ])),
-            Text('₹$total', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900)),
-            const Icon(Icons.keyboard_arrow_down, color: Color(0xFFB3134A)),
-          ],
-        ),
+              Text('Placed on ${_placed(d['placedAt'] ?? d['createdAt'])}', style: const TextStyle(fontSize: 14, color: Color(0xFF777B85))),
+              const SizedBox(height: 16),
+              _hero(status),
+              const SizedBox(height: 22),
+              _timeline(status),
+              if (showTracking) ...[
+                const SizedBox(height: 8),
+                _mapCard(d),
+              ],
+              if (hasCarrier || phone.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _rider(d),
+              ],
+              const SizedBox(height: 18),
+              _items(items),
+              const SizedBox(height: 14),
+              InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    showDragHandle: true,
+                    builder: (c) => SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Payment details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                            const SizedBox(height: 14),
+                            const ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.payments_outlined, color: Color(0xFFB3134A)),
+                              title: Text('Payment method'),
+                              subtitle: Text('Cash on Delivery'),
+                            ),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.receipt_long_outlined, color: Color(0xFFB3134A)),
+                              title: const Text('Order total'),
+                              trailing: Text('₹$total', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                  decoration: BoxDecoration(color: const Color(0xFFFFEFF4), borderRadius: BorderRadius.circular(24)),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFFB3134A)),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Order Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                            SizedBox(height: 4),
+                            Text('Cash on Delivery', style: TextStyle(color: Color(0xFF777B85))),
+                          ],
+                        ),
+                      ),
+                      Text('₹$total', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900)),
+                      const Icon(Icons.keyboard_arrow_down, color: Color(0xFFB3134A)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
-    )
-  ]);});
+    );
+  }
 }

@@ -30,6 +30,7 @@ import 'screens/live_ride_tracking_screen.dart';
 import 'screens/notifications_settings_screen.dart';
 import 'screens/wishlist_screen.dart';
 import 'screens/order_details_screen.dart';
+import 'role_dashboard_screen.dart';
 
 const adminEmail='mauryasujeet698@gmail.com';
 
@@ -664,7 +665,12 @@ class _ShellState extends State<Shell> {
   @override void initState(){
     super.initState(); user=FirebaseAuth.instance.currentUser; loadInventory(); checkForUpdate();
     timer=Timer.periodic(const Duration(seconds:30),(_)=>loadInventory(silent:true));
-    auth=FirebaseAuth.instance.authStateChanges().listen((u){setState(()=>user=u);if(u!=null){setupNotifications();loadAddresses();loadWishlist();}else{addresses=[];wishlistIds.clear();}});
+    auth=FirebaseAuth.instance.authStateChanges().listen((u){
+      if (!mounted) return;
+      setState(() { user=u; workspaceRole=null; workspaceLoading=u!=null; });
+      if(u!=null){ setupNotifications(); loadAddresses(); loadWishlist(); _loadWorkspaceRole(u); }
+      else{ addresses=[]; wishlistIds.clear(); workspaceLoading=false; }
+    });
     FirebaseMessaging.onMessageOpenedApp.listen((m){
       final title=m.notification?.title??m.data['title']??'ALLways';
       final body=m.notification?.body??m.data['body']??'Open ALLways to view this update.';
@@ -680,6 +686,36 @@ class _ShellState extends State<Shell> {
     if(user!=null){setupNotifications();loadAddresses();loadWishlist();}
   }
   @override void dispose(){timer?.cancel();auth?.cancel();messages?.cancel();super.dispose();}
+
+  Future<void> _loadWorkspaceRole(User u) async {
+    try {
+      String? role;
+      if ((u.email ?? '').trim().toLowerCase() == adminEmail.toLowerCase()) {
+        role = 'admin';
+      } else {
+        final customerSnap = await FirebaseFirestore.instance.collection('customers').doc(u.uid).get();
+        final data = customerSnap.data() ?? <String,dynamic>{};
+        final raw = (data['role'] ?? '').toString().trim().toLowerCase();
+        if (raw == 'admin' || raw == 'seller' || raw == 'delivery_partner' || raw == 'carrier' || raw == 'rider') {
+          role = raw == 'rider' ? 'carrier' : raw;
+        }
+        if (role == null) {
+          final sellerSnap = await FirebaseFirestore.instance.collection('sellers').doc(u.uid).get();
+          if (sellerSnap.exists && (sellerSnap.data()?['status'] ?? 'approved').toString().toLowerCase() == 'approved') {
+            role = 'seller';
+          }
+        }
+        if (role == null) {
+          final carrierSnap = await FirebaseFirestore.instance.collection('ridePartners').doc(u.uid).get();
+          if (carrierSnap.exists && carrierSnap.data()?['name'] != null) role = 'carrier';
+        }
+      }
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != u.uid) return;
+      setState(() { workspaceRole=role; workspaceLoading=false; });
+    } catch (_) {
+      if (mounted) setState(() { workspaceRole=null; workspaceLoading=false; });
+    }
+  }
 
   Future<void> setupNotifications() async {
     try {
@@ -1040,6 +1076,25 @@ class _ShellState extends State<Shell> {
   }
 
   Widget build(BuildContext c){
+    if (user != null && workspaceLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (user != null && workspaceRole != null) {
+      final role = workspaceRole!;
+      final Widget workspace = switch (role) {
+        'admin' => AdminScreen(authenticated: true),
+        'seller' => SellerDashboard(user: user!),
+        'delivery_partner' => CarrierDashboard(user: user!),
+        'carrier' => const RiderLoginPage(),
+        _ => const SizedBox.shrink(),
+      };
+      return RoleDashboardScreen(
+        role: role,
+        user: user!,
+        child: workspace,
+        onSignOut: () => FirebaseAuth.instance.signOut(),
+      );
+    }
     final pages=[
       ShopPage(products:products,loading:loading,error:error,onRefresh:loadInventory,onAdd:add,cart:cart,onQty:qty,user:user,wishlistIds:wishlistIds,onWishlist:toggleWishlist,onOpenCart:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(cart:cart,addresses:addresses,onQty:qty,onPlace:placeOrder))),addresses:addresses),
       const TravelPage(),
@@ -4544,7 +4599,7 @@ class AdminRolesPanel extends StatelessWidget {
               child: Column(
                 children: [
                   const TabBar(tabs: [Tab(text: 'Manage Sellers'), Tab(text: 'Manage Delivery Partners')]),
-                  Expanded(child: TabBarView(children: [roleTab(context, 'seller', 'seller'), roleTab(context, 'delivery_partner', 'carrier')])),
+                  Expanded(child: TabBarView(children: [roleTab(context, 'seller', 'seller'), roleTab(context, 'delivery_partner', 'delivery_partner')])),
                 ],
               ),
             ),
@@ -4562,7 +4617,7 @@ class AdminDeliveryAssignmentPanel extends StatefulWidget {
 
 class _AdminDeliveryAssignmentPanelState extends State<AdminDeliveryAssignmentPanel> {
   Future<void> _assign(BuildContext context,QueryDocumentSnapshot<Map<String,dynamic>> order) async {
-    final partners=await FirebaseFirestore.instance.collection('customers').where('role',isEqualTo:'carrier').get();
+    final partners=await FirebaseFirestore.instance.collection('customers').where('role',isEqualTo:'delivery_partner').get();
     final online=partners.docs.where((d){
       final x=d.data();
       final duty=(x['dutyStatus']??'offline').toString().toLowerCase();
@@ -4702,7 +4757,8 @@ class _AdminBroadcastPanelState extends State<AdminBroadcastPanel> {
 }
 
 class AdminScreen extends StatefulWidget {
-  const AdminScreen({super.key});
+  final bool authenticated;
+  const AdminScreen({super.key, this.authenticated = false});
   @override State<AdminScreen> createState() => _AdminScreenState();
 }
 
@@ -4752,7 +4808,7 @@ class _AdminScreenState extends State<AdminScreen> {
   void initState() {
     super.initState();
     final u = FirebaseAuth.instance.currentUser;
-    loggedIn = u?.email?.toLowerCase() == adminEmail.toLowerCase();
+    loggedIn = widget.authenticated || u?.email?.toLowerCase() == adminEmail.toLowerCase();
   }
 
   @override

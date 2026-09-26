@@ -332,7 +332,7 @@ class RoleFeatureScreen extends StatelessWidget {
     ]);
   }
 
-  Widget _orderTile(QueryDocumentSnapshot<Map<String,dynamic>> d) {
+  Widget _orderTile(BuildContext context, QueryDocumentSnapshot<Map<String,dynamic>> d) {
     final o=d.data(); final status=(o['status']??'New Order').toString();
     return Card(elevation:0, child:ListTile(
       leading:CircleAvatar(backgroundColor:accent.withOpacity(.10),child:Icon(role=='carrier'?Icons.two_wheeler:Icons.receipt_long,color:accent)),

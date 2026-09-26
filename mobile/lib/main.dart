@@ -898,16 +898,80 @@ class _ShellState extends State<Shell> {
       messenger.showSnackBar(SnackBar(content:Text('Update failed: '+e.toString())));
     }finally{controller.dispose();}
   }
+  Future<List<Product>> _loadInventoryFallback() async {
+    try {
+      final productSnap = await FirebaseFirestore.instance.collection('products').limit(1000).get();
+      if (productSnap.docs.isNotEmpty) {
+        return productSnap.docs.map((d) {
+          final data = Map<String, dynamic>.from(d.data());
+          data['id'] = (data['id'] ?? d.id).toString();
+          return Product.fromJson(data);
+        }).toList();
+      }
+    } catch (_) {}
+
+    try {
+      final inventorySnap = await FirebaseFirestore.instance.collection('inventory').limit(1000).get();
+      if (inventorySnap.docs.isNotEmpty) {
+        return inventorySnap.docs.map((d) {
+          final data = Map<String, dynamic>.from(d.data());
+          data['id'] = (data['id'] ?? d.id).toString();
+          return Product.fromJson(data);
+        }).toList();
+      }
+    } catch (_) {}
+
+    try {
+      final sellers = await FirebaseFirestore.instance.collection('sellers').limit(500).get();
+      final result = <Product>[];
+      for (final sellerDoc in sellers.docs) {
+        final seller = sellerDoc.data();
+        final status = (seller['status'] ?? 'approved').toString().toLowerCase();
+        if (status != 'approved') continue;
+        final rawItems = seller['items'];
+        if (rawItems is! List) continue;
+        for (var i = 0; i < rawItems.length; i++) {
+          final raw = rawItems[i];
+          if (raw is! Map) continue;
+          final item = Map<String, dynamic>.from(raw);
+          item['id'] = (item['id'] ?? (sellerDoc.id + '_' + i.toString())).toString();
+          item['sellerId'] = (item['sellerId'] ?? sellerDoc.id).toString();
+          item['stock'] = item['stock'] ?? item['quantity'] ?? item['available'] ?? 999;
+          result.add(Product.fromJson(item));
+        }
+      }
+      return result;
+    } catch (_) {
+      return <Product>[];
+    }
+  }
+
   Future<void> loadInventory({bool silent=false}) async {
     if(!silent&&mounted)setState(()=>loading=true);
+    Object? primaryError;
     try{
-      final r=await http.get(Uri.parse(inventoryEndpoint+'?_='+DateTime.now().millisecondsSinceEpoch.toString())).timeout(const Duration(seconds:15));
-      if(r.statusCode<200||r.statusCode>=300)throw Exception('Inventory server error');
-      final d=jsonDecode(r.body); final raw=d is Map?(d['products']??d):d;
+      final r=await http.get(
+        Uri.parse(inventoryEndpoint+'?_='+DateTime.now().millisecondsSinceEpoch.toString()),
+      ).timeout(const Duration(seconds:25));
+      if(r.statusCode<200||r.statusCode>=300)throw Exception('Inventory server error: HTTP '+r.statusCode.toString());
+      dynamic decoded=jsonDecode(r.body.trim().replaceFirst('\uFEFF',''));
+      if(decoded is String) decoded=jsonDecode(decoded);
+      final raw=decoded is Map ? (decoded['products']??decoded['data']??decoded['items']??decoded) : decoded;
       if(raw is! List)throw Exception('Invalid inventory response');
-      final list=raw.whereType<Map>().map((x)=>Product.fromJson(Map<String,dynamic>.from(x))).toList();
+      final list=raw.whereType<Map>().map((x)=>Product.fromJson(Map<String,dynamic>.from(x))).where((p)=>p.id.isNotEmpty&&p.name.isNotEmpty).toList();
+      if(list.isEmpty)throw Exception('Inventory response contained no products');
       if(mounted)setState((){products=list;loading=false;error=null;});
-    }catch(e){if(mounted&&!silent)setState((){loading=false;error=e.toString();});}
+      return;
+    }catch(e){
+      primaryError=e;
+    }
+
+    final fallback=await _loadInventoryFallback();
+    if(fallback.isNotEmpty){
+      if(mounted)setState((){products=fallback;loading=false;error=null;});
+      return;
+    }
+    if(mounted&&!silent)setState((){loading=false;error:'Inventory unavailable. Primary source: '+primaryError.toString();});
   }
   int get count=>cart.values.fold(0,(s,x)=>s+x.qty);
   num get total=>cart.values.fold(0,(s,x)=>s+x.product.price*x.qty);

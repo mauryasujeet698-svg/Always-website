@@ -1647,6 +1647,7 @@ class _OrdersPageState extends State<OrdersPage> {
 
   @override
   Widget build(BuildContext c) {
+    final dark = Theme.of(c).brightness == Brightness.dark;
     if (widget.user == null) {
       return const Scaffold(body: Center(child: InfoCard(title: 'Your orders', detail: 'Sign in to place and track your ALLways orders.')));
     }

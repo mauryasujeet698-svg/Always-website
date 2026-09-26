@@ -14,7 +14,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
@@ -344,8 +345,9 @@ class LiveTrackingScreen extends StatefulWidget {
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   final LiveLocationBroadcaster _broadcaster=LiveLocationBroadcaster();
-  GoogleMapController? _mapController;
+  final MapController _mapController=MapController();
   bool _cameraFitted=false;
+  bool _mapReady=false;
   List<LatLng> _routePoints=const[];
 
   @override void initState(){
@@ -365,7 +367,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     await _broadcaster.start(collection:widget.collection,docId:widget.docId,prefix:widget.broadcastPrefix!,background:needsBackground);
   }
 
-  @override void dispose(){_broadcaster.stop();super.dispose();}
+  @override void dispose(){_broadcaster.stop();_mapController.dispose();super.dispose();}
 
   double? _n(dynamic v)=>v is num?v.toDouble():double.tryParse(v?.toString()??'');
 
@@ -393,25 +395,43 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     }catch(_){}
   }
 
-  Future<void> _fitCamera(List<LatLng> points) async {
-    if(_mapController==null)return;
+  void _fitCamera(List<LatLng> points) {
+    if(!_mapReady)return;
     final all=<LatLng>[...points,..._routePoints];
     if(all.isEmpty)return;
-    if(all.length==1){
-      await _mapController!.animateCamera(CameraUpdate.newLatLngZoom(all.first,15));
-      return;
-    }
+    if(all.length==1){_mapController.move(all.first,15);return;}
     if(_cameraFitted)return;
-    final lats=all.map((p)=>p.latitude).toList();
-    final lngs=all.map((p)=>p.longitude).toList();
-    final bounds=LatLngBounds(
-      southwest:LatLng(lats.reduce(math.min),lngs.reduce(math.min)),
-      northeast:LatLng(lats.reduce(math.max),lngs.reduce(math.max)),
-    );
     try{
-      await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds,70));
+      _mapController.fitCamera(CameraFit.coordinates(coordinates:all,padding:const EdgeInsets.all(70)));
       _cameraFitted=true;
-    }catch(_){}
+    }catch(_){
+      _mapController.move(all.first,14);
+    }
+  }
+
+  Widget _markerCircle({required Color color,required IconData icon,double size=54,double angle=0}){
+    return Transform.rotate(
+      angle:angle,
+      child:Container(
+        width:size,height:size,
+        decoration:BoxDecoration(
+          color:color,
+          shape:BoxShape.circle,
+          border:Border.all(color:Colors.white,width:4),
+          boxShadow:const[BoxShadow(color:Colors.black26,blurRadius:6,offset:Offset(0,2))],
+        ),
+        child:Icon(icon,color:Colors.white,size:size*.48),
+      ),
+    );
+  }
+
+  List<Marker> _markers({LatLng? customer,LatLng? partner,LatLng? pickup,LatLng? destination}){
+    return[
+      if(pickup!=null)Marker(point:pickup,width:60,height:60,child:_markerCircle(color:Colors.green,icon:Icons.check)),
+      if(partner!=null)Marker(point:partner,width:60,height:60,child:_markerCircle(color:const Color(0xFF673AB7),icon:Icons.two_wheeler)),
+      if(destination!=null)Marker(point:destination,width:60,height:60,child:_markerCircle(color:Colors.red,icon:Icons.flag)),
+      if(customer!=null&&pickup==null)Marker(point:customer,width:56,height:56,child:_markerCircle(color:Colors.blue,icon:Icons.person,size:50)),
+    ];
   }
 
   Future<void> _call(BuildContext context,String phone) async {
@@ -430,13 +450,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     }
   }
 
-  Set<Marker> _markers({LatLng? customer,LatLng? partner,LatLng? pickup,LatLng? destination})=> {
-    if(customer!=null)Marker(markerId:const MarkerId('customer'),position:customer,icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)),
-    if(pickup!=null)Marker(markerId:const MarkerId('pickup'),position:pickup,icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen)),
-    if(destination!=null)Marker(markerId:const MarkerId('destination'),position:destination,icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)),
-    if(partner!=null)Marker(markerId:const MarkerId('partner'),position:partner,flat:true,anchor:const Offset(.5,.5),icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet)),
-  };
-
   Future<void> _cancelActiveTrip() async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null)return;
@@ -450,7 +463,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     if(reason==null)return;
     try{
       await FirebaseFirestore.instance.runTransaction((tx)async{
-        final latest=await tx.get(ref); final d=latest.data()??<String,dynamic>{};
+        final latest=await tx.get(ref);final d=latest.data()??<String,dynamic>{};
         final status=(d['status']??'').toString().toLowerCase();
         final isCustomer=d['customerUid']==user.uid;
         final isPartner=d['partnerUid']==user.uid||d['driverUid']==user.uid;
@@ -465,7 +478,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   }
 
   @override Widget build(BuildContext context)=>Scaffold(
-    appBar:AppBar(title:Text(widget.title)),
+    appBar:AppBar(title:Text(widget.title),backgroundColor:const Color(0xFFF8F6F0),foregroundColor:Colors.black,elevation:0),
+    backgroundColor:const Color(0xFFF8F6F0),
     body:StreamBuilder<DocumentSnapshot<Map<String,dynamic>>>(
       stream:FirebaseFirestore.instance.collection(widget.collection).doc(widget.docId).snapshots(),
       builder:(context,snapshot){
@@ -487,34 +501,54 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         final isCustomer=currentUser!=null&&d['customerUid']==currentUser.uid;
         final callPhone=(isCustomer?(d['partnerPhone']??d['driverPhone']??d['carrierPhone']??''):(d['customerPhone']??'')).toString();
         return Stack(children:[
-          GoogleMap(
-            initialCameraPosition:CameraPosition(target:partner??pickup??customer??points.first,zoom:15),
-            onMapCreated:(controller){_mapController=controller;_fitCamera(points);},
-            zoomControlsEnabled:false,compassEnabled:false,mapToolbarEnabled:false,
-            myLocationEnabled:false,myLocationButtonEnabled:false,
-            markers:_markers(customer:customer,partner:partner,pickup:pickup,destination:destination),
-            polylines:{if(_routePoints.isNotEmpty)Polyline(polylineId:const PolylineId('osrm_route'),points:_routePoints,width:4,color:Theme.of(context).colorScheme.primary)},
+          FlutterMap(
+            mapController:_mapController,
+            options:MapOptions(
+              initialCenter:partner??pickup??customer??points.first,
+              initialZoom:15,
+              onMapReady:(){_mapReady=true;_fitCamera(points);},
+            ),
+            children:[
+              TileLayer(
+                urlTemplate:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                subdomains:const['a','b','c','d'],
+                maxZoom:20,
+                userAgentPackageName:'com.allways.app',
+              ),
+              if(_routePoints.isNotEmpty)PolylineLayer(
+                polylines:[Polyline(points:_routePoints,color:const Color(0xFF673AB7),strokeWidth:5)],
+              ),
+              MarkerLayer(markers:_markers(customer:customer,partner:partner,pickup:pickup,destination:destination)),
+            ],
           ),
-          Positioned(top:12,left:12,right:12,child:SafeArea(bottom:false,child:Card(margin:EdgeInsets.zero,child:Padding(
-            padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
-            child:Row(children:[
-              Container(width:10,height:10,decoration:const BoxDecoration(color:Colors.green,shape:BoxShape.circle)),const SizedBox(width:9),
-              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                Text(activeLabel,style:const TextStyle(fontWeight:FontWeight.w900)),
-                Text(partner==null?'Waiting for partner location':'Partner location is updating live',style:const TextStyle(color:Colors.grey,fontSize:12)),
-              ])),
-              if(callPhone.isNotEmpty)IconButton(onPressed:()=>_call(context,callPhone),icon:const Icon(Icons.call),tooltip:'Call'),
-              const Icon(Icons.gps_fixed,size:20),
-            ]),
-          )))),
-          Positioned(left:12,right:12,bottom:18,child:SafeArea(top:false,child:Card(margin:EdgeInsets.zero,child:Padding(
-            padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
-            child:Row(children:[
-              const Icon(Icons.two_wheeler_outlined,size:20),const SizedBox(width:8),
-              Expanded(child:Text(widget.mode=='ride'?'Green pickup • Red destination • Purple moving bike':'Blue customer • Purple moving partner',style:const TextStyle(fontSize:12))),
-              if(widget.allowCancel)TextButton(onPressed:_cancelActiveTrip,child:const Text('Cancel')),
-            ]),
-          )))),
+          Positioned(top:12,left:12,right:12,child:SafeArea(bottom:false,child:Card(
+            margin:EdgeInsets.zero,
+            color:const Color(0xFFFDECEF),
+            child:Padding(
+              padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
+              child:Row(children:[
+                Container(width:10,height:10,decoration:const BoxDecoration(color:Colors.green,shape:BoxShape.circle)),const SizedBox(width:9),
+                Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(activeLabel,style:const TextStyle(fontWeight:FontWeight.w900)),
+                  Text(partner==null?'Waiting for partner location':'Partner location is updating live',style:const TextStyle(color:Colors.grey,fontSize:12)),
+                ])),
+                if(callPhone.isNotEmpty)IconButton(onPressed:()=>_call(context,callPhone),icon:const Icon(Icons.call),tooltip:'Call'),
+                const Icon(Icons.gps_fixed,size:20),
+              ]),
+            ),
+          ))),
+          Positioned(left:12,right:12,bottom:18,child:SafeArea(top:false,child:Card(
+            margin:EdgeInsets.zero,
+            color:const Color(0xFFFDECEF),
+            child:Padding(
+              padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
+              child:Row(children:[
+                const Icon(Icons.two_wheeler,size:24),const SizedBox(width:8),
+                Expanded(child:Text(widget.mode=='ride'?'Green pickup • Red destination • Purple moving bike':'Blue customer • Purple moving partner',style:const TextStyle(fontSize:13))),
+                if(widget.allowCancel)TextButton(onPressed:_cancelActiveTrip,child:const Text('Cancel',style:TextStyle(color:Color(0xFF8E5A73)))),
+              ]),
+            ),
+          ))),
         ]);
       },
     ),

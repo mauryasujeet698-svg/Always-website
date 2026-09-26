@@ -4615,13 +4615,17 @@ class AdminRolesPanel extends StatelessWidget {
         title: const Text('Manage Roles', style: TextStyle(fontWeight: FontWeight.w800)),
         children: [
           DefaultTabController(
-            length: 2,
+            length: 3,
             child: SizedBox(
               height: 420,
               child: Column(
                 children: [
-                  const TabBar(tabs: [Tab(text: 'Manage Sellers'), Tab(text: 'Manage Delivery Partners')]),
-                  Expanded(child: TabBarView(children: [roleTab(context, 'seller', 'seller'), roleTab(context, 'delivery_partner', 'delivery_partner')])),
+                  const TabBar(tabs: [Tab(text: 'Sellers'), Tab(text: 'Delivery'), Tab(text: 'Carriers')]),
+                  Expanded(child: TabBarView(children: [
+                    roleTab(context, 'seller', 'seller'),
+                    roleTab(context, 'delivery_partner', 'delivery_partner'),
+                    roleTab(context, 'carrier', 'carrier'),
+                  ])),
                 ],
               ),
             ),

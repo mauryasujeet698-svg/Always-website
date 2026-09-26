@@ -602,6 +602,20 @@ class _ShellState extends State<Shell> {
         await p.setString('allways_fcm_token', token);
         if (user != null) {
           try {
+            final enabled = p.getBool('notifications_enabled') ?? p.getBool('allways_notifications_enabled') ?? true;
+            final tokenRef = FirebaseFirestore.instance
+                .collection('fcmTokens')
+                .doc(user!.uid)
+                .collection('tokens')
+                .doc(token);
+            await tokenRef.set({
+              'uid': user!.uid,
+              'email': user!.email ?? '',
+              'token': token,
+              'notificationsEnabled': enabled,
+              'notificationPreferences': preferenceMap,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
             await FirebaseFirestore.instance
                 .collection('fcmTokens')
                 .doc(user!.uid)
@@ -609,7 +623,7 @@ class _ShellState extends State<Shell> {
               'uid': user!.uid,
               'email': user!.email ?? '',
               'token': token,
-              'notificationsEnabled': p.getBool('notifications_enabled') ?? p.getBool('allways_notifications_enabled') ?? true,
+              'notificationsEnabled': enabled,
               'notificationPreferences': preferenceMap,
               'updatedAt': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
@@ -653,7 +667,13 @@ class _ShellState extends State<Shell> {
       await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
       await prefs.setBool('allways_notifications_enabled',false);
       await prefs.setBool('notifications_enabled',false);
-      if(user!=null){try{await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).set({'uid':user!.uid,'notificationsEnabled':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));}catch(_){}}
+      if(user!=null){try{
+        final token=await FirebaseMessaging.instance.getToken();
+        await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).set({'uid':user!.uid,'notificationsEnabled':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+        if(token!=null&&token.isNotEmpty){
+          await FirebaseFirestore.instance.collection('fcmTokens').doc(user!.uid).collection('tokens').doc(token).set({'uid':user!.uid,'token':token,'notificationsEnabled':false,'updatedAt':FieldValue.serverTimestamp()},SetOptions(merge:true));
+        }
+      }catch(_){}}
     }
   }
 

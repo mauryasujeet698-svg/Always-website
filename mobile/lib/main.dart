@@ -311,6 +311,94 @@ class LiveLocationBroadcaster {
   }
   Future<void> stop() async { await _subscription?.cancel(); _subscription=null; }
 }
+class _OrderSuccessScreen extends StatefulWidget {
+  final String orderId;
+  final VoidCallback onContinueShopping;
+  final VoidCallback onTrackOrder;
+  final Future<void> Function() onEnableNotifications;
+  const _OrderSuccessScreen({
+    required this.orderId,
+    required this.onContinueShopping,
+    required this.onTrackOrder,
+    required this.onEnableNotifications,
+  });
+  @override State<_OrderSuccessScreen> createState() => _OrderSuccessScreenState();
+}
+
+class _OrderSuccessScreenState extends State<_OrderSuccessScreen> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..forward();
+  @override void dispose(){_controller.dispose();super.dispose();}
+
+  Widget _confetti() {
+    const pieces = [
+      ['🎉', 0.08, 0.10], ['✨', 0.23, 0.17], ['🎊', 0.78, 0.11], ['⭐', 0.91, 0.25],
+      ['💗', 0.12, 0.36], ['✨', 0.88, 0.42], ['🎈', 0.28, 0.30], ['🎉', 0.70, 0.33],
+    ];
+    return IgnorePointer(child: Stack(children: [
+      for (final p in pieces)
+        Positioned(left: MediaQuery.sizeOf(context).width * (p[1] as double), top: MediaQuery.sizeOf(context).height * (p[2] as double),
+          child: Text(p[0] as String, style: TextStyle(fontSize: (p[0] == '✨' ? 22 : 28)))),
+    ]));
+  }
+
+  @override Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF6F8),
+      body: Stack(children: [
+        Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(
+          gradient: LinearGradient(begin: Alignment.topCenter,end: Alignment.bottomCenter,
+            colors: const [Color(0xFFFFE8EF), Color(0xFFFFF9FA), Color(0xFFFFFFFF)]),
+        ))),
+        _confetti(),
+        SafeArea(child: Center(child: SingleChildScrollView(padding: const EdgeInsets.fromLTRB(24, 28, 24, 30), child: FadeTransition(
+          opacity: CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+          child: ScaleTransition(scale: Tween<double>(begin:.92,end:1).animate(CurvedAnimation(parent:_controller,curve:Curves.easeOutBack)),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Container(width:118,height:118,decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(begin: Alignment.topLeft,end: Alignment.bottomRight,colors:[Color(0xFFB3134A),Color(0xFFE44D78)]),
+                boxShadow: const [BoxShadow(color: Color(0x3DB3134A), blurRadius: 28, spreadRadius: 3)],
+              ),child: const Icon(Icons.check_rounded,color:Colors.white,size:72)),
+              const SizedBox(height:25),
+              const Text('🎉 Thank you for your order!',textAlign:TextAlign.center,style:TextStyle(fontSize:31,height:1.05,fontWeight:FontWeight.w900,color:Color(0xFF191A20))),
+              const SizedBox(height:12),
+              const Text('ALLways is on it.',textAlign:TextAlign.center,style:TextStyle(fontSize:18,fontWeight:FontWeight.w800,color:Color(0xFFB3134A))),
+              const SizedBox(height:10),
+              Text('Your order #${widget.orderId} has been placed successfully.',textAlign:TextAlign.center,style:const TextStyle(fontSize:15,height:1.45,color:Color(0xFF62656E))),
+              const SizedBox(height:8),
+              const Text('We’ll keep you updated as your order moves from confirmed to delivered.',textAlign:TextAlign.center,style:TextStyle(fontSize:14,height:1.4,color:Color(0xFF7A7D86))),
+              const SizedBox(height:25),
+              Container(width:double.infinity,padding:const EdgeInsets.all(17),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(22),boxShadow:const[BoxShadow(color:Color(0x12000000),blurRadius:18,offset:Offset(0,7))]),child:const Row(children:[
+                CircleAvatar(radius:22,backgroundColor:Color(0xFFFFE8EF),child:Icon(Icons.notifications_active_outlined,color:Color(0xFFB3134A))),
+                SizedBox(width:13),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text('Order updates',style:TextStyle(fontWeight:FontWeight.w900,fontSize:16)),
+                  SizedBox(height:3),Text('Get notified when your order status changes.',style:TextStyle(color:Color(0xFF747780),fontSize:13)),
+                ])),
+              ])),
+              const SizedBox(height:22),
+              SizedBox(width:double.infinity,height:54,child:FilledButton.icon(
+                onPressed:() async { await widget.onEnableNotifications(); },
+                icon:const Icon(Icons.notifications_active_outlined),
+                label:const Text('Enable notifications',style:TextStyle(fontWeight:FontWeight.w800,fontSize:16)),
+                style:FilledButton.styleFrom(backgroundColor:const Color(0xFFB3134A),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(17))),
+              )),
+              const SizedBox(height:12),
+              SizedBox(width:double.infinity,height:54,child:OutlinedButton.icon(
+                onPressed:widget.onTrackOrder,icon:const Icon(Icons.local_shipping_outlined),label:const Text('Track this order',style:TextStyle(fontWeight:FontWeight.w800,fontSize:16)),
+                style:OutlinedButton.styleFrom(foregroundColor:const Color(0xFFB3134A),side:const BorderSide(color:Color(0xFFB3134A)),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(17))),
+              )),
+              const SizedBox(height:10),
+              TextButton(onPressed:widget.onContinueShopping,child:const Text('Continue shopping',style:TextStyle(fontSize:15,fontWeight:FontWeight.w800,color:Color(0xFF5D6069)))),
+              const SizedBox(height:5),
+              Text('Cash on Delivery • Order ID: ${widget.orderId}',textAlign:TextAlign.center,style:const TextStyle(fontSize:12,color:Color(0xFF92949C))),
+            ]),
+          ),
+        )))),
+      ]),
+    );
+  }
+}
+
 class LatLngTween extends Tween<LatLng> {
   LatLngTween({super.begin, super.end});
   @override LatLng lerp(double t) {
@@ -890,11 +978,41 @@ class _ShellState extends State<Shell> {
       if(mounted){
         Navigator.of(context).pop();
         setState(()=>tab=0);
-        await showDialog(context:context,builder:(_)=>AlertDialog(title:const Text('Thank you for your order!'),content:Text('Your order #'+id+' has been placed successfully. We will contact you to confirm delivery.'),actions:[FilledButton(onPressed:()=>Navigator.pop(context),child:const Text('Continue shopping'))]));
+        await _showOrderSuccess(id);
       }
     }catch(e){msg('Order could not be saved. Please try again.');}
   }
 
+
+  Future<void> _enableOrderNotifications() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('allways_notifications_enabled', true);
+    await prefs.setBool('notifications_enabled', true);
+    await prefs.setBool('notification_orderUpdates', true);
+    await setupNotifications();
+  }
+
+  Future<void> _showOrderSuccess(String orderId) async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog.fullscreen(
+        child: _OrderSuccessScreen(
+          orderId: orderId,
+          onContinueShopping: () => Navigator.of(dialogContext).pop(),
+          onTrackOrder: () {
+            Navigator.of(dialogContext).pop();
+            Navigator.of(context).pushNamed('/order-details', arguments: {'orderId': orderId});
+          },
+          onEnableNotifications: () async {
+            await _enableOrderNotifications();
+            if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+          },
+        ),
+      ),
+    );
+  }
 
   Future<void> reorderItems(List<Map<String, dynamic>> rawItems) async {
     if (user == null) { login(); return; }

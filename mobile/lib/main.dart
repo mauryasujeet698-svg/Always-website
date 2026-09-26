@@ -14,6 +14,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
@@ -21,9 +22,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'firebase_options.dart';
+undefinedimport 'firebase_options.dart';
 import 'utils/voice_search_helper.dart';
 import 'controllers/carrier_and_admin_controller.dart';
 import 'screens/live_ride_tracking_screen.dart';
@@ -334,30 +333,6 @@ Future<void> _callNumber(BuildContext context,String phone) async {
   }
 }
 
-class AnimatedLiveMarker extends StatefulWidget {
-  final LatLng point; final IconData icon; final Color color;
-  const AnimatedLiveMarker({super.key,required this.point,required this.icon,required this.color});
-  @override State<AnimatedLiveMarker> createState()=>_AnimatedLiveMarkerState();
-}
-class _AnimatedLiveMarkerState extends State<AnimatedLiveMarker>{
-  LatLng? _from;
-  @override void didUpdateWidget(covariant AnimatedLiveMarker oldWidget){
-    super.didUpdateWidget(oldWidget);
-    if(oldWidget.point.latitude!=widget.point.latitude||oldWidget.point.longitude!=widget.point.longitude)_from=oldWidget.point;
-  }
-  @override Widget build(BuildContext context){
-    final from=_from??widget.point;
-    return TweenAnimationBuilder<LatLng>(
-      tween:LatLngTween(begin:from,end:widget.point),
-      duration:const Duration(milliseconds:900),curve:Curves.easeInOut,
-      onEnd:(){if(mounted&&_from!=null)setState(()=>_from=null);},
-      builder:(context,point,_)=>Container(
-        decoration:BoxDecoration(color:widget.color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:10,color:Colors.black26)]),
-        child:Icon(widget.icon,color:Colors.white,size:29),
-      ),
-    );
-  }
-}
 class LiveTrackingScreen extends StatefulWidget {
   final String collection,docId,title,mode;
   final String? broadcastPrefix;
@@ -369,6 +344,9 @@ class LiveTrackingScreen extends StatefulWidget {
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   final LiveLocationBroadcaster _broadcaster=LiveLocationBroadcaster();
+  GoogleMapController? _mapController;
+  bool _cameraFitted=false;
+  List<LatLng> _routePoints=const[];
 
   @override void initState(){
     super.initState();
@@ -379,7 +357,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
   Future<void> _startBroadcastWithDisclosure() async {
     if(!mounted||widget.broadcastPrefix==null||widget.readOnly)return;
-    final needsBackground = widget.broadcastPrefix=='partner' || widget.broadcastPrefix=='driver' || widget.broadcastPrefix=='carrier';
+    final needsBackground=widget.broadcastPrefix=='partner'||widget.broadcastPrefix=='driver'||widget.broadcastPrefix=='carrier';
     if(needsBackground){
       final allowed=await ensureBackgroundLocationDisclosure(context);
       if(!allowed||!mounted)return;
@@ -398,6 +376,44 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     return LatLng(lat,lng);
   }
 
+  Future<void> _loadOSRMRoute(LatLng start,LatLng end) async {
+    final url=Uri.parse('https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson');
+    try{
+      final res=await http.get(url);
+      if(res.statusCode!=200)return;
+      final decoded=jsonDecode(res.body);
+      final routes=decoded['routes'];
+      if(routes is! List||routes.isEmpty)return;
+      final coordinates=routes.first['geometry']?['coordinates'];
+      if(coordinates is! List)return;
+      final points=coordinates.whereType<List>().where((c)=>c.length>=2).map((c)=>LatLng((c[1] as num).toDouble(),(c[0] as num).toDouble())).toList();
+      if(!mounted)return;
+      setState(()=>_routePoints=points);
+      _fitCamera(const[]);
+    }catch(_){}
+  }
+
+  Future<void> _fitCamera(List<LatLng> points) async {
+    if(_mapController==null)return;
+    final all=<LatLng>[...points,..._routePoints];
+    if(all.isEmpty)return;
+    if(all.length==1){
+      await _mapController!.animateCamera(CameraUpdate.newLatLngZoom(all.first,15));
+      return;
+    }
+    if(_cameraFitted)return;
+    final lats=all.map((p)=>p.latitude).toList();
+    final lngs=all.map((p)=>p.longitude).toList();
+    final bounds=LatLngBounds(
+      southwest:LatLng(lats.reduce(math.min),lngs.reduce(math.min)),
+      northeast:LatLng(lats.reduce(math.max),lngs.reduce(math.max)),
+    );
+    try{
+      await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds,70));
+      _cameraFitted=true;
+    }catch(_){}
+  }
+
   Future<void> _call(BuildContext context,String phone) async {
     final clean=phone.replaceAll(RegExp(r'[^0-9+]'),'');
     if(clean.isEmpty){
@@ -414,51 +430,35 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     }
   }
 
-  Widget _marker(IconData icon,Color color){
-    return Container(
-      decoration:BoxDecoration(color:color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:3),boxShadow:const[BoxShadow(blurRadius:10,color:Colors.black26)]),
-      child:Icon(icon,color:Colors.white,size:27),
-    );
-  }
+  Set<Marker> _markers({LatLng? customer,LatLng? partner,LatLng? pickup,LatLng? destination})=> {
+    if(customer!=null)Marker(markerId:const MarkerId('customer'),position:customer,icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)),
+    if(pickup!=null)Marker(markerId:const MarkerId('pickup'),position:pickup,icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen)),
+    if(destination!=null)Marker(markerId:const MarkerId('destination'),position:destination,icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)),
+    if(partner!=null)Marker(markerId:const MarkerId('partner'),position:partner,flat:true,anchor:const Offset(.5,.5),icon:BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet)),
+  };
 
   Future<void> _cancelActiveTrip() async {
     final user=FirebaseAuth.instance.currentUser;
     if(user==null)return;
     final ref=FirebaseFirestore.instance.collection(widget.collection).doc(widget.docId);
-    final reason=await showDialog<String>(
-      context:context,
-      builder:(c)=>SimpleDialog(
-        title:const Text('Cancel ride'),
-        children:[
-          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Waiting too long'),child:const Text('Waiting too long')),
-          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Partner/customer not responding'),child:const Text('Not responding')),
-          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Changed my mind'),child:const Text('Changed my mind')),
-          SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Other'),child:const Text('Other')),
-        ],
-      ),
-    );
+    final reason=await showDialog<String>(context:context,builder:(c)=>SimpleDialog(title:const Text('Cancel ride'),children:[
+      SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Waiting too long'),child:const Text('Waiting too long')),
+      SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Partner/customer not responding'),child:const Text('Not responding')),
+      SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Changed my mind'),child:const Text('Changed my mind')),
+      SimpleDialogOption(onPressed:()=>Navigator.pop(c,'Other'),child:const Text('Other')),
+    ]));
     if(reason==null)return;
     try{
       await FirebaseFirestore.instance.runTransaction((tx)async{
-        final latest=await tx.get(ref);
-        final d=latest.data()??<String,dynamic>{};
+        final latest=await tx.get(ref); final d=latest.data()??<String,dynamic>{};
         final status=(d['status']??'').toString().toLowerCase();
         final isCustomer=d['customerUid']==user.uid;
         final isPartner=d['partnerUid']==user.uid||d['driverUid']==user.uid;
         if(!isCustomer&&!isPartner)throw Exception('You are not part of this ride.');
         if(['cancelled','completed','delivered'].contains(status))return;
-        tx.update(ref,{
-          'status':'cancelled',
-          'cancelledBy':isCustomer?'customer':'partner',
-          'cancellationReason':reason,
-          'cancelledAt':FieldValue.serverTimestamp(),
-          'updatedAt':FieldValue.serverTimestamp(),
-        });
+        tx.update(ref,{'status':'cancelled','cancelledBy':isCustomer?'customer':'partner','cancellationReason':reason,'cancelledAt':FieldValue.serverTimestamp(),'updatedAt':FieldValue.serverTimestamp()});
       });
-      if(mounted){
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride cancelled.')));
-        Navigator.pop(context);
-      }
+      if(mounted){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Ride cancelled.')));Navigator.pop(context);}
     }catch(e){
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not cancel ride: '+e.toString().replaceFirst('Exception: ',''))));
     }
@@ -480,51 +480,25 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         final pickup=_point(d,'pickup');
         final destination=_point(d,'destination');
         final points=<LatLng>[if(customer!=null)customer,if(partner!=null)partner,if(pickup!=null)pickup,if(destination!=null)destination];
+        if(pickup!=null&&destination!=null&&_routePoints.isEmpty)_loadOSRMRoute(pickup,destination);
         if(points.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(24),child:Text('Waiting for live location. Keep location enabled during the active trip.',textAlign:TextAlign.center)));
-
         final activeLabel=widget.mode=='order'?'Live delivery tracking':widget.mode=='vehicle'?'Live vehicle tracking':'Live ride tracking';
         final currentUser=FirebaseAuth.instance.currentUser;
         final isCustomer=currentUser!=null&&d['customerUid']==currentUser.uid;
-        final callPhone=(isCustomer
-            ? (d['partnerPhone']??d['driverPhone']??d['carrierPhone']??'')
-            : (d['customerPhone']??'' )).toString();
-
+        final callPhone=(isCustomer?(d['partnerPhone']??d['driverPhone']??d['carrierPhone']??''):(d['customerPhone']??'')).toString();
         return Stack(children:[
-          FlutterMap(
-            options:MapOptions(initialCenter:partner??pickup??customer??points.first,initialZoom:15,maxZoom:19,minZoom:3,initialCameraFit:points.length>1?CameraFit.coordinates(coordinates:points,padding:const EdgeInsets.fromLTRB(45,130,45,190),maxZoom:16,minZoom:12):null),
-            children:[
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.allways.app',
-              ),
-              if(pickup!=null&&destination!=null)
-                PolylineLayer(polylines:[
-                  Polyline(points:[pickup,destination],strokeWidth:4,color:Theme.of(context).colorScheme.primary),
-                ]),
-              MarkerLayer(markers:[
-                if(customer!=null)Marker(point:customer,width:54,height:54,child:_marker(Icons.person_pin_circle,Colors.blue)),
-                if(pickup!=null)Marker(point:pickup,width:54,height:54,child:_marker(Icons.trip_origin,Colors.green)),
-                if(destination!=null)Marker(point:destination,width:54,height:54,child:_marker(Icons.flag,Colors.red)),
-                if(partner!=null)
-                  Marker(
-                    point:partner,
-                    width:60,
-                    height:60,
-                    child:AnimatedLiveMarker(
-                      point:partner,
-                      icon:widget.mode=='order'?Icons.delivery_dining:widget.mode=='vehicle'?Icons.directions_car:Icons.two_wheeler,
-                      color:Colors.deepPurple,
-                    ),
-                  ),
-              ]),
-              const RichAttributionWidget(attributions:[TextSourceAttribution('OpenStreetMap contributors')]),
-            ],
+          GoogleMap(
+            initialCameraPosition:CameraPosition(target:partner??pickup??customer??points.first,zoom:15),
+            onMapCreated:(controller){_mapController=controller;_fitCamera(points);},
+            zoomControlsEnabled:false,compassEnabled:false,mapToolbarEnabled:false,
+            myLocationEnabled:false,myLocationButtonEnabled:false,
+            markers:_markers(customer:customer,partner:partner,pickup:pickup,destination:destination),
+            polylines:{if(_routePoints.isNotEmpty)Polyline(polylineId:const PolylineId('osrm_route'),points:_routePoints,width:4,color:Theme.of(context).colorScheme.primary)},
           ),
           Positioned(top:12,left:12,right:12,child:SafeArea(bottom:false,child:Card(margin:EdgeInsets.zero,child:Padding(
             padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
             child:Row(children:[
-              Container(width:10,height:10,decoration:const BoxDecoration(color:Colors.green,shape:BoxShape.circle)),
-              const SizedBox(width:9),
+              Container(width:10,height:10,decoration:const BoxDecoration(color:Colors.green,shape:BoxShape.circle)),const SizedBox(width:9),
               Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
                 Text(activeLabel,style:const TextStyle(fontWeight:FontWeight.w900)),
                 Text(partner==null?'Waiting for partner location':'Partner location is updating live',style:const TextStyle(color:Colors.grey,fontSize:12)),
@@ -537,9 +511,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             padding:const EdgeInsets.symmetric(horizontal:14,vertical:10),
             child:Row(children:[
               const Icon(Icons.two_wheeler_outlined,size:20),const SizedBox(width:8),
-              Expanded(child:Text(widget.mode=='ride'
-                  ?'Green pickup • Red destination • Purple moving bike'
-                  :'Blue customer • Purple moving partner',style:const TextStyle(fontSize:12))),
+              Expanded(child:Text(widget.mode=='ride'?'Green pickup • Red destination • Purple moving bike':'Blue customer • Purple moving partner',style:const TextStyle(fontSize:12))),
               if(widget.allowCancel)TextButton(onPressed:_cancelActiveTrip,child:const Text('Cancel')),
             ]),
           )))),

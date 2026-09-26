@@ -113,16 +113,47 @@ class _RoleDashboardScreenState extends State<RoleDashboardScreen> {
     if(mounted)_loadProfile();
   }
 
-  void account() => showModalBottomSheet<void>(
-    context:context,showDragHandle:true,
-    builder:(s)=>SafeArea(child:Padding(padding:const EdgeInsets.fromLTRB(20,8,20,20),child:Column(mainAxisSize:MainAxisSize.min,children:[
-      ListTile(leading:CircleAvatar(backgroundColor:accent.withOpacity(.12),child:Icon(icon,color:accent)),title:Text(name,style:const TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(widget.user.email??'')),
-      const ListTile(leading:Icon(Icons.person_outline),title:Text('Profile & documents')),
-      const ListTile(leading:Icon(Icons.help_outline),title:Text('Help & support')),
-      const Divider(),
-      ListTile(leading:const Icon(Icons.logout),title:const Text('Sign out'),onTap:(){Navigator.pop(s);widget.onSignOut();}),
-    ])),
-  );
+  void account() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (s) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: accent.withOpacity(.12),
+                  child: Icon(icon, color: accent),
+                ),
+                title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(widget.user.email ?? ''),
+              ),
+              const ListTile(
+                leading: Icon(Icons.person_outline),
+                title: Text('Profile & documents'),
+              ),
+              const ListTile(
+                leading: Icon(Icons.help_outline),
+                title: Text('Help & support'),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Sign out'),
+                onTap: () {
+                  Navigator.pop(s);
+                  widget.onSignOut();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override Widget build(BuildContext context)=>Scaffold(
     backgroundColor:const Color(0xFFFFF8FA),

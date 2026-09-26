@@ -2909,15 +2909,11 @@ class _CarrierDashboardState extends State<CarrierDashboard> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Align(alignment: Alignment.centerLeft, child: Text('Service Partner', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
-                const SizedBox(height: 8),
                 Row(children:[
-                  Expanded(child:OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const VehicleBookingPage())),icon:const Icon(Icons.directions_car_outlined),label:const Text('Book vehicle'))),
+                  Expanded(child:_carrierStat(context, 'Assigned Deliveries', 'Live', Icons.local_shipping_outlined)),
                   const SizedBox(width:10),
-                  Expanded(child:OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const RiderLoginPage())),icon:const Icon(Icons.two_wheeler_outlined),label:const Text('Rider login'))),
+                  Expanded(child:_carrierStat(context, 'Service Area', 'Nearby', Icons.location_on_outlined)),
                 ]),
-                const SizedBox(height: 6),
-                const Text('Service Partner includes vehicle booking and two-wheeler ride sharing. Contact details unlock only after a confirmed booking.',style:TextStyle(color:Colors.grey,fontSize:12)),
                 const SizedBox(height:14),
                 StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: FirebaseFirestore.instance.collection('orders').where('carrierUid', isEqualTo: widget.user.uid).snapshots(),

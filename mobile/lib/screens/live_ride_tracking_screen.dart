@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+
 import '../controllers/carrier_and_admin_controller.dart';
 
 class LiveRideTrackingScreen extends StatefulWidget {
@@ -22,14 +23,15 @@ class LiveRideTrackingScreen extends StatefulWidget {
 }
 
 class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
-  final MapController _mapController = MapController();
-  List<LatLng> _routePoints = [];
+  GoogleMapController? _mapController;
+  List<LatLng> _routePoints = const [];
   LatLng? _driverLocation;
   LatLng? _pickupLocation;
   LatLng? _destinationLocation;
   double _markerRotation = 0.0;
   String _contactPhone = '';
   String _rideStatus = 'searching';
+  bool _cameraFitted = false;
 
   @override
   void initState() {
@@ -46,42 +48,55 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
       if (!mounted || !doc.exists || doc.data() == null) return;
       final data = doc.data()!;
 
+      LatLng? newPickup;
+      LatLng? newDestination;
+      LatLng? newDriver;
+
+      if (data['pickupLat'] is num && data['pickupLng'] is num) {
+        newPickup = LatLng(
+          (data['pickupLat'] as num).toDouble(),
+          (data['pickupLng'] as num).toDouble(),
+        );
+      }
+      if (data['destLat'] is num && data['destLng'] is num) {
+        newDestination = LatLng(
+          (data['destLat'] as num).toDouble(),
+          (data['destLng'] as num).toDouble(),
+        );
+      }
+      if (data['driverLat'] is num && data['driverLng'] is num) {
+        newDriver = LatLng(
+          (data['driverLat'] as num).toDouble(),
+          (data['driverLng'] as num).toDouble(),
+        );
+      }
+
       setState(() {
         _rideStatus = (data['status'] ?? 'searching').toString();
         _contactPhone = widget.isRider
             ? (data['customerPhone'] ?? '').toString()
             : (data['driverPhone'] ?? '').toString();
 
-        if (data['pickupLat'] is num && data['pickupLng'] is num) {
-          _pickupLocation = LatLng(
-            (data['pickupLat'] as num).toDouble(),
-            (data['pickupLng'] as num).toDouble(),
-          );
-        }
-        if (data['destLat'] is num && data['destLng'] is num) {
-          _destinationLocation = LatLng(
-            (data['destLat'] as num).toDouble(),
-            (data['destLng'] as num).toDouble(),
-          );
-        }
+        _pickupLocation = newPickup;
+        _destinationLocation = newDestination;
 
-        if (data['driverLat'] is num && data['driverLng'] is num) {
-          final newLoc = LatLng(
-            (data['driverLat'] as num).toDouble(),
-            (data['driverLng'] as num).toDouble(),
-          );
+        if (newDriver != null) {
           if (_driverLocation != null) {
-            _markerRotation = _getBearing(_driverLocation!, newLoc);
+            _markerRotation = _getBearing(_driverLocation!, newDriver);
           }
-          _driverLocation = newLoc;
+          _driverLocation = newDriver;
         }
       });
 
-      if (_routePoints.isEmpty &&
-          _pickupLocation != null &&
-          _destinationLocation != null) {
-        _loadOSRMRoute(_pickupLocation!, _destinationLocation!);
+      if (newPickup != null &&
+          newDestination != null &&
+          (_routePoints.isEmpty ||
+              _pickupLocation != newPickup ||
+              _destinationLocation != newDestination)) {
+        _loadOSRMRoute(newPickup, newDestination);
       }
+
+      _fitCameraIfReady();
     });
   }
 
@@ -95,6 +110,7 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
     final y = math.sin(dLon) * math.cos(lat2);
     final x = math.cos(lat1) * math.sin(lat2) -
         math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
@@ -104,29 +120,148 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
       '${start.longitude},${start.latitude};'
       '${end.longitude},${end.latitude}?overview=full&geometries=geojson',
     );
+
     try {
       final res = await http.get(url);
       if (!mounted || res.statusCode != 200) return;
+
       final decoded = jsonDecode(res.body);
       final routes = decoded['routes'];
       if (routes is! List || routes.isEmpty) return;
-      final coordinates = routes[0]['geometry']['coordinates'] as List;
-      setState(() {
-        _routePoints = coordinates
-            .whereType<List>()
-            .where((c) => c.length >= 2)
-            .map((c) => LatLng(
-                  (c[1] as num).toDouble(),
-                  (c[0] as num).toDouble(),
-                ))
-            .toList();
-      });
-    } catch (_) {}
+
+      final geometry = routes.first['geometry'];
+      final coordinates = geometry is Map ? geometry['coordinates'] : null;
+      if (coordinates is! List) return;
+
+      final points = coordinates
+          .whereType<List>()
+          .where((c) => c.length >= 2)
+          .map(
+            (c) => LatLng(
+              (c[1] as num).toDouble(),
+              (c[0] as num).toDouble(),
+            ),
+          )
+          .toList();
+
+      if (!mounted) return;
+      setState(() => _routePoints = points);
+      _fitCameraIfReady();
+    } catch (_) {
+      // Keep the existing screen usable if the free public OSRM endpoint
+      // temporarily fails.
+    }
+  }
+
+  Future<void> _fitCameraIfReady() async {
+    if (_mapController == null) return;
+
+    final points = <LatLng>[
+      if (_pickupLocation != null) _pickupLocation!,
+      if (_destinationLocation != null) _destinationLocation!,
+      if (_driverLocation != null) _driverLocation!,
+    ];
+
+    if (points.isEmpty) return;
+
+    if (points.length == 1) {
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: points.first, zoom: 14.5),
+        ),
+      );
+      return;
+    }
+
+    if (_cameraFitted && _driverLocation != null) {
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: _driverLocation!, zoom: 15),
+        ),
+      );
+      return;
+    }
+
+    final lats = points.map((p) => p.latitude).toList();
+    final lngs = points.map((p) => p.longitude).toList();
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(
+        lats.reduce(math.min),
+        lngs.reduce(math.min),
+      ),
+      northeast: LatLng(
+        lats.reduce(math.max),
+        lngs.reduce(math.max),
+      ),
+    );
+
+    try {
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 70),
+      );
+      _cameraFitted = true;
+    } catch (_) {
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: points.first, zoom: 14),
+        ),
+      );
+    }
+  }
+
+  Set<Marker> _markers() {
+    return {
+      if (_pickupLocation != null)
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: _pickupLocation!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
+          infoWindow: const InfoWindow(title: 'Pickup'),
+        ),
+      if (_destinationLocation != null)
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: _destinationLocation!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueRed,
+          ),
+          infoWindow: const InfoWindow(title: 'Destination'),
+        ),
+      if (_driverLocation != null)
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: _driverLocation!,
+          rotation: _markerRotation,
+          flat: true,
+          anchor: const Offset(0.5, 0.5),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueViolet,
+          ),
+          infoWindow: const InfoWindow(title: 'Ride partner'),
+        ),
+    };
+  }
+
+  Set<Polyline> _polylines() {
+    if (_routePoints.isEmpty) return {};
+    return {
+      Polyline(
+        polylineId: const PolylineId('osrm_route'),
+        points: _routePoints,
+        width: 5,
+        color: Colors.deepPurple,
+        geodesic: false,
+      ),
+    };
   }
 
   @override
   Widget build(BuildContext context) {
-    final center = _pickupLocation ?? const LatLng(25.9123, 81.9876);
+    final center =
+        _pickupLocation ?? const LatLng(25.9123, 81.9876);
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E24),
@@ -144,84 +279,32 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
       ),
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: center,
-              initialZoom: 14.5,
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: center,
+              zoom: 14.5,
             ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.allways.app',
-              ),
-              if (_routePoints.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _routePoints,
-                      strokeWidth: 4.5,
-                      color: Colors.black87,
-                    ),
-                  ],
-                ),
-              MarkerLayer(
-                markers: [
-                  if (_pickupLocation != null)
-                    Marker(
-                      point: _pickupLocation!,
-                      width: 32,
-                      height: 32,
-                      child: const Icon(
-                        Icons.radio_button_checked,
-                        color: Colors.green,
-                        size: 28,
-                      ),
-                    ),
-                  if (_destinationLocation != null)
-                    Marker(
-                      point: _destinationLocation!,
-                      width: 32,
-                      height: 32,
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.red,
-                        size: 32,
-                      ),
-                    ),
-                  if (_driverLocation != null)
-                    Marker(
-                      point: _driverLocation!,
-                      width: 50,
-                      height: 50,
-                      child: Transform.rotate(
-                        angle: _markerRotation * (math.pi / 180),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF673AB7),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(color: Colors.black26, blurRadius: 6),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.two_wheeler,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ],
+            onMapCreated: (controller) {
+              _mapController = controller;
+              _fitCameraIfReady();
+            },
+            myLocationEnabled: false,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            compassEnabled: false,
+            mapToolbarEnabled: false,
+            markers: _markers(),
+            polylines: _polylines(),
           ),
           Positioned(
             top: 12,
             left: 16,
             right: 16,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
               decoration: BoxDecoration(
                 color: const Color(0xFFFDECEF),
                 borderRadius: BorderRadius.circular(16),
@@ -303,7 +386,9 @@ class _LiveRideTrackingScreenState extends State<LiveRideTrackingScreen> {
                   ),
                   IconButton(
                     onPressed: () =>
-                        CarrierAndAdminController.triggerPhoneCall(_contactPhone),
+                        CarrierAndAdminController.triggerPhoneCall(
+                      _contactPhone,
+                    ),
                     icon: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: const BoxDecoration(

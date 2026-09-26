@@ -75,16 +75,34 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
 
   Widget _circle(bool done) => Container(width:34,height:34,decoration:BoxDecoration(shape:BoxShape.circle,color:done?const Color(0xFFB3134A):Colors.white,border:Border.all(color:done?const Color(0xFFB3134A):const Color(0xFFD5D7DC),width:2)),child:Icon(Icons.check,size:18,color:done?Colors.white:const Color(0xFFB5B8C0)));
   Widget _timeline(String status) {
-    const stages=['New Order','Confirmed','Preparing','Out for delivery','Delivered']; final idx=_statusIndex(status);
-    return SizedBox(height:82,child:Row(children:List.generate(stages.length,(i)=>Expanded(child:Column(children:[
-      Row(children:[
-        if(i>0)Expanded(child:Container(height:3,color:idx>=i?const Color(0xFFB3134A):const Color(0xFFE1E2E6))),
-        _circle(idx>=i),
-        if(i<stages.length-1)Expanded(child:Container(height:3,color:idx>i?const Color(0xFFB3134A):const Color(0xFFE1E2E6))),
-      ]),
-      const SizedBox(height:7),
-      Text(stages[i],textAlign:TextAlign.center,style:TextStyle(fontSize:10,fontWeight:i==idx?FontWeight.w800:FontWeight.w500,color:idx>=i?const Color(0xFF252731):const Color(0xFF8B8E98))),
-    ]))));
+    const stages = ['New Order','Confirmed','Preparing','Out for delivery','Delivered'];
+    final idx = _statusIndex(status);
+    return SizedBox(
+      height: 82,
+      child: Row(
+        children: List.generate(stages.length, (i) {
+          return Expanded(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    if (i > 0) Expanded(child: Container(height: 3, color: idx >= i ? const Color(0xFFB3134A) : const Color(0xFFE1E2E6))),
+                    _circle(idx >= i),
+                    if (i < stages.length - 1) Expanded(child: Container(height: 3, color: idx > i ? const Color(0xFFB3134A) : const Color(0xFFE1E2E6))),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  stages[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 10, fontWeight: i == idx ? FontWeight.w800 : FontWeight.w500, color: idx >= i ? const Color(0xFF252731) : const Color(0xFF8B8E98)),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
   }
 
   Widget _hero(String status) {
@@ -104,27 +122,73 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   Widget _marker(Color color,IconData icon)=>Container(decoration:BoxDecoration(color:color,shape:BoxShape.circle,border:Border.all(color:Colors.white,width:4),boxShadow:const[BoxShadow(color:Color(0x33000000),blurRadius:7,offset:Offset(0,2))]),child:Icon(icon,color:Colors.white,size:23));
 
   Widget _mapCard(Map<String,dynamic> d) {
-    _customer=_point(d,['customer','pickup']);
-    _carrier=_point(d,['carrier','driver','partner','owner']);
-    _destination=_point(d,['destination','delivery']);
-    final points=[if(_customer!=null)_customer!,if(_carrier!=null)_carrier!,if(_destination!=null)_destination!];
-    if(_mapReady&&!_cameraFitted&&points.isNotEmpty) WidgetsBinding.instance.addPostFrameCallback((_) {
-      if(!_cameraFitted){try{if(points.length==1)_mapController.move(points.first,15);else _mapController.fitCamera(CameraFit.coordinates(coordinates:points,padding:const EdgeInsets.all(40)));_cameraFitted=true;}catch(_){}}});
-    final center=_carrier??_customer??_destination??const LatLng(25.9123,81.9876);
-    return Container(padding:const EdgeInsets.fromLTRB(16,16,16,14),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(28),boxShadow:const[BoxShadow(color:Color(0x12000000),blurRadius:18,offset:Offset(0,7))]),child:Column(children:[
-      Row(children:[Container(width:10,height:10,decoration:const BoxDecoration(color:Color(0xFF18A957),shape:BoxShape.circle)),const SizedBox(width:10),const Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Live Tracking',style:TextStyle(fontWeight:FontWeight.w900,fontSize:19)),Text('Your rider is on the way',style:TextStyle(color:Color(0xFF777B85)))])),const Icon(Icons.schedule,color:Color(0xFF252A36)),const SizedBox(width:5),Text('Live',style:TextStyle(fontWeight:FontWeight.w800))]),
-      const SizedBox(height:14),
-      SizedBox(height:210,child:ClipRRect(borderRadius:BorderRadius.circular(22),child:points.isEmpty?Container(color:const Color(0xFFF2F3F5),alignment:Alignment.center,child:const Text('Waiting for the rider location…')):FlutterMap(mapController:_mapController,options:MapOptions(initialCenter:center,initialZoom:14.5,onMapReady:(){_mapReady=true;}),children:[
-        TileLayer(urlTemplate:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',maxZoom:19,userAgentPackageName:'com.allways.app'),
-        MarkerLayer(markers:[
-          if(_customer!=null)Marker(point:_customer!,width:48,height:48,child:_marker(const Color(0xFF18A957),Icons.location_on)),
-          if(_carrier!=null)Marker(point:_carrier!,width:56,height:56,child:_marker(const Color(0xFF673AB7),Icons.two_wheeler)),
-          if(_destination!=null)Marker(point:_destination!,width:48,height:48,child:_marker(const Color(0xFFB3134A),Icons.location_on)),
-        ]),
-      ]))),
-      const SizedBox(height:10),
-      Align(alignment:Alignment.centerRight,child:FilledButton.icon(onPressed:points.isEmpty?null:_openMap,icon:const Icon(Icons.map_outlined,size:18),label:const Text('View on Map'),style:FilledButton.styleFrom(backgroundColor:const Color(0xFF252A36),foregroundColor:Colors.white,padding:const EdgeInsets.symmetric(horizontal:17,vertical:12)))),
-    ]));
+    _customer = _point(d, ['customer','pickup']);
+    _carrier = _point(d, ['carrier','driver','partner','owner']);
+    _destination = _point(d, ['destination','delivery']);
+    final points = <LatLng>[
+      if (_customer != null) _customer!,
+      if (_carrier != null) _carrier!,
+      if (_destination != null) _destination!,
+    ];
+    if (_mapReady && !_cameraFitted && points.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_cameraFitted) return;
+        try {
+          if (points.length == 1) {
+            _mapController.move(points.first, 15);
+          } else {
+            _mapController.fitCamera(CameraFit.coordinates(coordinates: points, padding: const EdgeInsets.all(40)));
+          }
+          _cameraFitted = true;
+        } catch (_) {}
+      });
+    }
+    final center = _carrier ?? _customer ?? _destination ?? const LatLng(25.9123, 81.9876);
+    final map = points.isEmpty
+        ? Container(color: const Color(0xFFF2F3F5), alignment: Alignment.center, child: const Text('Waiting for the rider location…'))
+        : FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(initialCenter: center, initialZoom: 14.5, onMapReady: () => _mapReady = true),
+            children: [
+              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, userAgentPackageName: 'com.allways.app'),
+              MarkerLayer(markers: [
+                if (_customer != null) Marker(point: _customer!, width: 48, height: 48, child: _marker(const Color(0xFF18A957), Icons.location_on)),
+                if (_carrier != null) Marker(point: _carrier!, width: 56, height: 56, child: _marker(const Color(0xFF673AB7), Icons.two_wheeler)),
+                if (_destination != null) Marker(point: _destination!, width: 48, height: 48, child: _marker(const Color(0xFFB3134A), Icons.location_on)),
+              ]),
+            ],
+          );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 18, offset: Offset(0, 7))]),
+      child: Column(
+        children: [
+          Row(children: [
+            Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF18A957), shape: BoxShape.circle)),
+            const SizedBox(width: 10),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Live Tracking', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 19)),
+              Text('Your rider is on the way', style: TextStyle(color: Color(0xFF777B85))),
+            ])),
+            const Icon(Icons.schedule, color: Color(0xFF252A36)),
+            const SizedBox(width: 5),
+            const Text('Live', style: TextStyle(fontWeight: FontWeight.w800)),
+          ]),
+          const SizedBox(height: 14),
+          SizedBox(height: 210, child: ClipRRect(borderRadius: BorderRadius.circular(22), child: map)),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: points.isEmpty ? null : _openMap,
+              icon: const Icon(Icons.map_outlined, size: 18),
+              label: const Text('View on Map'),
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF252A36), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 12)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _rider(Map<String,dynamic> d) {
@@ -149,7 +213,56 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     Row(children:[Expanded(child:Text('Order #${widget.orderId}',overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900))),IconButton(tooltip:'Copy order ID',onPressed:_copy,icon:const Icon(Icons.copy_outlined,size:19))]),
     Text('Placed on ${_placed(d['placedAt']??d['createdAt'])}',style:const TextStyle(fontSize:14,color:Color(0xFF777B85))),const SizedBox(height:16),_hero(status),const SizedBox(height:22),_timeline(status),
     if(showTracking)...[const SizedBox(height:8),_mapCard(d)],if(_carrier!=null||phone.isNotEmpty)...[const SizedBox(height:14),_rider(d)],const SizedBox(height:18),_items(items),const SizedBox(height:14),
-    InkWell(borderRadius:BorderRadius.circular(24),onTap:()=>showModalBottomSheet(context:context,showDragHandle:true,builder:(c)=>SafeArea(child:Padding(padding:const EdgeInsets.fromLTRB(22,8,22,28),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Payment details',style:TextStyle(fontSize:20,fontWeight:FontWeight.w900)),const SizedBox(height:14),const ListTile(contentPadding:EdgeInsets.zero,leading:Icon(Icons.payments_outlined,color:Color(0xFFB3134A)),title:Text('Payment method'),subtitle:Text('Cash on Delivery')),ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.receipt_long_outlined,color:Color(0xFFB3134A)),title:const Text('Order total'),trailing:Text('₹$total',style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900)))]))),child:Container(padding:const EdgeInsets.symmetric(horizontal:18,vertical:18),decoration:BoxDecoration(color:const Color(0xFFFFEFF4),borderRadius:BorderRadius.circular(24)),child:Row(children:[const Icon(Icons.account_balance_wallet_outlined,color:Color(0xFFB3134A)),const SizedBox(width:14),const Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Total Paid',style:TextStyle(fontSize:18,fontWeight:FontWeight.w900)),SizedBox(height:4),Text('Cash on Delivery',style:TextStyle(color:Color(0xFF777B85)))])),Text('₹$total',style:const TextStyle(fontSize:23,fontWeight:FontWeight.w900)),const Icon(Icons.keyboard_arrow_down,color:Color(0xFFB3134A))]))
+    InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: () {
+        showModalBottomSheet(
+          context: context,
+          showDragHandle: true,
+          builder: (c) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Payment details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 14),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.payments_outlined, color: Color(0xFFB3134A)),
+                    title: Text('Payment method'),
+                    subtitle: Text('Cash on Delivery'),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.receipt_long_outlined, color: Color(0xFFB3134A)),
+                    title: const Text('Order total'),
+                    trailing: Text('₹$total', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        decoration: BoxDecoration(color: const Color(0xFFFFEFF4), borderRadius: BorderRadius.circular(24)),
+        child: Row(
+          children: [
+            const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFFB3134A)),
+            const SizedBox(width: 14),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Order Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              SizedBox(height: 4),
+              Text('Cash on Delivery', style: TextStyle(color: Color(0xFF777B85))),
+            ])),
+            Text('₹$total', style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900)),
+            const Icon(Icons.keyboard_arrow_down, color: Color(0xFFB3134A)),
+          ],
+        ),
+      ),
     )
   ]);});
 }

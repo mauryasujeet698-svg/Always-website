@@ -57,57 +57,121 @@ async function sendToToken(token, title, body, data = {}) {
   }
 }
 
-async function getUserToken(uid) {
-  if (!uid) return "";
-  const snap = await db.collection("fcmTokens").doc(String(uid)).get();
-  if (!snap.exists) return "";
-  if (snap.data()?.notificationsEnabled === false) return "";
-  return String(snap.data()?.token || "").trim();
+async function getUserTokens(uid) {
+  if (!uid) return [];
+  const tokens = new Map();
+
+  const parent = await db.collection("fcmTokens").doc(String(uid)).get();
+  const parentData = parent.exists ? (parent.data() || {}) : {};
+  if (parentData.notificationsEnabled !== false && parentData.token) {
+    tokens.set(String(parentData.token).trim(), {
+      notificationsEnabled: true,
+      notificationPreferences: parentData.notificationPreferences || {},
+    });
+  }
+
+  const snap = await db
+    .collection("fcmTokens")
+    .doc(String(uid))
+    .collection("tokens")
+    .get();
+
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    const token = String(data.token || doc.id).trim();
+    if (!token) continue;
+    tokens.set(token, {
+      notificationsEnabled: data.notificationsEnabled !== false,
+      notificationPreferences: data.notificationPreferences || parentData.notificationPreferences || {},
+    });
+  }
+
+  if (parentData.notificationsEnabled === false) return [];
+  return [...tokens.entries()].map(([token, meta]) => ({ token, ...meta }));
 }
 
-function preferenceKeyForType(type = "") {
-  const t = String(type).toLowerCase();
-  if (t.includes("delivery")) return "deliveryUpdates";
-  if (t.includes("order")) return "orderUpdates";
-  if (t.includes("ride") || t.includes("vehicle") || t.includes("travel")) return "travelUpdates";
-  if (t.includes("offer") || t.includes("promotion")) return "offers";
-  return "announcements";
-}
-
-async function notificationAllowed(uid, type = "") {
-  if (!uid) return false;
-  const snap = await db.collection("fcmTokens").doc(String(uid)).get();
-  if (!snap.exists) return false;
-  const data = snap.data() || {};
+function notificationAllowedFromData(data = {}, type = "") {
   if (data.notificationsEnabled === false) return false;
   const preferences = data.notificationPreferences || {};
   const key = preferenceKeyForType(type);
   return preferences[key] !== false;
 }
 
+async function notificationAllowed(uid, type = "") {
+  if (!uid) return false;
+  const parent = await db.collection("fcmTokens").doc(String(uid)).get();
+  if (!parent.exists) return false;
+  return notificationAllowedFromData(parent.data() || {}, type);
+}
+
 async function sendToUser(uid, title, body, data = {}, fallbackToken = "") {
-  const token = (await getUserToken(uid)) || String(fallbackToken || "").trim();
-  if (!token) {
-    console.log("No FCM token for user:", uid);
-    return false;
-  }
+  if (!uid) return false;
   if (!(await notificationAllowed(uid, data.type || ""))) {
     console.log("Notification category disabled for user:", uid, data.type || "");
     return false;
   }
-  return sendToToken(token, title, body, data);
-}
 
-async function sendToAllUsers(title, body, data = {}) {
-  try {
-    await messaging.send(
-      notificationMessage(title, body, data, { topic: "all_users" })
-    );
-    return true;
-  } catch (error) {
-    console.error("ALLways global broadcast failed:", error);
+  const recipients = await getUserTokens(uid);
+  if (!recipients.length && fallbackToken) {
+    recipients.push({
+      token: String(fallbackToken).trim(),
+      notificationsEnabled: true,
+      notificationPreferences: {},
+    });
+  }
+  if (!recipients.length) {
+    console.log("No FCM tokens for user:", uid);
     return false;
   }
+
+  const messages = recipients
+    .filter((recipient) => notificationAllowedFromData(recipient, data.type || ""))
+    .map((recipient) =>
+      notificationMessage(title, body, data, { token: recipient.token })
+    );
+
+  let sent = false;
+  for (let i = 0; i < messages.length; i += 500) {
+    const batch = messages.slice(i, i + 500);
+    if (!batch.length) continue;
+    const response = await messaging.sendEach(batch);
+    response.responses.forEach((result, index) => {
+      if (result.success) {
+        sent = true;
+        return;
+      }
+      const code = result.error?.code;
+      if (
+        code === "messaging/registration-token-not-registered" ||
+        code === "messaging/invalid-registration-token"
+      ) {
+        const token = recipients[i + index]?.token;
+        if (token) {
+          db.collection("fcmTokens")
+            .doc(String(uid))
+            .collection("tokens")
+            .doc(token)
+            .delete()
+            .catch(() => {});
+          db.collection("fcmTokens")
+            .doc(String(uid))
+            .get()
+            .then((snap) => {
+              if (snap.exists && snap.data()?.token === token) {
+                return db.collection("fcmTokens").doc(String(uid)).set(
+                  { token: "", updatedAt: FieldValue.serverTimestamp() },
+                  { merge: true }
+                );
+              }
+              return null;
+            })
+            .catch(() => {});
+        }
+      }
+    });
+  }
+
+  return sent;
 }
 
 async function getSellerAssignmentMode(order) {

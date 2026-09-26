@@ -163,7 +163,7 @@ class RoleFeatureScreen extends StatelessWidget {
         _metric(docs.length.toString(), 'Orders', Icons.receipt_long),
         const SizedBox(height: 12),
         if (docs.isEmpty) _empty('No orders here', 'Matching orders will appear automatically.')
-        else ...docs.map(_orderTile),
+        else ...docs.map((d) => _orderTile(context, d)),
       ]);
     },
   );
@@ -201,7 +201,7 @@ class RoleFeatureScreen extends StatelessWidget {
         _header(feature, delivery ? 'Your active delivery queue.' : 'Your completed ride history.'),
         const SizedBox(height: 12),
         if (docs.isEmpty) _empty('Nothing here yet', 'Assigned or completed work will appear automatically.')
-        else ...docs.map(_orderTile),
+        else ...docs.map((d) => _orderTile(context, d)),
       ]);
     },
   );
@@ -316,7 +316,7 @@ class RoleFeatureScreen extends StatelessWidget {
     } else if (feature == 'Safety & SOS') {
       options=[('Emergency contact',Icons.contact_phone),('SOS',Icons.sos),('Trip safety',Icons.shield)];
     } else if (feature == 'Help & Support') {
-      options=[('Order issue',Icons.receipt_long),('Account help',Icons.person_help_alt),('Contact support',Icons.support_agent)];
+      options=[('Order issue',Icons.receipt_long),('Account help',Icons.support_agent),('Contact support',Icons.support_agent)];
     } else {
       options=[('Notifications',Icons.notifications_outlined),('Location',Icons.location_on_outlined),('Language',Icons.language),('Account',Icons.person)];
     }
